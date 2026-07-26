@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <!-- Supervision Tree View -->
+        <record id="view_mz_supervision_tree" model="ir.ui.view">
+            <field name="name">mz.supervision.list</field>
+            <field name="model">mz.supervision</field>
+            <field name="arch" type="xml">
+                <list string="Reporting Lines" editable="bottom">
+                    <field name="user_id"/>
+                    <field name="supervisor_id"/>
+                    <field name="role"/>
+                </list>
+            </field>
+        </record>
+
+        <!-- Supervision Form View -->
+        <record id="view_mz_supervision_form" model="ir.ui.view">
+            <field name="name">mz.supervision.form</field>
+            <field name="model">mz.supervision</field>
+            <field name="arch" type="xml">
+                <form string="Reporting Line">
+                    <sheet>
+                        <group>
+                            <group>
+                                <field name="user_id"/>
+                                <field name="supervisor_id"/>
+                            </group>
+                            <group>
+                                <field name="role"/>
+                            </group>
+                        </group>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+        <!-- Action -->
+        <record id="action_mz_supervision" model="ir.actions.act_window">
+            <field name="name">Reporting Lines</field>
+            <field name="res_model">mz.supervision</field>
+            <field name="view_mode">list,form</field>
+            <field name="help" type="html">
+                <p class="o_view_nocontent_smiling_face">
+                    Create reporting lines to define TL, ATL, and Manager supervision logic.
+                </p>
+            </field>
+        </record>
+
+        <!-- Menuitem under CRM Configuration -->
+        <menuitem id="menu_mz_supervision"
+                  name="Reporting Lines"
+                  parent="crm.crm_menu_config"
+                  action="action_mz_supervision"
+                  sequence="20"
+                  groups="group_mz_admin"/>
+    </data>
+</odoo>

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <record id="view_mz_archive_wizard_form" model="ir.ui.view">
+            <field name="name">mz.archive.wizard.form</field>
+            <field name="model">mz.archive.wizard</field>
+            <field name="arch" type="xml">
+                <form string="Archive Lead (CTO Only)">
+                    <group>
+                        <field name="lead_id" readonly="1"/>
+                        <field name="request_ref" placeholder="e.g. BU-REQ-2026-0042"/>
+                        <field name="reason" placeholder="Enter mandatory archival reason..."/>
+                    </group>
+                    <footer>
+                        <button name="action_archive" string="Confirm Archive" type="object" class="btn-danger"/>
+                        <button string="Cancel" class="btn-secondary" special="cancel"/>
+                    </footer>
+                </form>
+            </field>
+        </record>
+
+        <record id="action_mz_archive_wizard" model="ir.actions.act_window">
+            <field name="name">Archive Lead</field>
+            <field name="res_model">mz.archive.wizard</field>
+            <field name="view_mode">form</field>
+            <field name="target">new</field>
+            <field name="binding_model_id" ref="crm.model_crm_lead"/>
+            <field name="binding_view_types">form</field>
+        </record>
+    </data>
+</odoo>

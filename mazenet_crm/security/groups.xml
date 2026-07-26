@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="0">
+        <!-- Module Category -->
+        <record id="module_category_mazenet" model="ir.module.category">
+            <field name="name">Mazenet CRM</field>
+            <field name="description">Access Control &amp; Role Hierarchy for Mazenet CRM</field>
+            <field name="sequence">10</field>
+        </record>
+
+        <!-- Group Privilege -->
+        <record id="res_groups_privilege_mazenet" model="res.groups.privilege">
+            <field name="name">Mazenet CRM Role</field>
+            <field name="category_id" ref="module_category_mazenet"/>
+            <field name="sequence">1</field>
+        </record>
+
+        <!-- 1. Group: Agent (No Export) -->
+        <record id="group_mz_agent" model="res.groups">
+            <field name="name">Mazenet: Agent</field>
+            <field name="sequence">10</field>
+            <field name="privilege_id" ref="res_groups_privilege_mazenet"/>
+            <field name="implied_ids" eval="[(4, ref('sales_team.group_sale_salesman')), (4, ref('crm.group_use_lead'))]"/>
+            <field name="comment">Sees leads of own team. Creates leads; edits/moves OWN leads only. No export, no delete, no reassign of others.</field>
+        </record>
+
+        <!-- 2 & 3. Group: Team Lead (TL / ATL - Export Allowed) -->
+        <record id="group_mz_tl" model="res.groups">
+            <field name="name">Mazenet: Team Lead (TL / ATL)</field>
+            <field name="sequence">20</field>
+            <field name="privilege_id" ref="res_groups_privilege_mazenet"/>
+            <field name="implied_ids" eval="[(4, ref('group_mz_agent')), (4, ref('base.group_allow_export'))]"/>
+            <field name="comment">Sees + edits + reassigns across own branch (transitive subordinates). Approves reassignments &amp; releases locks for mapped subordinates. Export allowed.</field>
+        </record>
+
+        <!-- 4. Group: BU Manager (Export Allowed via TL implication) -->
+        <record id="group_mz_manager" model="res.groups">
+            <field name="name">Mazenet: BU Manager</field>
+            <field name="sequence">30</field>
+            <field name="privilege_id" ref="res_groups_privilege_mazenet"/>
+            <field name="implied_ids" eval="[(4, ref('group_mz_tl'))]"/>
+            <field name="comment">Sees all leads of own BU teams. Edits OWN leads fully. Content of others' leads is locked (write override). Can reassign leads. Export allowed.</field>
+        </record>
+
+        <!-- 5. Group: MD (Managing Director - Read Only) -->
+        <record id="group_mz_md" model="res.groups">
+            <field name="name">Mazenet: MD</field>
+            <field name="sequence">40</field>
+            <field name="privilege_id" ref="res_groups_privilege_mazenet"/>
+            <field name="implied_ids" eval="[(4, ref('base.group_user')), (4, ref('crm.group_use_lead'))]"/>
+            <field name="comment">Read-only everywhere across all teams &amp; BUs. No create, write, unlink, or archival actions.</field>
+        </record>
+
+        <!-- 6. Group: CTO / Admin (Full Access & Archive Authority) -->
+        <record id="group_mz_admin" model="res.groups">
+            <field name="name">Mazenet: CTO / Admin</field>
+            <field name="sequence">50</field>
+            <field name="privilege_id" ref="res_groups_privilege_mazenet"/>
+            <field name="implied_ids" eval="[(4, ref('group_mz_manager'))]"/>
+            <field name="comment">Full access, developer mode. Exclusive authority to archive leads via Archive Wizard (mandatory reason + BU request ref). Global lock-release override.</field>
+        </record>
+
+        <!-- Ensure CRM Top Menu and Submenus are visible to all Mazenet Roles (CTO, MD, Manager, TL, Agent) -->
+        <record id="crm.crm_menu_root" model="ir.ui.menu">
+            <field name="group_ids" eval="[(4, ref('sales_team.group_sale_salesman')), (4, ref('group_mz_md'))]"/>
+        </record>
+        <record id="crm.crm_menu_sales" model="ir.ui.menu">
+            <field name="group_ids" eval="[(6, 0, [])]"/>
+        </record>
+        <record id="crm.menu_crm_opportunities" model="ir.ui.menu">
+            <field name="group_ids" eval="[(6, 0, [])]"/>
+        </record>
+        <record id="crm.crm_menu_leads" model="ir.ui.menu">
+            <field name="group_ids" eval="[(6, 0, [])]"/>
+        </record>
+        <record id="crm.crm_menu_report" model="ir.ui.menu">
+            <field name="group_ids" eval="[(6, 0, [])]"/>
+        </record>
+    </data>
+</odoo>

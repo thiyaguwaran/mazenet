@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <!-- Lead Form View Inheritance -->
+        <record id="view_crm_lead_form_inherit_mz" model="ir.ui.view">
+            <field name="name">crm.lead.form.inherit.mz</field>
+            <field name="model">crm.lead</field>
+            <field name="inherit_id" ref="crm.crm_lead_view_form"/>
+            <field name="arch" type="xml">
+                <xpath expr="//field[@name='team_id']" position="after">
+                    <field name="x_originating_team_id" options="{'no_create': True}"/>
+                </xpath>
+
+                <!-- Release button lives in the header (buttons stay clickable even though
+                     the sheet below is made readonly while locked) -->
+                <xpath expr="//header" position="inside">
+                    <button name="action_release_lock" string="Release RED Lock" type="object"
+                            class="btn-danger" invisible="not x_is_locked"
+                            confirm="Release the RED lock on this lead? It will become editable again."/>
+                </xpath>
+
+                <!-- Whole sheet becomes read-only while x_is_locked is True. Server-side
+                     write() enforcement (crm_lead.py) is the real guard; this is the UX
+                     mirror of it so users see it as read-only rather than hitting a save
+                     error. Buttons are unaffected by the sheet's readonly modifier. -->
+                <xpath expr="//sheet" position="attributes">
+                    <attribute name="readonly">x_is_locked</attribute>
+                </xpath>
+
+                <xpath expr="//field[@name='won_status']" position="before">
+                    <field name="x_is_locked" invisible="1"/>
+                    <div class="alert alert-danger mb-0" role="alert" invisible="not x_is_locked">
+                        <i class="fa fa-lock me-1" title="RED Lock"/>
+                        <b>RED LOCKED</b> - this lead is overdue and read-only until released.
+                    </div>
+                </xpath>
+            </field>
+        </record>
+
+        <!-- Lead List View Inheritance -->
+        <record id="view_crm_lead_list_inherit_mz" model="ir.ui.view">
+            <field name="name">crm.lead.list.inherit.mz</field>
+            <field name="model">crm.lead</field>
+            <field name="inherit_id" ref="crm.crm_case_tree_view_oppor"/>
+            <field name="arch" type="xml">
+                <xpath expr="//field[@name='team_id']" position="after">
+                    <field name="x_originating_team_id" optional="hide"/>
+                </xpath>
+            </field>
+        </record>
+
+        <!-- Lead Kanban View Inheritance for RED Color Cards -->
+        <record id="view_crm_lead_kanban_inherit_mz" model="ir.ui.view">
+            <field name="name">crm.lead.kanban.inherit.mz</field>
+            <field name="model">crm.lead</field>
+            <field name="inherit_id" ref="crm.crm_case_kanban_view_leads"/>
+            <field name="arch" type="xml">
+                <xpath expr="//kanban" position="inside">
+                    <field name="x_is_locked"/>
+                    <field name="activity_state"/>
+                </xpath>
+                <xpath expr="//t[@t-name='card']/*[1]" position="before">
+                    <widget name="web_ribbon" id="mz_red_lock_ribbon" title="RED LOCKED" bg_color="text-bg-danger" invisible="not x_is_locked and activity_state != 'overdue'"/>
+                    <div t-if="record.x_is_locked.raw_value or record.activity_state.raw_value == 'overdue'" class="mz-red-locked-card mz-red-locked-card-wrapper position-absolute top-0 start-0 w-100 h-100 p-2 text-center font-weight-bold fw-bold text-uppercase d-flex flex-column justify-content-between align-items-center" style="background-color: #dc3545 !important; color: #ffffff !important; z-index: 10; border-radius: 4px; border: 2px solid #900c1e;">
+                        <div class="alert alert-danger p-1 w-100 mb-0 text-center font-weight-bold fw-bold text-uppercase" role="alert" style="background-color: #900c1e !important; color: #ffffff !important; border-radius: 4px; font-size: 11px;">
+                            <i class="fa fa-exclamation-triangle me-1"/> RED LOCK: OVERDUE DEADLINE
+                        </div>
+                        <div class="my-auto text-white fw-bold fs-6">
+                            <field name="name"/>
+                        </div>
+                        <div class="w-100 text-end text-white-50 small">
+                            <field name="user_id" widget="many2one_avatar_user"/>
+                        </div>
+                    </div>
+                </xpath>
+            </field>
+        </record>
+    </data>
+</odoo>

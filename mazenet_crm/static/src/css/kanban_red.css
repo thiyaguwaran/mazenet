@@ -1,0 +1,26 @@
+/* Mazenet CRM - RED Lock Kanban Card Styling.
+   Scoped strictly to the individual overdue/locked card (.o_kanban_record that directly
+   contains .mz-red-locked-card) - NOT to any ancestor. A previous version used
+   `div[class*="kanban"]:has(...)`, which also matched the column/group/renderer wrapper
+   divs (their class names contain "kanban" too), turning the whole column red instead of
+   just the one card. */
+.o_kanban_record:has(> .mz-red-locked-card),
+.o_kanban_record_has_image:has(> .mz-red-locked-card) {
+    position: relative;
+    background-color: #dc3545 !important;
+    background: #dc3545 !important;
+    color: #ffffff !important;
+    border: 2px solid #900c1e !important;
+    border-radius: 6px !important;
+}
+
+.o_kanban_record:has(> .mz-red-locked-card) *,
+.o_kanban_record_has_image:has(> .mz-red-locked-card) * {
+    color: #ffffff !important;
+}
+
+.o_kanban_record:has(> .mz-red-locked-card) .text-muted,
+.o_kanban_record:has(> .mz-red-locked-card) .opacity-50 {
+    color: #f8d7da !important;
+    opacity: 0.9 !important;
+}
