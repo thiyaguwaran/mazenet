@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <!-- 30/10-minute in-app popup reminders, auto-attached to every meeting scheduled
+             from a CRM lead (see models/calendar_event.py) so attendees are warned twice
+             before the meeting starts. alarm_type=notification is Odoo's native reminder
+             popup - no custom notification pipeline needed for this part. -->
+        <record id="calendar_alarm_30min" model="calendar.alarm">
+            <field name="name">Mazenet CRM: 30 minutes before</field>
+            <field name="alarm_type">notification</field>
+            <field name="duration">30</field>
+            <field name="interval">minutes</field>
+        </record>
+        <record id="calendar_alarm_10min" model="calendar.alarm">
+            <field name="name">Mazenet CRM: 10 minutes before</field>
+            <field name="alarm_type">notification</field>
+            <field name="duration">10</field>
+            <field name="interval">minutes</field>
+        </record>
+    </data>
+</odoo>

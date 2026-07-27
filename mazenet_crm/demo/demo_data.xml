@@ -333,6 +333,17 @@
         <record id="user_mis_agent2" model="res.users"><field name="name">MIS Agent 2</field><field name="login">mis.agent2@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_mis_agent2"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_crm.group_mz_agent')])]"/></record>
 
 
+        <!-- All @test.mazenet demo users get in-app Inbox notifications rather than
+             Odoo's email-based default, so RED lock alerts (message_notify) show up as a
+             real-time popup while logged in and as an Inbox item on next login - without
+             depending on an outgoing mail server being configured. -->
+        <function model="res.users" name="write">
+            <function model="res.users" name="search">
+                <value eval="[('login', 'like', '@test.mazenet')]"/>
+            </function>
+            <value eval="{'group_ids': [(4, ref('mail.group_mail_notification_type_inbox'))]}"/>
+        </function>
+
         <!-- ============================================================ -->
         <!-- 5. TEAM MEMBERSHIPS & MANAGER MAPPINGS                       -->
         <!-- ============================================================ -->
@@ -544,6 +555,13 @@
             <field name="x_originating_team_id" ref="mazenet_crm.team_dmt"/>
             <field name="expected_revenue">250000</field>
         </record>
+
+        <!-- ============================================================ -->
+        <!-- 8. 4 BUSINESS-APPROPRIATE LEADS PER PERSON (CTO/MD excluded)  -->
+        <!-- ============================================================ -->
+        <function model="crm.lead" name="_mz_seed_business_leads">
+            <value eval="4"/>
+        </function>
 
     </data>
 </odoo>

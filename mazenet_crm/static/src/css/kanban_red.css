@@ -1,4 +1,9 @@
 /* Mazenet CRM - RED Lock Kanban Card Styling.
+   Subtle by design: a soft red tint + a slim left accent border, card content stays fully
+   visible and legible (no full-card color fill, no forced white text). A corner ribbon
+   ("Overdue", from the kanban view's web_ribbon widget) is the primary attention-getter;
+   this tint is the secondary at-a-glance signal when scanning a column of cards.
+
    Scoped strictly to the individual overdue/locked card (.o_kanban_record that directly
    contains .mz-red-locked-card) - NOT to any ancestor. A previous version used
    `div[class*="kanban"]:has(...)`, which also matched the column/group/renderer wrapper
@@ -6,21 +11,15 @@
    just the one card. */
 .o_kanban_record:has(> .mz-red-locked-card),
 .o_kanban_record_has_image:has(> .mz-red-locked-card) {
-    position: relative;
-    background-color: #dc3545 !important;
-    background: #dc3545 !important;
-    color: #ffffff !important;
-    border: 2px solid #900c1e !important;
-    border-radius: 6px !important;
+    background-color: rgba(192, 57, 43, 0.06) !important;
+    border-left: 3px solid rgba(192, 57, 43, 0.55) !important;
+    border-radius: 4px;
 }
 
-.o_kanban_record:has(> .mz-red-locked-card) *,
-.o_kanban_record_has_image:has(> .mz-red-locked-card) * {
-    color: #ffffff !important;
-}
-
-.o_kanban_record:has(> .mz-red-locked-card) .text-muted,
-.o_kanban_record:has(> .mz-red-locked-card) .opacity-50 {
-    color: #f8d7da !important;
-    opacity: 0.9 !important;
+@media (prefers-color-scheme: dark) {
+    .o_kanban_record:has(> .mz-red-locked-card),
+    .o_kanban_record_has_image:has(> .mz-red-locked-card) {
+        background-color: rgba(224, 122, 99, 0.12) !important;
+        border-left-color: rgba(224, 122, 99, 0.6) !important;
+    }
 }

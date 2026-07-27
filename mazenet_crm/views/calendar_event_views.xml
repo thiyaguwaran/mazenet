@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <record id="view_calendar_event_form_inherit_mz" model="ir.ui.view">
+            <field name="name">calendar.event.form.inherit.mz</field>
+            <field name="model">calendar.event</field>
+            <field name="inherit_id" ref="calendar.view_calendar_event_form"/>
+            <field name="arch" type="xml">
+                <!-- Click through Not Started -> In Progress -> Done. There's no native
+                     Odoo field for "is this meeting happening right now" (see
+                     calendar_event.py) - this is a manually tracked status, not derived
+                     from start/stop, since the attendee is the one who actually knows. -->
+                <xpath expr="//header" position="inside">
+                    <field name="x_meeting_status" widget="statusbar"
+                           statusbar_visible="not_started,in_progress,done"
+                           invisible="res_model != 'crm.lead'"/>
+                </xpath>
+            </field>
+        </record>
+    </data>
+</odoo>

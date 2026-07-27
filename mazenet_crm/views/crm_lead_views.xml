@@ -60,18 +60,12 @@
                     <field name="activity_state"/>
                 </xpath>
                 <xpath expr="//t[@t-name='card']/*[1]" position="before">
-                    <widget name="web_ribbon" id="mz_red_lock_ribbon" title="RED LOCKED" bg_color="text-bg-danger" invisible="not x_is_locked and activity_state != 'overdue'"/>
-                    <div t-if="record.x_is_locked.raw_value or record.activity_state.raw_value == 'overdue'" class="mz-red-locked-card mz-red-locked-card-wrapper position-absolute top-0 start-0 w-100 h-100 p-2 text-center font-weight-bold fw-bold text-uppercase d-flex flex-column justify-content-between align-items-center" style="background-color: #dc3545 !important; color: #ffffff !important; z-index: 10; border-radius: 4px; border: 2px solid #900c1e;">
-                        <div class="alert alert-danger p-1 w-100 mb-0 text-center font-weight-bold fw-bold text-uppercase" role="alert" style="background-color: #900c1e !important; color: #ffffff !important; border-radius: 4px; font-size: 11px;">
-                            <i class="fa fa-exclamation-triangle me-1"/> RED LOCK: OVERDUE DEADLINE
-                        </div>
-                        <div class="my-auto text-white fw-bold fs-6">
-                            <field name="name"/>
-                        </div>
-                        <div class="w-100 text-end text-white-50 small">
-                            <field name="user_id" widget="many2one_avatar_user"/>
-                        </div>
-                    </div>
+                    <!-- Small corner ribbon + a subtle tint/border (via kanban_red.css, keyed off
+                         the .mz-red-locked-card marker) - the card's own content stays visible.
+                         A previous version covered the whole card with a solid red block; that
+                         read as too aggressive for a simple overdue/locked indicator. -->
+                    <widget name="web_ribbon" id="mz_red_lock_ribbon" title="Overdue" bg_color="text-bg-danger" invisible="not x_is_locked and activity_state != 'overdue'"/>
+                    <span t-if="record.x_is_locked.raw_value or record.activity_state.raw_value == 'overdue'" class="mz-red-locked-card d-none"/>
                 </xpath>
             </field>
         </record>
