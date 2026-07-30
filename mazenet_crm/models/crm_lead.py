@@ -47,6 +47,22 @@ class CrmLead(models.Model):
         help="Tracks originating team for leads created by or transferred from DMT."
     )
 
+    x_owner_role = fields.Selection(
+        related="user_id.x_mz_role",
+        string="Owner Role",
+        store=True,
+        help="The assigned salesperson's Mazenet role - drives the Filters panel's "
+             "Agent/TL/Manager role filters in the Pipeline."
+    )
+
+    x_owner_supervisor_id = fields.Many2one(
+        related="user_id.x_mz_supervisor_id",
+        string="Owner's Supervisor",
+        store=True,
+        help="Who the assigned salesperson reports to - lets the Pipeline be grouped by "
+             "the real reporting chain instead of a flat Salesperson list."
+    )
+
     x_is_locked = fields.Boolean(
         string="RED Lock Active",
         default=False,
