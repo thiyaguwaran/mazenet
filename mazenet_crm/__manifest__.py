@@ -19,7 +19,7 @@ Mazenet CRM - Milestone P1-M1 Foundation & Access Control
     'website': 'https://www.mazenet.com',
     'depends': ['crm', 'mail', 'calendar'],
     'data': [
-        'security/groups.xml',
+        # 'security/groups.xml',
         'security/ir.model.access.csv',
         'data/teams.xml',
         'data/stages.xml',
