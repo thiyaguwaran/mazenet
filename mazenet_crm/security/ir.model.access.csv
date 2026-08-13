@@ -1,15 +1,2 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
-access_mz_supervision_agent,mz.supervision.agent,model_mz_supervision,group_mz_agent,1,0,0,0
-access_mz_supervision_tl,mz.supervision.tl,model_mz_supervision,group_mz_tl,1,0,0,0
-access_mz_supervision_manager,mz.supervision.manager,model_mz_supervision,group_mz_manager,1,0,0,0
-access_mz_supervision_md,mz.supervision.md,model_mz_supervision,group_mz_md,1,0,0,0
-access_mz_supervision_admin,mz.supervision.admin,model_mz_supervision,group_mz_admin,1,1,1,1
-access_mz_archive_wizard_admin,mz.archive.wizard.admin,model_mz_archive_wizard,group_mz_admin,1,1,1,1
-access_crm_lead_mz_agent,crm.lead.mz.agent,crm.model_crm_lead,group_mz_agent,1,1,1,0
-access_crm_lead_mz_tl,crm.lead.mz.tl,crm.model_crm_lead,group_mz_tl,1,1,1,0
-access_crm_lead_mz_manager,crm.lead.mz.manager,crm.model_crm_lead,group_mz_manager,1,1,1,0
-access_crm_lead_mz_md,crm.lead.mz.md,crm.model_crm_lead,group_mz_md,1,0,0,0
-access_crm_lead_mz_admin,crm.lead.mz.admin,crm.model_crm_lead,group_mz_admin,1,1,1,0
-access_crm_team_mz_agent,crm.team.mz.agent,sales_team.model_crm_team,group_mz_agent,1,0,0,0
-access_crm_stage_mz_agent,crm.stage.mz.agent,crm.model_crm_stage,group_mz_agent,1,0,0,0
-access_crm_lead_scoring_freq_mz,crm.lead.scoring.frequency.mz,crm.model_crm_lead_scoring_frequency,group_mz_agent,1,0,0,0
+access_mz_archive_wizard_user,mz.archive.wizard.user,model_mz_archive_wizard,base.group_user,1,1,1,1

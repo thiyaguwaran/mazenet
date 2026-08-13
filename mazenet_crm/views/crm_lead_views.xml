@@ -7,10 +7,6 @@
             <field name="model">crm.lead</field>
             <field name="inherit_id" ref="crm.crm_lead_view_form"/>
             <field name="arch" type="xml">
-                <xpath expr="//field[@name='team_id']" position="after">
-                    <field name="x_originating_team_id" options="{'no_create': True}"/>
-                </xpath>
-
                 <!-- Release button lives in the header (buttons stay clickable even though
                      the sheet below is made readonly while locked) -->
                 <xpath expr="//header" position="inside">
@@ -33,46 +29,6 @@
                         <i class="fa fa-lock me-1" title="RED Lock"/>
                         <b>RED LOCKED</b> - this lead is overdue and read-only until released.
                     </div>
-                </xpath>
-            </field>
-        </record>
-
-        <!-- Lead List View Inheritance -->
-        <record id="view_crm_lead_list_inherit_mz" model="ir.ui.view">
-            <field name="name">crm.lead.list.inherit.mz</field>
-            <field name="model">crm.lead</field>
-            <field name="inherit_id" ref="crm.crm_case_tree_view_oppor"/>
-            <field name="arch" type="xml">
-                <xpath expr="//field[@name='team_id']" position="after">
-                    <field name="x_originating_team_id" optional="hide"/>
-                </xpath>
-            </field>
-        </record>
-
-        <!-- Pipeline (Opportunities) Search View: "Agent" filter -->
-        <record id="view_crm_case_opportunities_filter_inherit_mz" model="ir.ui.view">
-            <field name="name">crm.lead.search.opportunity.inherit.mz</field>
-            <field name="model">crm.lead</field>
-            <field name="inherit_id" ref="crm.view_crm_case_opportunities_filter"/>
-            <field name="arch" type="xml">
-                <xpath expr="//filter[@name='unassigned']" position="after">
-                    <filter string="Agent" name="filter_owner_agent" domain="[('x_owner_role', '=', 'agent')]"
-                            help="Leads owned by a pure Agent (not TL/ATL/Manager)"/>
-                    <filter string="ATL" name="filter_owner_atl" domain="[('x_owner_role', '=', 'atl')]"
-                            help="Leads owned by an ATL"/>
-                    <filter string="TL" name="filter_owner_tl" domain="[('x_owner_role', '=', 'tl')]"
-                            help="Leads owned by a TL"/>
-                    <filter string="BU Manager" name="filter_owner_manager" domain="[('x_owner_role', '=', 'manager')]"
-                            help="Leads owned by a BU Manager"/>
-                    <filter string="MD" name="filter_owner_md" domain="[('x_owner_role', '=', 'md')]"
-                            help="Leads owned by MD (should normally be none - MD is read-only)"/>
-                    <filter string="CTO / Admin" name="filter_owner_admin" domain="[('x_owner_role', '=', 'admin')]"
-                            help="Leads owned by CTO/Admin"/>
-                </xpath>
-                <xpath expr="//filter[@name='salesperson']" position="after">
-                    <filter string="Role" name="group_by_owner_role" context="{'group_by':'x_owner_role'}"/>
-                    <filter string="Supervisor" name="group_by_owner_supervisor" context="{'group_by':'x_owner_supervisor_id'}"
-                            help="Who the salesperson reports to - combine with Salesperson/Role to see the full branch: Manager > TL > ATL > Agent"/>
                 </xpath>
             </field>
         </record>
