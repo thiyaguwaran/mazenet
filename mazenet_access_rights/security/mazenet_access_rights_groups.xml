@@ -1,0 +1,552 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="0">
+
+        <!-- =================================================================
+             DMT team - isolated hierarchy below CTO/Admin & MD.
+             Chain: Agent -> ATL -> Team Lead -> BU Manager
+             (BU Manager is then implied by the single, global CTO/Admin
+             group at the bottom of this file - see the Global section.)
+             None of these 4 groups are implied by / imply any other team's
+             groups.
+        ================================================================== -->
+        <record id="module_category_mzr_dmt" model="ir.module.category">
+            <field name="name">Mazenet Access Rights: DMT</field>
+            <field name="description">Isolated access hierarchy for the DMT team only.</field>
+            <field name="sequence">10</field>
+        </record>
+        <record id="res_groups_privilege_mzr_dmt" model="res.groups.privilege">
+            <field name="name">DMT Role</field>
+            <field name="category_id" ref="module_category_mzr_dmt"/>
+            <field name="sequence">1</field>
+        </record>
+
+        
+        <record id="group_mzr_dmt_agent" model="res.groups">
+            <field name="name">DMT: Agent</field>
+            <field name="sequence">10</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_dmt"/>
+            <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+            <field name="comment">ATL-supervised front-line agent on the DMT team only. No visibility into other teams.</field>
+        </record>
+        <record id="group_mzr_dmt_atl" model="res.groups">
+            <field name="name">DMT: ATL</field>
+            <field name="sequence">20</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_dmt"/>
+            <field name="implied_ids" eval="[(4, ref('group_mzr_dmt_agent'))]"/>
+            <field name="comment">Assistant Team Lead on the DMT team only. Supervises a small group of agents.</field>
+        </record>
+
+
+
+        <record id="group_mzr_dmt_tl_direct_agent" model="res.groups">
+            <field name="name">DMT: TL-Direct Agent</field>
+            <field name="sequence">25</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_dmt"/>
+            <!-- <field name="implied_ids" eval="[(4, ref('group_mzr_dmt_agent'))]"/> -->
+            <field name="comment">This is the TL-Direct Agent group for the DMT team.</field>
+        </record>
+        <record id="group_mzr_dmt_tl" model="res.groups">
+            <field name="name">DMT: Team Lead</field>
+            <field name="sequence">30</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_dmt"/>
+            <field name="implied_ids" eval="[(4, ref('group_mzr_dmt_atl')),
+                                            (4, ref('group_mzr_dmt_tl_direct_agent')),]"/>
+            <field name="comment">Team Lead on the DMT team only. Supervises ATLs plus any directly-assigned agents ("TL-direct").</field>
+        </record>
+        <record id="group_mzr_dmt_manager_direct_agent" model="res.groups">
+            <field name="name">DMT: Manager-Direct Agent</field>
+            <field name="sequence">35</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_dmt"/>
+            <!-- <field name="implied_ids" eval="[(4, ref('group_mzr_dmt_agent'))]"/> -->
+            <field name="comment">This is the Manager-Direct Agent group for the DMT team.</field>
+        </record>
+
+        <record id="group_mzr_dmt_manager" model="res.groups">
+            <field name="name">DMT: BU Manager</field>
+            <field name="sequence">40</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_dmt"/>
+            <field name="implied_ids" eval="[(4, ref('group_mzr_dmt_tl')),
+                                            (4, ref('group_mzr_dmt_manager_direct_agent')),]"/>
+            <field name="comment">Business Unit Manager for the DMT team only. Oversees the Team Lead branch plus any directly-assigned agents ("Manager-direct"). One per team. Implied by the global CTO/Admin group.</field>
+        </record>
+
+        <!-- =================================================================
+             Technology team - isolated hierarchy (see DMT block above for
+             the structure/comment rationale).
+        ================================================================== -->
+        <record id="module_category_mzr_technology" model="ir.module.category">
+            <field name="name">Mazenet Access Rights: Technology</field>
+            <field name="description">Isolated access hierarchy for the Technology team only.</field>
+            <field name="sequence">20</field>
+        </record>
+        <record id="res_groups_privilege_mzr_technology" model="res.groups.privilege">
+            <field name="name">Technology Role</field>
+            <field name="category_id" ref="module_category_mzr_technology"/>
+            <field name="sequence">1</field>
+        </record>
+        <record id="group_mzr_technology_agent" model="res.groups">
+            <field name="name">Technology: Agent</field>
+            <field name="sequence">10</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_technology"/>
+            <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+            <field name="comment">ATL-supervised front-line agent on the Technology team only. No visibility into other teams.</field>
+        </record>
+        <record id="group_mzr_technology_atl" model="res.groups">
+            <field name="name">Technology: ATL</field>
+            <field name="sequence">20</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_technology"/>
+            <field name="implied_ids" eval="[(4, ref('group_mzr_technology_agent'))]"/>
+            <field name="comment">Assistant Team Lead on the Technology team only. Supervises a small group of agents.</field>
+        </record>
+        <record id="group_mzr_technology_tl_direct_agent" model="res.groups">
+            <field name="name">Technology: TL-Direct Agent</field>
+            <field name="sequence">25</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_technology"/>
+            <!-- <field name="implied_ids" eval="[(4, ref('group_mzr_technology_agent'))]"/> -->
+            <field name="comment">This is the TL-Direct Agent group for the Technology team.</field>
+        </record>
+        <record id="group_mzr_technology_tl" model="res.groups">
+            <field name="name">Technology: Team Lead</field>
+            <field name="sequence">30</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_technology"/>
+            <field name="implied_ids" eval="[(4, ref('group_mzr_technology_atl')),
+                                            (4, ref('group_mzr_technology_tl_direct_agent')),]"/>
+            <field name="comment">Team Lead on the Technology team only. Supervises ATLs plus any directly-assigned agents ("TL-direct").</field>
+        </record>
+        <record id="group_mzr_technology_manager_direct_agent" model="res.groups">
+            <field name="name">Technology: Manager-Direct Agent</field>
+            <field name="sequence">35</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_technology"/>
+            <!-- <field name="implied_ids" eval="[(4, ref('group_mzr_technology_agent'))]"/> -->
+            <field name="comment">This is the Manager-Direct Agent group for the Technology team.</field>
+        </record>
+        <record id="group_mzr_technology_manager" model="res.groups">
+            <field name="name">Technology: BU Manager</field>
+            <field name="sequence">40</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_technology"/>
+            <field name="implied_ids" eval="[(4, ref('group_mzr_technology_tl')),
+                                            (4, ref('group_mzr_technology_manager_direct_agent')),]"/>
+            <field name="comment">Business Unit Manager for the Technology team only. Oversees the Team Lead branch plus any directly-assigned agents ("Manager-direct"). One per team. Implied by the global CTO/Admin group.</field>
+        </record>
+
+        <!-- =================================================================
+             software team - isolated hierarchy (see DMT block above for the
+             structure/comment rationale).
+        ================================================================== -->
+        <record id="module_category_mzr_software" model="ir.module.category">
+            <field name="name">Mazenet Access Rights: software</field>
+            <field name="description">Isolated access hierarchy for the software team only.</field>
+            <field name="sequence">30</field>
+        </record>
+        <record id="res_groups_privilege_mzr_software" model="res.groups.privilege">
+            <field name="name">software Role</field>
+            <field name="category_id" ref="module_category_mzr_software"/>
+            <field name="sequence">1</field>
+        </record>
+        <record id="group_mzr_software_agent" model="res.groups">
+            <field name="name">software: Agent</field>
+            <field name="sequence">10</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_software"/>
+            <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+            <field name="comment">ATL-supervised front-line agent on the software team only. No visibility into other teams.</field>
+        </record>
+        <record id="group_mzr_software_atl" model="res.groups">
+            <field name="name">software: ATL</field>
+            <field name="sequence">20</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_software"/>
+            <field name="implied_ids" eval="[(4, ref('group_mzr_software_agent'))]"/>
+            <field name="comment">Assistant Team Lead on the software team only. Supervises a small group of agents.</field>
+        </record>
+        <record id="group_mzr_software_tl_direct_agent" model="res.groups">
+            <field name="name">software: TL-Direct Agent</field>
+            <field name="sequence">25</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_software"/>
+            <!-- <field name="implied_ids" eval="[(4, ref('group_mzr_software_agent'))]"/> -->
+            <field name="comment">This is the TL-Direct Agent group for the software team.</field>
+        </record>
+        <record id="group_mzr_software_tl" model="res.groups">
+            <field name="name">software: Team Lead</field>
+            <field name="sequence">30</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_software"/>
+            <field name="implied_ids" eval="[(4, ref('group_mzr_software_atl')),
+                                            (4, ref('group_mzr_software_tl_direct_agent')),]"/>
+            <field name="comment">Team Lead on the software team only. Supervises ATLs plus any directly-assigned agents ("TL-direct").</field>
+        </record>
+        <record id="group_mzr_software_manager_direct_agent" model="res.groups">
+            <field name="name">software: Manager-Direct Agent</field>
+            <field name="sequence">35</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_software"/>
+            <!-- <field name="implied_ids" eval="[(4, ref('group_mzr_software_agent'))]"/> -->
+            <field name="comment">This is the Manager-Direct Agent group for the software team.</field>
+        </record>
+        <record id="group_mzr_software_manager" model="res.groups">
+            <field name="name">software: BU Manager</field>
+            <field name="sequence">40</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_software"/>
+            <field name="implied_ids" eval="[(4, ref('group_mzr_software_tl')),
+                                            (4, ref('group_mzr_software_manager_direct_agent')),]"/>
+            <field name="comment">Business Unit Manager for the software team only. Oversees the Team Lead branch plus any directly-assigned agents ("Manager-direct"). One per team. Implied by the global CTO/Admin group.</field>
+        </record>
+
+        <!-- =================================================================
+             MIS team - isolated hierarchy (see DMT block above for the
+             structure/comment rationale).
+        ================================================================== -->
+        <record id="module_category_mzr_mis" model="ir.module.category">
+            <field name="name">Mazenet Access Rights: MIS</field>
+            <field name="description">Isolated access hierarchy for the MIS team only.</field>
+            <field name="sequence">40</field>
+        </record>
+        <record id="res_groups_privilege_mzr_mis" model="res.groups.privilege">
+            <field name="name">MIS Role</field>
+            <field name="category_id" ref="module_category_mzr_mis"/>
+            <field name="sequence">1</field>
+        </record>
+        <record id="group_mzr_mis_agent" model="res.groups">
+            <field name="name">MIS: Agent</field>
+            <field name="sequence">10</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_mis"/>
+            <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+            <field name="comment">ATL-supervised front-line agent on the MIS team only. No visibility into other teams.</field>
+        </record>
+        <record id="group_mzr_mis_atl" model="res.groups">
+            <field name="name">MIS: ATL</field>
+            <field name="sequence">20</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_mis"/>
+            <field name="implied_ids" eval="[(4, ref('group_mzr_mis_agent'))]"/>
+            <field name="comment">Assistant Team Lead on the MIS team only. Supervises a small group of agents.</field>
+        </record>
+        <record id="group_mzr_mis_tl_direct_agent" model="res.groups">
+            <field name="name">MIS: TL-Direct Agent</field>
+            <field name="sequence">25</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_mis"/>
+            <!-- <field name="implied_ids" eval="[(4, ref('group_mzr_mis_agent'))]"/> -->
+            <field name="comment">This is the TL-Direct Agent group for the MIS team.</field>
+        </record>
+        <record id="group_mzr_mis_tl" model="res.groups">
+            <field name="name">MIS: Team Lead</field>
+            <field name="sequence">30</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_mis"/>
+            <field name="implied_ids" eval="[(4, ref('group_mzr_mis_atl')),
+                                            (4, ref('group_mzr_mis_tl_direct_agent')),]"/>
+            <field name="comment">Team Lead on the MIS team only. Supervises ATLs plus any directly-assigned agents ("TL-direct").</field>
+        </record>
+        <record id="group_mzr_mis_manager_direct_agent" model="res.groups">
+            <field name="name">MIS: Manager-Direct Agent</field>
+            <field name="sequence">35</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_mis"/>
+            <!-- <field name="implied_ids" eval="[(4, ref('group_mzr_mis_agent'))]"/> -->
+            <field name="comment">This is the Manager-Direct Agent group for the MIS team.</field>
+        </record>
+        <record id="group_mzr_mis_manager" model="res.groups">
+            <field name="name">MIS: BU Manager</field>
+            <field name="sequence">40</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_mis"/>
+            <field name="implied_ids" eval="[(4, ref('group_mzr_mis_tl')),
+                                            (4, ref('group_mzr_mis_manager_direct_agent')),]"/>
+            <field name="comment">Business Unit Manager for the MIS team only. Oversees the Team Lead branch plus any directly-assigned agents ("Manager-direct"). One per team. Implied by the global CTO/Admin group.</field>
+        </record>
+
+        <!-- =================================================================
+             Corporate BU - 5 teams (Hunter, Account Manager, Corporate
+             Training, LMS, TNH), each with its OWN isolated Team Lead -> ATL
+             -> Agent chain (no BU Manager of its own - see the shared
+             Corporate BU Manager block further below). Unlike DMT/
+             Technology/software/MIS, none of these 5 teams has a per-team
+             BU Manager: they all report into the single, shared Corporate
+             BU Manager instead. The 5 teams are still isolated from EACH
+             OTHER - nothing here is implied by / implies another team's
+             groups; the shared manager is the only connection between them.
+        ================================================================== -->
+
+        <!-- Hunter -->
+        <record id="module_category_mzr_hunter" model="ir.module.category">
+            <field name="name">Mazenet Access Rights: Hunter</field>
+            <field name="description">Isolated access hierarchy for the Hunter team (Corporate BU) only.</field>
+            <field name="sequence">50</field>
+        </record>
+        <record id="res_groups_privilege_mzr_hunter" model="res.groups.privilege">
+            <field name="name">Hunter Role</field>
+            <field name="category_id" ref="module_category_mzr_hunter"/>
+            <field name="sequence">1</field>
+        </record>
+        <record id="group_mzr_hunter_agent" model="res.groups">
+            <field name="name">Hunter: Agent</field>
+            <field name="sequence">10</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_hunter"/>
+            <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+            <field name="comment">ATL-supervised front-line agent on the Hunter team only. No visibility into other teams.</field>
+        </record>
+        <record id="group_mzr_hunter_atl" model="res.groups">
+            <field name="name">Hunter: ATL</field>
+            <field name="sequence">20</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_hunter"/>
+            <field name="implied_ids" eval="[(4, ref('group_mzr_hunter_agent'))]"/>
+            <field name="comment">Assistant Team Lead on the Hunter team only (ATL-1 / ATL-2 in the org chart). Supervises a small group of agents.</field>
+        </record>
+        <record id="group_mzr_hunter_tl_direct_agent" model="res.groups">
+            <field name="name">Hunter: TL-Direct Agent</field>
+            <field name="sequence">25</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_hunter"/>
+            <field name="comment">This is the TL-Direct Agent group for the Hunter team.</field>
+        </record>
+        <record id="group_mzr_hunter_tl" model="res.groups">
+            <field name="name">Hunter: Team Lead</field>
+            <field name="sequence">30</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_hunter"/>
+            <field name="implied_ids" eval="[(4, ref('group_mzr_hunter_atl')),
+                                            (4, ref('group_mzr_hunter_tl_direct_agent')),]"/>
+            <field name="comment">Team Lead on the Hunter team only. Supervises ATL-1/ATL-2 plus any directly-assigned agents ("TL-direct"). Reports into the single, shared Corporate BU Manager.</field>
+        </record>
+
+        <!-- Account Manager -->
+        <record id="module_category_mzr_account_manager" model="ir.module.category">
+            <field name="name">Mazenet Access Rights: Account Manager</field>
+            <field name="description">Isolated access hierarchy for the Account Manager team (Corporate BU) only.</field>
+            <field name="sequence">60</field>
+        </record>
+        <record id="res_groups_privilege_mzr_account_manager" model="res.groups.privilege">
+            <field name="name">Account Manager Role</field>
+            <field name="category_id" ref="module_category_mzr_account_manager"/>
+            <field name="sequence">1</field>
+        </record>
+        <record id="group_mzr_account_manager_agent" model="res.groups">
+            <field name="name">Account Manager: Agent</field>
+            <field name="sequence">10</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_account_manager"/>
+            <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+            <field name="comment">ATL-supervised front-line agent on the Account Manager team only. No visibility into other teams.</field>
+        </record>
+        <record id="group_mzr_account_manager_atl" model="res.groups">
+            <field name="name">Account Manager: ATL</field>
+            <field name="sequence">20</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_account_manager"/>
+            <field name="implied_ids" eval="[(4, ref('group_mzr_account_manager_agent'))]"/>
+            <field name="comment">Assistant Team Lead on the Account Manager team only (ATL-1 / ATL-2 in the org chart). Supervises a small group of agents.</field>
+        </record>
+        <record id="group_mzr_account_manager_tl_direct_agent" model="res.groups">
+            <field name="name">Account Manager: TL-Direct Agent</field>
+            <field name="sequence">25</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_account_manager"/>
+            <field name="comment">This is the TL-Direct Agent group for the Account Manager team.</field>
+        </record>
+        <record id="group_mzr_account_manager_tl" model="res.groups">
+            <field name="name">Account Manager: Team Lead</field>
+            <field name="sequence">30</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_account_manager"/>
+            <field name="implied_ids" eval="[(4, ref('group_mzr_account_manager_atl')),
+                                            (4, ref('group_mzr_account_manager_tl_direct_agent')),]"/>
+            <field name="comment">Team Lead on the Account Manager team only. Supervises ATL-1/ATL-2 plus any directly-assigned agents ("TL-direct"). Reports into the single, shared Corporate BU Manager.</field>
+        </record>
+
+        <!-- Corporate Training - shown coral in the reference org chart:
+             new team, not yet in the signed annexure. Built identically to
+             the other 4 Corporate teams; flagged here for your records. -->
+        <record id="module_category_mzr_corporate_training" model="ir.module.category">
+            <field name="name">Mazenet Access Rights: Corporate Training</field>
+            <field name="description">Isolated access hierarchy for the Corporate Training team (Corporate BU) only. New team, not yet in the signed annexure.</field>
+            <field name="sequence">70</field>
+        </record>
+        <record id="res_groups_privilege_mzr_corporate_training" model="res.groups.privilege">
+            <field name="name">Corporate Training Role</field>
+            <field name="category_id" ref="module_category_mzr_corporate_training"/>
+            <field name="sequence">1</field>
+        </record>
+        <record id="group_mzr_corporate_training_agent" model="res.groups">
+            <field name="name">Corporate Training: Agent</field>
+            <field name="sequence">10</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_corporate_training"/>
+            <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+            <field name="comment">ATL-supervised front-line agent on the Corporate Training team only. No visibility into other teams.</field>
+        </record>
+        <record id="group_mzr_corporate_training_atl" model="res.groups">
+            <field name="name">Corporate Training: ATL</field>
+            <field name="sequence">20</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_corporate_training"/>
+            <field name="implied_ids" eval="[(4, ref('group_mzr_corporate_training_agent'))]"/>
+            <field name="comment">Assistant Team Lead on the Corporate Training team only (ATL-1 / ATL-2 in the org chart). Supervises a small group of agents.</field>
+        </record>
+        <record id="group_mzr_corporate_training_tl_direct_agent" model="res.groups">
+            <field name="name">Corporate Training: TL-Direct Agent</field>
+            <field name="sequence">25</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_corporate_training"/>
+            <field name="comment">This is the TL-Direct Agent group for the Corporate Training team.</field>
+        </record>
+        <record id="group_mzr_corporate_training_tl" model="res.groups">
+            <field name="name">Corporate Training: Team Lead</field>
+            <field name="sequence">30</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_corporate_training"/>
+            <field name="implied_ids" eval="[(4, ref('group_mzr_corporate_training_atl')),
+                                            (4, ref('group_mzr_corporate_training_tl_direct_agent')),]"/>
+            <field name="comment">Team Lead on the Corporate Training team only. Supervises ATL-1/ATL-2 plus any directly-assigned agents ("TL-direct"). Reports into the single, shared Corporate BU Manager.</field>
+        </record>
+
+        <!-- LMS -->
+        <record id="module_category_mzr_lms" model="ir.module.category">
+            <field name="name">Mazenet Access Rights: LMS</field>
+            <field name="description">Isolated access hierarchy for the LMS team (Corporate BU) only.</field>
+            <field name="sequence">80</field>
+        </record>
+        <record id="res_groups_privilege_mzr_lms" model="res.groups.privilege">
+            <field name="name">LMS Role</field>
+            <field name="category_id" ref="module_category_mzr_lms"/>
+            <field name="sequence">1</field>
+        </record>
+        <record id="group_mzr_lms_agent" model="res.groups">
+            <field name="name">LMS: Agent</field>
+            <field name="sequence">10</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_lms"/>
+            <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+            <field name="comment">ATL-supervised front-line agent on the LMS team only. No visibility into other teams.</field>
+        </record>
+        <record id="group_mzr_lms_atl" model="res.groups">
+            <field name="name">LMS: ATL</field>
+            <field name="sequence">20</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_lms"/>
+            <field name="implied_ids" eval="[(4, ref('group_mzr_lms_agent'))]"/>
+            <field name="comment">Assistant Team Lead on the LMS team only (ATL-1 / ATL-2 in the org chart). Supervises a small group of agents.</field>
+        </record>
+        <record id="group_mzr_lms_tl_direct_agent" model="res.groups">
+            <field name="name">LMS: TL-Direct Agent</field>
+            <field name="sequence">25</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_lms"/>
+            <field name="comment">This is the TL-Direct Agent group for the LMS team.</field>
+        </record>
+        <record id="group_mzr_lms_tl" model="res.groups">
+            <field name="name">LMS: Team Lead</field>
+            <field name="sequence">30</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_lms"/>
+            <field name="implied_ids" eval="[(4, ref('group_mzr_lms_atl')),
+                                            (4, ref('group_mzr_lms_tl_direct_agent')),]"/>
+            <field name="comment">Team Lead on the LMS team only. Supervises ATL-1/ATL-2 plus any directly-assigned agents ("TL-direct"). Reports into the single, shared Corporate BU Manager.</field>
+        </record>
+
+        <!-- TNH -->
+        <record id="module_category_mzr_tnh" model="ir.module.category">
+            <field name="name">Mazenet Access Rights: TNH</field>
+            <field name="description">Isolated access hierarchy for the TNH team (Corporate BU) only.</field>
+            <field name="sequence">90</field>
+        </record>
+        <record id="res_groups_privilege_mzr_tnh" model="res.groups.privilege">
+            <field name="name">TNH Role</field>
+            <field name="category_id" ref="module_category_mzr_tnh"/>
+            <field name="sequence">1</field>
+        </record>
+        <record id="group_mzr_tnh_agent" model="res.groups">
+            <field name="name">TNH: Agent</field>
+            <field name="sequence">10</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_tnh"/>
+            <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+            <field name="comment">ATL-supervised front-line agent on the TNH team only. No visibility into other teams.</field>
+        </record>
+        <record id="group_mzr_tnh_atl" model="res.groups">
+            <field name="name">TNH: ATL</field>
+            <field name="sequence">20</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_tnh"/>
+            <field name="implied_ids" eval="[(4, ref('group_mzr_tnh_agent'))]"/>
+            <field name="comment">Assistant Team Lead on the TNH team only (ATL-1 / ATL-2 in the org chart). Supervises a small group of agents.</field>
+        </record>
+        <record id="group_mzr_tnh_tl_direct_agent" model="res.groups">
+            <field name="name">TNH: TL-Direct Agent</field>
+            <field name="sequence">25</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_tnh"/>
+            <field name="comment">This is the TL-Direct Agent group for the TNH team.</field>
+        </record>
+        <record id="group_mzr_tnh_tl" model="res.groups">
+            <field name="name">TNH: Team Lead</field>
+            <field name="sequence">30</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_tnh"/>
+            <field name="implied_ids" eval="[(4, ref('group_mzr_tnh_atl')),
+                                            (4, ref('group_mzr_tnh_tl_direct_agent')),]"/>
+            <field name="comment">Team Lead on the TNH team only. Supervises ATL-1/ATL-2 plus any directly-assigned agents ("TL-direct"). Reports into the single, shared Corporate BU Manager.</field>
+        </record>
+
+        <!-- =================================================================
+             Corporate BU Manager - ONE group, shared across all 5 Corporate
+             teams above (Hunter, Account Manager, Corporate Training, LMS,
+             TNH), unlike DMT/Technology/software/MIS where each team has
+             its own separate BU Manager. This is the intentional exception:
+             "Corporate BU manager - Shared across 5 groups" in the org
+             chart.
+        ================================================================== -->
+        <record id="module_category_mzr_corporate" model="ir.module.category">
+            <field name="name">Mazenet Access Rights: Corporate</field>
+            <field name="description">The single BU Manager shared across Hunter, Account Manager, Corporate Training, LMS and TNH.</field>
+            <field name="sequence">45</field>
+        </record>
+        <record id="res_groups_privilege_mzr_corporate" model="res.groups.privilege">
+            <field name="name">Corporate Role</field>
+            <field name="category_id" ref="module_category_mzr_corporate"/>
+            <field name="sequence">1</field>
+        </record>
+        <record id="group_mzr_corporate_manager_direct_agent" model="res.groups">
+            <field name="name">Corporate: Manager-Direct Agent</field>
+            <field name="sequence">10</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_corporate"/>
+            <field name="comment">This is the Manager-Direct Agent group for the Corporate BU Manager.</field>
+        </record>
+        <record id="group_mzr_corporate_manager" model="res.groups">
+            <field name="name">Corporate: BU Manager</field>
+            <field name="sequence">20</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_corporate"/>
+            <field name="implied_ids" eval="[(4, ref('group_mzr_hunter_tl')),
+                                            (4, ref('group_mzr_account_manager_tl')),
+                                            (4, ref('group_mzr_corporate_training_tl')),
+                                            (4, ref('group_mzr_lms_tl')),
+                                            (4, ref('group_mzr_tnh_tl')),
+                                            (4, ref('group_mzr_corporate_manager_direct_agent')),]"/>
+            <field name="comment">Shared across all 5 Corporate teams (Hunter, Account Manager, Corporate Training, LMS, TNH) - one Manager, not duplicated per team. Implied by the global CTO/Admin group.</field>
+        </record>
+
+        <!-- =================================================================
+             Global roles - shared across ALL FOUR teams (unlike the
+             team-specific groups above). These are the only two groups in
+             this module that cross team boundaries, matching the reference
+             org chart where CTO/admin ("All access") and MD ("Read-only,
+             all teams") sit above every team, connected to each other by a
+             dashed (non-reporting) line rather than a solid one.
+        ================================================================== -->
+        <record id="module_category_mzr_global" model="ir.module.category">
+            <field name="name">Mazenet Access Rights: Global</field>
+            <field name="description">Company-wide roles that span every Mazenet team (DMT, Technology, software, MIS, and the Corporate BU).</field>
+            <field name="sequence">5</field>
+        </record>
+        <record id="res_groups_privilege_mzr_global" model="res.groups.privilege">
+            <field name="name">Global Role</field>
+            <field name="category_id" ref="module_category_mzr_global"/>
+            <field name="sequence">1</field>
+        </record>
+
+        <!-- CTO / Admin: full write access, implies every team's BU Manager
+             group (and therefore, transitively, every team's whole chain),
+             plus the single shared Corporate BU Manager. -->
+        <record id="group_mzr_cto_admin" model="res.groups">
+            <field name="name">CTO / Admin (All Teams)</field>
+            <field name="sequence">10</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_global"/>
+            <field name="implied_ids" eval="[
+                (4, ref('group_mzr_dmt_manager')),
+                (4, ref('group_mzr_technology_manager')),
+                (4, ref('group_mzr_software_manager')),
+                (4, ref('group_mzr_mis_manager')),
+                (4, ref('group_mzr_corporate_manager')),
+            ]"/>
+            <field name="comment">Full access across DMT, Technology, software, MIS and the Corporate BU (Hunter, Account Manager, Corporate Training, LMS, TNH). The single company-wide "All access" role from the org chart - not duplicated per team.</field>
+        </record>
+
+        <!-- MD: read-only oversight of all teams. Deliberately does NOT
+             imply any team's write-capable chain (mirrors the dashed,
+             non-reporting-line relationship to CTO/admin in the org chart);
+             wire this group into read-only ir.rule domains (no team filter)
+             when record-level rules are added later. -->
+        <record id="group_mzr_md" model="res.groups">
+            <field name="name">MD (Read-Only, All Teams)</field>
+            <field name="sequence">20</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_global"/>
+            <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+            <field name="comment">Read-only oversight across DMT, Technology, software and MIS. Not part of the write-access chain of any team (parallel role, not a reporting line) - grant it read access via ir.rule, not implied_ids, when wiring up models.</field>
+        </record>
+
+    </data>
+</odoo>
