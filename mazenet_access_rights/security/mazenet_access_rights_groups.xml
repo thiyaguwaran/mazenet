@@ -499,6 +499,116 @@
             <field name="comment">Shared across all 5 Corporate teams (Hunter, Account Manager, Corporate Training, LMS, TNH) - one Manager, not duplicated per team. Implied by the global CTO/Admin group.</field>
         </record>
 
+
+        <!-- =================================================================
+             Tally BU - its own separate BU Manager (not shared, unlike
+             Corporate above), but with a different internal shape: TWO
+             Team Lead branches (Development, Sales) instead of one, each
+             with its own ATL -> Agents chain and its own *-Direct Agent.
+             Isolated from every other team; only connection is the shared
+             global CTO/Admin group below implying this BU Manager, exactly
+             like DMT/Technology/software/MIS/Corporate.
+        ================================================================== -->
+        <record id="module_category_tally" model="ir.module.category">
+            <field name="name">Mazenet Access Rights: Tally</field>
+            <field name="description">Isolated access hierarchy for the Tally BU (Development + Sales branches) only.</field>
+            <field name="sequence">100</field>
+        </record>
+        <record id="res_groups_privilege_mzr_tally" model="res.groups.privilege">
+            <field name="name">Tally Role</field>
+            <field name="category_id" ref="module_category_tally"/>
+            <field name="sequence">1</field>
+        </record>
+
+        <record id="group_mzr_tally_manager_direct_agent" model="res.groups">
+            <field name="name">Tally: Manager-Direct Agent</field>
+            <field name="sequence">10</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_tally"/>
+            <field name="comment">This is the Manager-Direct Agent group for the Tally BU Manager.</field>
+        </record>
+
+        <record id="group_mzr_tally_dev_direct_agent" model="res.groups">
+            <field name="name">Tally: Developer-Direct Agent</field>
+            <field name="sequence">10</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_tally"/>
+            <field name="comment">This is the Developer-Direct Agent group for the Tally: TL-Development branch.</field>
+        </record>
+        <record id="group_mzr_tally_atl_agents_dev" model="res.groups">
+            <field name="name">Tally: Developer ATL Agents</field>
+            <field name="sequence">10</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_tally"/>
+            <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+            <field name="comment">ATL-supervised front-line agent on the Tally Development branch only. No visibility into other teams.</field>
+        </record>
+
+        <record id="group_mzr_tally_atl_dev" model="res.groups">
+            <field name="name">Tally: Developer ATL</field>
+            <field name="sequence">20</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_tally"/>
+            <field name="implied_ids" eval="[
+            (4, ref('group_mzr_tally_atl_agents_dev'))]"/>
+            <field name="comment">Assistant Team Lead on the Tally Development branch only. Supervises a small group of agents.</field>
+        </record>
+
+
+        <record id="group_mzr_tally_sales_direct_agent" model="res.groups">
+            <field name="name">Tally: Sales-Direct Agent</field>
+            <field name="sequence">10</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_tally"/>
+            <field name="comment">This is the Sales-Direct Agent group for the Tally: TL-Sales branch.</field>
+        </record>
+        <record id="group_mzr_tally_atl_agents_sales" model="res.groups">
+            <field name="name">Tally: Sales ATL Agents</field>
+            <field name="sequence">10</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_tally"/>
+            <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+            <field name="comment">ATL-supervised front-line agent on the Tally Sales branch only. No visibility into other teams.</field>
+        </record>
+
+        <record id="group_mzr_tally_atl_sales" model="res.groups">
+            <field name="name">Tally: Sales ATL</field>
+            <field name="sequence">20</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_tally"/>
+            <field name="implied_ids" eval="[
+            (4, ref('group_mzr_tally_atl_agents_sales'))]"/>
+            <field name="comment">Assistant Team Lead on the Tally Sales branch only. Supervises a small group of agents.</field>
+        </record>
+
+
+        <record id="group_mzr_tally_tl_development" model="res.groups">
+            <field name="name">Tally: TL-Development</field>
+            <field name="sequence">30</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_tally"/>
+            <field name="implied_ids" eval="[
+            (4, ref('group_mzr_tally_dev_direct_agent')),
+            (4, ref('group_mzr_tally_atl_dev')),
+                                            ]"/>
+            <field name="comment">Team Lead of the Development branch of the Tally BU. Supervises the Developer ATL plus any directly-assigned agents ("Developer-Direct"). Reports into the Tally BU Manager.</field>
+        </record>
+
+        <record id="group_mzr_tally_tl_sales" model="res.groups">
+            <field name="name">Tally: TL-Sales</field>
+            <field name="sequence">30</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_tally"/>
+            <field name="implied_ids" eval="[
+            (4, ref('group_mzr_tally_sales_direct_agent')),
+            (4, ref('group_mzr_tally_atl_sales')),
+                                            ]"/>
+            <field name="comment">Team Lead of the Sales branch of the Tally BU. Supervises the Sales ATL plus any directly-assigned agents ("Sales-Direct"). Reports into the Tally BU Manager.</field>
+        </record>
+
+
+        <record id="group_tally_manager" model="res.groups">
+            <field name="name">Tally: BU Manager</field>
+            <field name="sequence">40</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_tally"/>
+            <field name="implied_ids" eval="[
+            (4, ref('group_mzr_tally_manager_direct_agent')),
+            (4, ref('group_mzr_tally_tl_sales')),
+            (4, ref('group_mzr_tally_tl_development')),]"/>
+            <field name="comment">Business Unit Manager for the Tally BU only. Oversees both the Development and Sales Team Lead branches plus any directly-assigned agents ("Manager-direct"). Implied by the global CTO/Admin group.</field>
+        </record>
+
         <!-- =================================================================
              Global roles - shared across ALL FOUR teams (unlike the
              team-specific groups above). These are the only two groups in
@@ -509,7 +619,7 @@
         ================================================================== -->
         <record id="module_category_mzr_global" model="ir.module.category">
             <field name="name">Mazenet Access Rights: Global</field>
-            <field name="description">Company-wide roles that span every Mazenet team (DMT, Technology, software, MIS, and the Corporate BU).</field>
+            <field name="description">Company-wide roles that span every Mazenet team (DMT, Technology, software, MIS, the Corporate BU, and Tally).</field>
             <field name="sequence">5</field>
         </record>
         <record id="res_groups_privilege_mzr_global" model="res.groups.privilege">
@@ -520,7 +630,8 @@
 
         <!-- CTO / Admin: full write access, implies every team's BU Manager
              group (and therefore, transitively, every team's whole chain),
-             plus the single shared Corporate BU Manager. -->
+             plus the single shared Corporate BU Manager and the Tally BU
+             Manager. -->
         <record id="group_mzr_cto_admin" model="res.groups">
             <field name="name">CTO / Admin (All Teams)</field>
             <field name="sequence">10</field>
@@ -531,8 +642,9 @@
                 (4, ref('group_mzr_software_manager')),
                 (4, ref('group_mzr_mis_manager')),
                 (4, ref('group_mzr_corporate_manager')),
+                (4, ref('group_tally_manager')),
             ]"/>
-            <field name="comment">Full access across DMT, Technology, software, MIS and the Corporate BU (Hunter, Account Manager, Corporate Training, LMS, TNH). The single company-wide "All access" role from the org chart - not duplicated per team.</field>
+            <field name="comment">Full access across DMT, Technology, software, MIS, the Corporate BU (Hunter, Account Manager, Corporate Training, LMS, TNH) and Tally. The single company-wide "All access" role from the org chart - not duplicated per team.</field>
         </record>
 
         <!-- MD: read-only oversight of all teams. Deliberately does NOT
