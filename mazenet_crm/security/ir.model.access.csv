@@ -1,2 +1,6 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
-access_mz_archive_wizard_user,mz.archive.wizard.user,model_mz_archive_wizard,base.group_user,1,1,1,1
+access_mz_archive_wizard_admin,mz.archive.wizard.admin,model_mz_archive_wizard,mazenet_access_rights.group_mzr_cto_admin,1,1,1,1
+access_crm_lead_mzr_user,crm.lead.mzr.user,crm.model_crm_lead,base.group_user,1,1,1,0
+access_crm_team_mzr_user,crm.team.mzr.user,sales_team.model_crm_team,base.group_user,1,0,0,0
+access_crm_stage_mzr_user,crm.stage.mzr.user,crm.model_crm_stage,base.group_user,1,0,0,0
+access_crm_lead_scoring_freq_mzr_user,crm.lead.scoring.frequency.mzr.user,crm.model_crm_lead_scoring_frequency,base.group_user,1,0,0,0

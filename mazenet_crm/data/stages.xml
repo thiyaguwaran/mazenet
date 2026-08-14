@@ -28,76 +28,76 @@
         <record id="stage_tally_new" model="crm.stage">
             <field name="name">New Lead</field>
             <field name="sequence">1</field>
-            <field name="team_ids" eval="[(4, ref('team_tally'))]"/>
+            <field name="team_ids" eval="[(4, ref('team_tally_dev')), (4, ref('team_tally_sales'))]"/>
         </record>
         <record id="stage_tally_contacted" model="crm.stage">
             <field name="name">Contact Made</field>
             <field name="sequence">2</field>
-            <field name="team_ids" eval="[(4, ref('team_tally'))]"/>
+            <field name="team_ids" eval="[(4, ref('team_tally_dev')), (4, ref('team_tally_sales'))]"/>
         </record>
         <record id="stage_tally_demo" model="crm.stage">
             <field name="name">Demo Scheduled</field>
             <field name="sequence">3</field>
-            <field name="team_ids" eval="[(4, ref('team_tally'))]"/>
+            <field name="team_ids" eval="[(4, ref('team_tally_dev')), (4, ref('team_tally_sales'))]"/>
         </record>
         <record id="stage_tally_proposal" model="crm.stage">
             <field name="name">Proposal Sent</field>
             <field name="sequence">4</field>
-            <field name="team_ids" eval="[(4, ref('team_tally'))]"/>
+            <field name="team_ids" eval="[(4, ref('team_tally_dev')), (4, ref('team_tally_sales'))]"/>
         </record>
         <record id="stage_tally_negotiation" model="crm.stage">
             <field name="name">Negotiation</field>
             <field name="sequence">5</field>
-            <field name="team_ids" eval="[(4, ref('team_tally'))]"/>
+            <field name="team_ids" eval="[(4, ref('team_tally_dev')), (4, ref('team_tally_sales'))]"/>
         </record>
         <record id="stage_tally_won" model="crm.stage">
             <field name="name">Order Won</field>
             <field name="sequence">6</field>
             <field name="is_won">True</field>
-            <field name="team_ids" eval="[(4, ref('team_tally'))]"/>
+            <field name="team_ids" eval="[(4, ref('team_tally_dev')), (4, ref('team_tally_sales'))]"/>
         </record>
         <record id="stage_tally_lost" model="crm.stage">
             <field name="name">Closed Lost</field>
             <field name="sequence">7</field>
-            <field name="team_ids" eval="[(4, ref('team_tally'))]"/>
+            <field name="team_ids" eval="[(4, ref('team_tally_dev')), (4, ref('team_tally_sales'))]"/>
         </record>
 
         <!-- 3. Corp Stages (7 stages - Shared by Corp Hunter & Corp AM) -->
         <record id="stage_corp_new" model="crm.stage">
             <field name="name">New Lead</field>
             <field name="sequence">1</field>
-            <field name="team_ids" eval="[(4, ref('team_corp_hunter')), (4, ref('team_corp_am'))]"/>
+            <field name="team_ids" eval="[(4, ref('team_corp_hunter')), (4, ref('team_corp_am')), (4, ref('team_corp_training'))]"/>
         </record>
         <record id="stage_corp_qualification" model="crm.stage">
             <field name="name">Qualification</field>
             <field name="sequence">2</field>
-            <field name="team_ids" eval="[(4, ref('team_corp_hunter')), (4, ref('team_corp_am'))]"/>
+            <field name="team_ids" eval="[(4, ref('team_corp_hunter')), (4, ref('team_corp_am')), (4, ref('team_corp_training'))]"/>
         </record>
         <record id="stage_corp_needs" model="crm.stage">
             <field name="name">Needs Analysis</field>
             <field name="sequence">3</field>
-            <field name="team_ids" eval="[(4, ref('team_corp_hunter')), (4, ref('team_corp_am'))]"/>
+            <field name="team_ids" eval="[(4, ref('team_corp_hunter')), (4, ref('team_corp_am')), (4, ref('team_corp_training'))]"/>
         </record>
         <record id="stage_corp_proposal" model="crm.stage">
             <field name="name">Proposal / Quote</field>
             <field name="sequence">4</field>
-            <field name="team_ids" eval="[(4, ref('team_corp_hunter')), (4, ref('team_corp_am'))]"/>
+            <field name="team_ids" eval="[(4, ref('team_corp_hunter')), (4, ref('team_corp_am')), (4, ref('team_corp_training'))]"/>
         </record>
         <record id="stage_corp_negotiation" model="crm.stage">
             <field name="name">Negotiation</field>
             <field name="sequence">5</field>
-            <field name="team_ids" eval="[(4, ref('team_corp_hunter')), (4, ref('team_corp_am'))]"/>
+            <field name="team_ids" eval="[(4, ref('team_corp_hunter')), (4, ref('team_corp_am')), (4, ref('team_corp_training'))]"/>
         </record>
         <record id="stage_corp_won" model="crm.stage">
             <field name="name">Won</field>
             <field name="sequence">6</field>
             <field name="is_won">True</field>
-            <field name="team_ids" eval="[(4, ref('team_corp_hunter')), (4, ref('team_corp_am'))]"/>
+            <field name="team_ids" eval="[(4, ref('team_corp_hunter')), (4, ref('team_corp_am')), (4, ref('team_corp_training'))]"/>
         </record>
         <record id="stage_corp_lost" model="crm.stage">
             <field name="name">Lost</field>
             <field name="sequence">7</field>
-            <field name="team_ids" eval="[(4, ref('team_corp_hunter')), (4, ref('team_corp_am'))]"/>
+            <field name="team_ids" eval="[(4, ref('team_corp_hunter')), (4, ref('team_corp_am')), (4, ref('team_corp_training'))]"/>
         </record>
 
         <!-- 4. LMS Stages (8 stages, own set - Phase 2 build).

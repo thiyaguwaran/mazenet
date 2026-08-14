@@ -9,9 +9,17 @@
             <field name="use_opportunities">True</field>
         </record>
 
-        <!-- 2. Tally -->
-        <record id="team_tally" model="crm.team">
-            <field name="name">Tally</field>
+        <!-- 2. Tally - split into Development / Sales branches, matching
+             mazenet_access_rights' two-branch Tally group structure (one
+             shared BU Manager, two isolated TL->ATL->Agent chains). -->
+        <record id="team_tally_dev" model="crm.team">
+            <field name="name">Tally - Development</field>
+            <field name="x_bu_category">tally</field>
+            <field name="use_leads">True</field>
+            <field name="use_opportunities">True</field>
+        </record>
+        <record id="team_tally_sales" model="crm.team">
+            <field name="name">Tally - Sales</field>
             <field name="x_bu_category">tally</field>
             <field name="use_leads">True</field>
             <field name="use_opportunities">True</field>
@@ -44,6 +52,16 @@
         <!-- 6. Corp - TNH -->
         <record id="team_corp_tnh" model="crm.team">
             <field name="name">Corp - TNH</field>
+            <field name="x_bu_category">corp</field>
+            <field name="use_leads">True</field>
+            <field name="use_opportunities">True</field>
+        </record>
+
+        <!-- 6b. Corp - Training: new team per mazenet_access_rights (not yet
+             in the signed annexure - shares the generic Corp stage set below
+             as a placeholder until its own is defined). -->
+        <record id="team_corp_training" model="crm.team">
+            <field name="name">Corp - Training</field>
             <field name="x_bu_category">corp</field>
             <field name="use_leads">True</field>
             <field name="use_opportunities">True</field>

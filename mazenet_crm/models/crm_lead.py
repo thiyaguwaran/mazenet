@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from odoo import models, fields, api, _
 from odoo.exceptions import AccessError
 
+REASSIGN_FIELDS = {"user_id", "team_id", "stage_id"}
 SYSTEM_FIELDS = {
     "message_follower_ids", "activity_ids", "message_ids", "message_main_attachment_id",
     "website_message_ids", "message_has_error", "message_has_error_counter", "message_needaction",
@@ -12,6 +13,18 @@ SYSTEM_FIELDS = {
     "activity_exception_type", "activity_exception_decoration", "active",
     "x_is_locked", "x_lock_date",
 }
+
+# The 6 BU Manager-tier groups from mazenet_access_rights. Kept as an explicit list (rather
+# than a naming-pattern match) since the module isolates each team's groups from the others
+# on purpose - there's no single "any manager" group to check against.
+MZR_MANAGER_GROUPS = [
+    "mazenet_access_rights.group_mzr_dmt_manager",
+    "mazenet_access_rights.group_mzr_technology_manager",
+    "mazenet_access_rights.group_mzr_software_manager",
+    "mazenet_access_rights.group_mzr_mis_manager",
+    "mazenet_access_rights.group_mzr_corporate_manager",
+    "mazenet_access_rights.group_tally_manager",
+]
 
 class CrmLead(models.Model):
     _inherit = "crm.lead"
@@ -51,18 +64,33 @@ class CrmLead(models.Model):
         help="Timestamp when RED lock was triggered."
     )
 
+    @api.model_create_multi
+    def create(self, vals_list):
+        u = self.env.user
+        if not self.env.su and u.has_group("mazenet_access_rights.group_mzr_md"):
+            raise AccessError(_("MD role is read-only across all CRM models and cannot create leads."))
+        return super(CrmLead, self).create(vals_list)
+
     def write(self, vals):
+        u = self.env.user
+        is_cto_admin = u.has_group("mazenet_access_rights.group_mzr_cto_admin")
+
         # Direct Lead Archiving Restriction: leads are archived only via the Archive Lead
         # Wizard (which stamps mz_archive_wizard on the context), never a raw active=False.
         if "active" in vals and not vals["active"]:
-            if not self.env.su and not self.env.context.get("mz_archive_wizard"):
-                raise AccessError(_("Leads can only be archived via the Archive Lead Wizard."))
+            if not self.env.su and not is_cto_admin and not self.env.context.get("mz_archive_wizard"):
+                raise AccessError(_("Leads can only be archived by CTO / Admin via the Archive Lead Wizard."))
 
-        # RED Lock Enforcement: a locked lead is read-only for everyone until released via
-        # action_release_lock(). Only bookkeeping/system fields (chatter, activities, and the
-        # lock fields themselves - so the release action can clear them) are exempt.
-        if not self.env.su:
+        if not self.env.su and not is_cto_admin:
+            # MD Read-Only Restriction
+            if u.has_group("mazenet_access_rights.group_mzr_md"):
+                raise AccessError(_("MD role is read-only across all CRM models and cannot edit leads."))
+
             content_touched = set(vals.keys()) - SYSTEM_FIELDS
+
+            # RED Lock Enforcement: a locked lead is read-only for everyone until released via
+            # action_release_lock(). Only bookkeeping/system fields (chatter, activities, and
+            # the lock fields themselves - so the release action can clear them) are exempt.
             if content_touched:
                 for lead in self:
                     if lead.x_is_locked:
@@ -70,6 +98,16 @@ class CrmLead(models.Model):
                             "Lead '%s' is RED-locked and read-only. Use 'Release RED Lock' "
                             "before it can be edited again."
                         ) % lead.name)
+
+            # BU Manager Content Lock: a Manager can view/reassign every lead in their scope
+            # (granted by the ir.rule Team Lead tier, which Manager inherits via implied_ids),
+            # but content edits on a lead they don't own go through the Team Lead instead.
+            if any(u.has_group(g) for g in MZR_MANAGER_GROUPS):
+                for lead in self:
+                    if lead.user_id and lead.user_id != u:
+                        touched_content = content_touched
+                        if touched_content - REASSIGN_FIELDS:
+                            raise AccessError(_("Managers view and reassign; content edits go through the Team Lead."))
 
         return super(CrmLead, self).write(vals)
 
@@ -180,10 +218,20 @@ class CrmLead(models.Model):
              "Shree Balaji Hardware", "New Bharat Stationers", "Ganpati Agro Foods", "Vinayak Plastics"],
             "Inquiry - %s", 15000,
         ),
-        'mazenet_crm.team_tally': (
+        'mazenet_crm.team_tally_dev': (
+            ["Sharma & Sons Traders", "Golden Textiles Mills", "Anand Auto Spares", "Krishna Rice Mill",
+             "Vishal Electricals", "Om Enterprises", "Patel Hardware Store", "Laxmi Garments"],
+            "Tally Customization - %s", 25000,
+        ),
+        'mazenet_crm.team_tally_sales': (
             ["Sharma & Sons Traders", "Golden Textiles Mills", "Anand Auto Spares", "Krishna Rice Mill",
              "Vishal Electricals", "Om Enterprises", "Patel Hardware Store", "Laxmi Garments"],
             "Tally License - %s", 25000,
+        ),
+        'mazenet_crm.team_corp_training': (
+            ["Meridian Logistics Pvt Ltd", "Zenith Manufacturing Corp", "Apex Infrastructure Ltd", "Orion Retail Chain",
+             "Falcon Energy Solutions", "Skyline Constructions", "Prime Steel Industries", "Coastal Shipping Corp"],
+            "Corporate Training - %s", 70000,
         ),
         'mazenet_crm.team_corp_hunter': (
             ["Meridian Logistics Pvt Ltd", "Zenith Manufacturing Corp", "Apex Infrastructure Ltd", "Orion Retail Chain",

@@ -16,11 +16,12 @@ Mazenet CRM - Pipeline Customizations
     """,
     'author': 'Mazenet Tech / Development Team',
     'website': 'https://www.mazenet.com',
-    'depends': ['crm', 'mail', 'calendar'],
+    'depends': ['crm', 'mail', 'calendar', 'mazenet_access_rights'],
     'data': [
         'security/ir.model.access.csv',
         'data/teams.xml',
         'data/stages.xml',
+        'security/record_rules.xml',
         'data/cron.xml',
         'data/alarms.xml',
         'views/crm_lead_views.xml',
