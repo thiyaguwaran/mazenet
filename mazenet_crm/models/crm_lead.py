@@ -1,8 +1,13 @@
 # -*- coding: utf-8 -*-
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from odoo import models, fields, api, _
 from odoo.exceptions import AccessError
+
+# Grace period between an activity's real due moment (x_next_activity_datetime) and the
+# RED lock actually triggering - e.g. a 10:00 AM activity locks at 10:15, not the instant
+# 10:00 passes.
+MZ_RED_LOCK_GRACE_MINUTES = 15
 
 REASSIGN_FIELDS = {"user_id", "team_id", "stage_id"}
 SYSTEM_FIELDS = {
@@ -35,22 +40,26 @@ class CrmLead(models.Model):
         compute="_compute_x_next_activity_datetime",
         store=True,
         index=True,
-        help="Earliest open activity's actual moment - a meeting's real start time (e.g. "
-             "10:00 AM sorts above an 11:00 AM call the same day), or midnight of the due "
-             "date for activities with no specific time. Drives the default Kanban/List "
-             "ordering (soonest activity on top) instead of crm.lead's stock priority/id "
-             "order; leads with no open activity naturally sort to the bottom (NULL last)."
+        help="Earliest open activity's actual moment, resolved in this order: (1) a linked "
+             "calendar event's real start time, for Meeting-category activities; (2) the "
+             "activity's own mz_activity_time combined with its due date, for Call/To-Do "
+             "activities that were given a time; (3) the due date at a default hour "
+             "(MZ_DEFAULT_ACTIVITY_HOUR), for activities with no time source at all. Drives "
+             "the default Kanban/List ordering (soonest activity on top) instead of "
+             "crm.lead's stock priority/id order; leads with no open activity naturally "
+             "sort to the bottom (NULL last)."
     )
 
-    @api.depends('activity_ids.date_deadline', 'activity_ids.calendar_event_id.start', 'activity_ids.active')
+    @api.depends(
+        'activity_ids.date_deadline', 'activity_ids.calendar_event_id.start',
+        'activity_ids.mz_activity_time', 'activity_ids.user_id', 'activity_ids.active',
+    )
     def _compute_x_next_activity_datetime(self):
         for lead in self:
             candidates = []
             for activity in lead.activity_ids.filtered('active'):
-                if activity.calendar_event_id and activity.calendar_event_id.start:
-                    candidates.append(activity.calendar_event_id.start)
-                elif activity.date_deadline:
-                    candidates.append(datetime.combine(activity.date_deadline, datetime.min.time()))
+                candidates.append(activity._mz_resolve_activity_datetime())
+            candidates = [c for c in candidates if c]
             lead.x_next_activity_datetime = min(candidates) if candidates else False
 
     x_is_locked = fields.Boolean(
@@ -63,6 +72,57 @@ class CrmLead(models.Model):
         string="RED Lock Date",
         help="Timestamp when RED lock was triggered."
     )
+
+    x_activity_warning = fields.Selection(
+        [
+            ('purple', 'Activity due within 30 minutes'),
+            ('orange', 'Activity due within 10 minutes'),
+        ],
+        string="Activity Warning",
+        compute="_compute_x_activity_warning",
+        help="Kanban card pre-warning before RED lock: purple in the 30-minute window "
+             "before the next activity, orange in the 10-minute window - only shown to the "
+             "lead's owner or, for a Meeting activity, one of its calendar attendees, not "
+             "to everyone browsing the Pipeline. Deliberately not stored: this is inherently "
+             "relative to 'now' and to the viewing user, so it's recomputed fresh on every "
+             "read rather than cron-maintained, the same way Odoo's own activity_state is."
+    )
+
+    @api.depends('x_next_activity_datetime', 'x_is_locked')
+    def _compute_x_activity_warning(self):
+        now = fields.Datetime.now()
+        for lead in self:
+            lead.x_activity_warning = False
+            if lead.x_is_locked or not lead.x_next_activity_datetime:
+                continue
+            if not lead._mz_user_involved_in_next_activity():
+                continue
+            minutes_to_go = (lead.x_next_activity_datetime - now).total_seconds() / 60
+            if 0 <= minutes_to_go <= 10:
+                lead.x_activity_warning = 'orange'
+            elif 10 < minutes_to_go <= 30:
+                lead.x_activity_warning = 'purple'
+
+    def _mz_user_involved_in_next_activity(self):
+        """Whether the current user should see this lead's pre-RED-lock warning: the lead's
+        own owner always does; for a Meeting activity, so does anyone in its calendar
+        attendee list (e.g. a TL sitting in on an agent's call) - Calls/To-Dos have no
+        attendee list, so only the owner sees the warning for those."""
+        self.ensure_one()
+        u = self.env.user
+        if self.user_id == u:
+            return True
+        open_activities = self.activity_ids.filtered('active')
+        if not open_activities:
+            return False
+        next_activity = min(
+            open_activities,
+            key=lambda a: a._mz_resolve_activity_datetime() or fields.Datetime.now(),
+        )
+        return bool(
+            next_activity.calendar_event_id
+            and u.partner_id in next_activity.calendar_event_id.partner_ids
+        )
 
     @api.model_create_multi
     def create(self, vals_list):
@@ -116,10 +176,86 @@ class CrmLead(models.Model):
             raise AccessError(_("Deletion of leads is disabled for all roles. Please use the Archive Lead Wizard to archive leads."))
         return super(CrmLead, self).unlink()
 
+    # crm.team xmlid (unqualified, same module) -> (Team Lead-tier group, BU Manager-tier
+    # group) in mazenet_access_rights. Used to resolve RED-lock release authority: whoever
+    # holds the TL-tier group for the lead owner's team is their "head"; the Manager-tier
+    # group is the "superior" fallback. Both checks collapse into a single has_group() call
+    # per level because of how the groups module built implied_ids: Manager already implies
+    # TL (and CTO/Admin already implies every Manager), so "does this user hold the head
+    # group" is also true for anyone above the head - no separate "superior" check needed.
+    MZR_TEAM_TIER_GROUPS = {
+        'team_dmt': ('group_mzr_dmt_tl', 'group_mzr_dmt_manager'),
+        'team_tech': ('group_mzr_technology_tl', 'group_mzr_technology_manager'),
+        'team_swdev': ('group_mzr_software_tl', 'group_mzr_software_manager'),
+        'team_mis': ('group_mzr_mis_tl', 'group_mzr_mis_manager'),
+        'team_corp_hunter': ('group_mzr_hunter_tl', 'group_mzr_corporate_manager'),
+        'team_corp_am': ('group_mzr_account_manager_tl', 'group_mzr_corporate_manager'),
+        'team_corp_training': ('group_mzr_corporate_training_tl', 'group_mzr_corporate_manager'),
+        'team_corp_lms': ('group_mzr_lms_tl', 'group_mzr_corporate_manager'),
+        'team_corp_tnh': ('group_mzr_tnh_tl', 'group_mzr_corporate_manager'),
+        'team_tally_dev': ('group_mzr_tally_tl_development', 'group_tally_manager'),
+        'team_tally_sales': ('group_mzr_tally_tl_sales', 'group_tally_manager'),
+    }
+
+    def _mz_team_tier_groups(self):
+        """(tl_group, manager_group) xmlids (unqualified, mazenet_access_rights module) for
+        this lead's team, or None if the team isn't one we recognize."""
+        self.ensure_one()
+        if not self.team_id:
+            return None
+        for xmlid, chain in self.MZR_TEAM_TIER_GROUPS.items():
+            team = self.env.ref(f'mazenet_crm.{xmlid}', raise_if_not_found=False)
+            if team and team == self.team_id:
+                return chain
+        return None
+
+    def _mz_release_head_group(self):
+        """The mazenet_access_rights group whose members (directly, or via implied_ids from
+        a higher tier) are authorized to release this lead's RED lock - one tier above
+        whichever tier the lead's own owner holds. Returns None if the owner is themselves
+        at Manager-tier (their own lead: self-release, or CTO/Admin - handled by the callers,
+        not by a team group), or if the team/owner aren't recognized."""
+        self.ensure_one()
+        owner = self.user_id
+        chain = self._mz_team_tier_groups()
+        if not owner or not chain:
+            return False
+        tl_group, manager_group = chain
+        if owner.has_group(f'mazenet_access_rights.{manager_group}'):
+            return None
+        if owner.has_group(f'mazenet_access_rights.{tl_group}'):
+            return manager_group
+        return tl_group
+
+    def can_user_release_lock(self, target_user=None):
+        """Per the release policy: CTO/Admin always can; otherwise whoever holds the group
+        one tier above the lead owner's own tier (their "head", which - through implied_ids -
+        also covers anyone further up, their "superior"); a Manager's own lead is releasable
+        by that Manager themselves (self-release) besides CTO/Admin."""
+        self.ensure_one()
+        u = target_user or self.env.user
+        owner = self.user_id
+        if not owner:
+            return True
+        if self.env.su or u.has_group('mazenet_access_rights.group_mzr_cto_admin'):
+            return True
+        head_group = self._mz_release_head_group()
+        if head_group is None:
+            return owner == u
+        if not head_group:
+            return False
+        return u.has_group(f'mazenet_access_rights.{head_group}')
+
     def action_release_lock(self):
-        """Clears the RED lock, making the lead editable again. Available to anyone who
-        already has ordinary write access to the lead - no extra approval routing."""
+        """Clears the RED lock, making the lead editable again - only for whoever
+        can_user_release_lock() authorizes (the owner's head/superior, or CTO/Admin)."""
         for lead in self:
+            if not lead.can_user_release_lock():
+                raise AccessError(_(
+                    "You are not authorized to release the RED lock on lead '%s'. Only "
+                    "the owner's Team Lead/Manager (or CTO/Admin) can release it."
+                ) % lead.name)
+
             lead.write({'x_is_locked': False, 'x_lock_date': False})
             lead.message_post(body=_("RED lock released by %s. Lead is editable again.") % self.env.user.name)
 
@@ -176,32 +312,21 @@ class CrmLead(models.Model):
 
     @api.model
     def _cron_trigger_red_locks(self):
-        """Auto-trigger the RED lock on leads that are overdue - either by date (the
-        activity's due date has already passed) or, same-day, by time (a meeting activity
-        whose actual start time has already passed - e.g. a 12:15pm meeting is overdue at
-        12:16pm even though 'today' hasn't changed yet).
-
-        mail.activity.date_deadline is a Date field with no time component, so the
-        time-of-day only exists on the linked calendar.event (via calendar_event_id, added
-        by the 'calendar' module crm already depends on) for activities scheduled as
-        meetings, so that's what the same-day check reads."""
+        """Auto-trigger the RED lock on leads whose next activity's real moment
+        (x_next_activity_datetime - already resolved per-activity-type, see mail_activity.py)
+        is more than MZ_RED_LOCK_GRACE_MINUTES in the past. A 10:00 AM activity locks at
+        10:15, not the instant 10:00 passes - gives the owner a short window to still make
+        it before it counts against them."""
         now = fields.Datetime.now()
-        today = fields.Date.context_today(self)
+        cutoff = now - timedelta(minutes=MZ_RED_LOCK_GRACE_MINUTES)
 
-        overdue_activities = self.env['mail.activity'].sudo().search([
-            ('res_model', '=', 'crm.lead'),
-            '|',
-                ('date_deadline', '<', today),
-                '&', '&',
-                    ('date_deadline', '=', today),
-                    ('calendar_event_id', '!=', False),
-                    ('calendar_event_id.start', '<', now),
+        leads = self.sudo().search([
+            ('x_next_activity_datetime', '!=', False),
+            ('x_next_activity_datetime', '<', cutoff),
+            ('x_is_locked', '=', False),
+            ('active', '=', True),
+            ('user_id', '!=', False),
         ])
-        lead_ids = overdue_activities.mapped('res_id')
-
-        leads = self.sudo().browse(lead_ids).exists().filtered(
-            lambda l: not l.x_is_locked and l.active and l.user_id
-        )
         for lead in leads:
             lead.write({
                 'x_is_locked': True,

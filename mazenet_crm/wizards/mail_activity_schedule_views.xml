@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <!-- Adds a time picker next to the Due Date field, for Call / To-Do activities only -
+             Meeting-category activities are invisible here already (core 'calendar' module
+             hides date_deadline for them and redirects to the Calendar app's own event form,
+             which has its own real time picker). -->
+        <record id="mail_activity_schedule_view_form_inherit_mz" model="ir.ui.view">
+            <field name="name">mail.activity.schedule.form.inherit.mz</field>
+            <field name="model">mail.activity.schedule</field>
+            <field name="inherit_id" ref="mail.mail_activity_schedule_view_form"/>
+            <field name="arch" type="xml">
+                <xpath expr="//field[@name='date_deadline']" position="after">
+                    <field name="mz_activity_time" invisible="activity_category == 'meeting'"/>
+                </xpath>
+            </field>
+        </record>
+
+        <!-- Same field, on the popup used to edit/reschedule an EXISTING activity (clicking
+             an activity chip in the chatter) - the schedule wizard above only covers
+             creation. Rescheduling date_deadline without also being able to change the time
+             would silently go stale otherwise. -->
+        <record id="mail_activity_view_form_popup_inherit_mz" model="ir.ui.view">
+            <field name="name">mail.activity.view.form.popup.inherit.mz</field>
+            <field name="model">mail.activity</field>
+            <field name="inherit_id" ref="mail.mail_activity_view_form_popup"/>
+            <field name="arch" type="xml">
+                <xpath expr="//field[@name='date_deadline']" position="after">
+                    <field name="mz_activity_time" invisible="activity_category == 'meeting'"/>
+                </xpath>
+            </field>
+        </record>
+    </data>
+</odoo>

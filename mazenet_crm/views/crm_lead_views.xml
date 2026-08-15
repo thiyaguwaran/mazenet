@@ -7,8 +7,8 @@
             <field name="model">crm.lead</field>
             <field name="inherit_id" ref="crm.crm_lead_view_form"/>
             <field name="arch" type="xml">
-                <!-- Release button lives in the header (buttons stay clickable even though
-                     the sheet below is made readonly while locked) -->
+                <!-- Release button lives in the header, next to the (now hidden-while-locked)
+                     stage statusbar and Won/Lost/Convert buttons - see below. -->
                 <xpath expr="//header" position="inside">
                     <button name="action_release_lock" string="Release RED Lock" type="object"
                             class="btn-danger" invisible="not x_is_locked"
@@ -18,9 +18,32 @@
                 <!-- Whole sheet becomes read-only while x_is_locked is True. Server-side
                      write() enforcement (crm_lead.py) is the real guard; this is the UX
                      mirror of it so users see it as read-only rather than hitting a save
-                     error. Buttons are unaffected by the sheet's readonly modifier. -->
+                     error. -->
                 <xpath expr="//sheet" position="attributes">
                     <attribute name="readonly">x_is_locked</attribute>
+                </xpath>
+
+                <!-- The header (stage statusbar + Won/Lost/Convert/Restore buttons) sits
+                     OUTSIDE the sheet, so the readonly attribute above doesn't reach it -
+                     without this, those stayed fully clickable while locked (client-reported:
+                     "still able to edit the lead"). Server-side write() already rejects the
+                     resulting change either way, but a clickable-then-rejected control reads
+                     as broken, not as locked - hide them instead so the only header action
+                     available while locked is Release RED Lock itself. -->
+                <xpath expr="//field[@name='stage_id']" position="attributes">
+                    <attribute name="readonly">won_status == 'lost' or not active or x_is_locked</attribute>
+                </xpath>
+                <xpath expr="//button[@name='action_set_won_rainbowman']" position="attributes">
+                    <attribute name="invisible" add="x_is_locked" separator="or"/>
+                </xpath>
+                <xpath expr="//button[@name='%(crm.action_crm_lead2opportunity_partner)d']" position="attributes">
+                    <attribute name="invisible" add="x_is_locked" separator="or"/>
+                </xpath>
+                <xpath expr="//button[@name='action_restore']" position="attributes">
+                    <attribute name="invisible" add="x_is_locked" separator="or"/>
+                </xpath>
+                <xpath expr="//button[@name='%(crm.crm_lead_lost_action)d']" position="attributes">
+                    <attribute name="invisible" add="x_is_locked" separator="or"/>
                 </xpath>
 
                 <xpath expr="//field[@name='won_status']" position="before">
@@ -42,6 +65,7 @@
                 <xpath expr="//kanban" position="inside">
                     <field name="x_is_locked"/>
                     <field name="activity_state"/>
+                    <field name="x_activity_warning"/>
                 </xpath>
                 <xpath expr="//t[@t-name='card']/*[1]" position="before">
                     <!-- Small corner ribbon + a subtle tint/border (via kanban_red.css, keyed off
@@ -50,6 +74,12 @@
                          read as too aggressive for a simple overdue/locked indicator. -->
                     <widget name="web_ribbon" id="mz_red_lock_ribbon" title="Overdue" bg_color="text-bg-danger" invisible="not x_is_locked and activity_state != 'overdue'"/>
                     <span t-if="record.x_is_locked.raw_value or record.activity_state.raw_value == 'overdue'" class="mz-red-locked-card d-none"/>
+                    <!-- Pre-lock warnings (see crm_lead.py x_activity_warning): purple in the
+                         30-min window before the next activity, orange in the 10-min window -
+                         already scoped server-side to just the owner/attendees, so no extra
+                         invisible condition needed here beyond the field's own value. -->
+                    <span t-if="record.x_activity_warning.raw_value == 'purple'" class="mz-activity-purple-card d-none"/>
+                    <span t-if="record.x_activity_warning.raw_value == 'orange'" class="mz-activity-orange-card d-none"/>
                 </xpath>
             </field>
         </record>

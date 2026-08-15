@@ -23,3 +23,35 @@
         border-left-color: rgba(224, 122, 99, 0.6) !important;
     }
 }
+
+/* Pre-RED-lock warnings - same subtle tint/border treatment, one stage earlier: purple at
+   30 minutes out, orange at 10 minutes out. Only ever rendered for the lead's owner (or a
+   meeting's attendees) - see crm_lead.py _mz_user_involved_in_next_activity - so unlike the
+   red lock tint, other users browsing the same Pipeline won't see these at all. */
+.o_kanban_record:has(> .mz-activity-purple-card),
+.o_kanban_record_has_image:has(> .mz-activity-purple-card) {
+    background-color: rgba(142, 68, 173, 0.06) !important;
+    border-left: 3px solid rgba(142, 68, 173, 0.55) !important;
+    border-radius: 4px;
+}
+
+.o_kanban_record:has(> .mz-activity-orange-card),
+.o_kanban_record_has_image:has(> .mz-activity-orange-card) {
+    background-color: rgba(230, 126, 34, 0.08) !important;
+    border-left: 3px solid rgba(230, 126, 34, 0.6) !important;
+    border-radius: 4px;
+}
+
+@media (prefers-color-scheme: dark) {
+    .o_kanban_record:has(> .mz-activity-purple-card),
+    .o_kanban_record_has_image:has(> .mz-activity-purple-card) {
+        background-color: rgba(187, 143, 206, 0.14) !important;
+        border-left-color: rgba(187, 143, 206, 0.6) !important;
+    }
+
+    .o_kanban_record:has(> .mz-activity-orange-card),
+    .o_kanban_record_has_image:has(> .mz-activity-orange-card) {
+        background-color: rgba(240, 178, 122, 0.16) !important;
+        border-left-color: rgba(240, 178, 122, 0.65) !important;
+    }
+}
