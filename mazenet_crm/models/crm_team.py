@@ -13,3 +13,6 @@ class CrmTeam(models.Model):
         ('swdev', 'Software Dev'),
         ('mis', 'MIS'),
     ], string="BU Category", default='corp')
+
+    create_lead_id = fields.Many2one('res.users',
+    string='Create To',ondelete='set null',domain="[('id', 'in', member_ids)]")

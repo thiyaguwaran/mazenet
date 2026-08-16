@@ -50,6 +50,11 @@ class CrmLead(models.Model):
              "sort to the bottom (NULL last)."
     )
 
+
+    @api.onchange('team_id')
+    def assign_salesperson(self):
+        self.user_id = self.sudo().team_id.create_lead_id or False
+
     @api.depends(
         'activity_ids.date_deadline', 'activity_ids.calendar_event_id.start',
         'activity_ids.mz_activity_time', 'activity_ids.user_id', 'activity_ids.active',
