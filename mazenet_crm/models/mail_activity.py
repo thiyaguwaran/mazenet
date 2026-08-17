@@ -30,10 +30,20 @@ class MailActivity(models.Model):
         else date_deadline combined with mz_activity_time (localized in the responsible
         user's timezone), else date_deadline at MZ_DEFAULT_ACTIVITY_HOUR. Returns False if
         there's no date_deadline at all (activity_ids always require one, but be defensive).
+
+        Meeting-category activities are a special case: Odoo creates the mail.activity row
+        first and only attaches its calendar.event a moment later (once the user actually
+        picks a date/time on the calendar form). Applying MZ_DEFAULT_ACTIVITY_HOUR in that
+        gap would treat the activity as due at 9 AM on today's placeholder date_deadline -
+        which is very often already in the past - and can get it RED-locked by the cron
+        before the real meeting time is even known. So a meeting with no calendar event yet
+        returns False (not yet resolved) instead of guessing.
         """
         self.ensure_one()
         if self.calendar_event_id and self.calendar_event_id.start:
             return self.calendar_event_id.start
+        if self.activity_type_id.category == 'meeting':
+            return False
         if not self.date_deadline:
             return False
         hour = self.mz_activity_time or MZ_DEFAULT_ACTIVITY_HOUR
