@@ -332,6 +332,186 @@
         <record id="partner_mis_agent2" model="res.partner"><field name="name">MIS Agent 2</field></record>
         <record id="user_mis_agent2" model="res.users"><field name="name">MIS Agent 2</field><field name="login">mis.agent2@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_mis_agent2"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_mis_manager_direct_agent')])]"/></record>
 
+        <!-- ============================================================ -->
+        <!-- 4b. TL/ATL LAYER ADDITIONS PER v3.0 HIERARCHY SPREADSHEET (76) -->
+        <!-- ============================================================ -->
+
+        <!-- DMT TL/ATL layer (9 new) -->
+        <record id="partner_dmt_tl" model="res.partner"><field name="name">DMT TL</field></record>
+        <record id="user_dmt_tl" model="res.users"><field name="name">DMT TL</field><field name="login">dmt.tl@test.mazenet</field><field name="password">tl123</field><field name="partner_id" ref="partner_dmt_tl"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_dmt_tl')])]"/></record>
+        <record id="partner_dmt_tl_agent1" model="res.partner"><field name="name">DMT TL-Direct Agent 1</field></record>
+        <record id="user_dmt_tl_agent1" model="res.users"><field name="name">DMT TL-Direct Agent 1</field><field name="login">dmt.tl.agent1@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_dmt_tl_agent1"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_dmt_tl_direct_agent')])]"/></record>
+        <record id="partner_dmt_tl_agent2" model="res.partner"><field name="name">DMT TL-Direct Agent 2</field></record>
+        <record id="user_dmt_tl_agent2" model="res.users"><field name="name">DMT TL-Direct Agent 2</field><field name="login">dmt.tl.agent2@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_dmt_tl_agent2"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_dmt_tl_direct_agent')])]"/></record>
+        <record id="partner_dmt_atl1" model="res.partner"><field name="name">DMT ATL 1</field></record>
+        <record id="user_dmt_atl1" model="res.users"><field name="name">DMT ATL 1</field><field name="login">dmt.atl1@test.mazenet</field><field name="password">atl123</field><field name="partner_id" ref="partner_dmt_atl1"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_dmt_atl')])]"/></record>
+        <record id="partner_dmt_atl1_agent1" model="res.partner"><field name="name">DMT ATL-1 Agent 1</field></record>
+        <record id="user_dmt_atl1_agent1" model="res.users"><field name="name">DMT ATL-1 Agent 1</field><field name="login">dmt.atl1.agent1@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_dmt_atl1_agent1"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_dmt_agent')])]"/></record>
+        <record id="partner_dmt_atl1_agent2" model="res.partner"><field name="name">DMT ATL-1 Agent 2</field></record>
+        <record id="user_dmt_atl1_agent2" model="res.users"><field name="name">DMT ATL-1 Agent 2</field><field name="login">dmt.atl1.agent2@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_dmt_atl1_agent2"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_dmt_agent')])]"/></record>
+        <record id="partner_dmt_atl2" model="res.partner"><field name="name">DMT ATL 2</field></record>
+        <record id="user_dmt_atl2" model="res.users"><field name="name">DMT ATL 2</field><field name="login">dmt.atl2@test.mazenet</field><field name="password">atl123</field><field name="partner_id" ref="partner_dmt_atl2"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_dmt_atl')])]"/></record>
+        <record id="partner_dmt_atl2_agent1" model="res.partner"><field name="name">DMT ATL-2 Agent 1</field></record>
+        <record id="user_dmt_atl2_agent1" model="res.users"><field name="name">DMT ATL-2 Agent 1</field><field name="login">dmt.atl2.agent1@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_dmt_atl2_agent1"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_dmt_agent')])]"/></record>
+        <record id="partner_dmt_atl2_agent2" model="res.partner"><field name="name">DMT ATL-2 Agent 2</field></record>
+        <record id="user_dmt_atl2_agent2" model="res.users"><field name="name">DMT ATL-2 Agent 2</field><field name="login">dmt.atl2.agent2@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_dmt_atl2_agent2"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_dmt_agent')])]"/></record>
+
+        <!-- Technology TL/ATL layer (9 new) -->
+        <record id="partner_tech_tl" model="res.partner"><field name="name">Technology TL</field></record>
+        <record id="user_tech_tl" model="res.users"><field name="name">Technology TL</field><field name="login">tech.tl@test.mazenet</field><field name="password">tl123</field><field name="partner_id" ref="partner_tech_tl"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_technology_tl')])]"/></record>
+        <record id="partner_tech_tl_agent1" model="res.partner"><field name="name">Technology TL-Direct Agent 1</field></record>
+        <record id="user_tech_tl_agent1" model="res.users"><field name="name">Technology TL-Direct Agent 1</field><field name="login">tech.tl.agent1@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_tech_tl_agent1"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_technology_tl_direct_agent')])]"/></record>
+        <record id="partner_tech_tl_agent2" model="res.partner"><field name="name">Technology TL-Direct Agent 2</field></record>
+        <record id="user_tech_tl_agent2" model="res.users"><field name="name">Technology TL-Direct Agent 2</field><field name="login">tech.tl.agent2@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_tech_tl_agent2"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_technology_tl_direct_agent')])]"/></record>
+        <record id="partner_tech_atl1" model="res.partner"><field name="name">Technology ATL 1</field></record>
+        <record id="user_tech_atl1" model="res.users"><field name="name">Technology ATL 1</field><field name="login">tech.atl1@test.mazenet</field><field name="password">atl123</field><field name="partner_id" ref="partner_tech_atl1"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_technology_atl')])]"/></record>
+        <record id="partner_tech_atl1_agent1" model="res.partner"><field name="name">Technology ATL-1 Agent 1</field></record>
+        <record id="user_tech_atl1_agent1" model="res.users"><field name="name">Technology ATL-1 Agent 1</field><field name="login">tech.atl1.agent1@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_tech_atl1_agent1"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_technology_agent')])]"/></record>
+        <record id="partner_tech_atl1_agent2" model="res.partner"><field name="name">Technology ATL-1 Agent 2</field></record>
+        <record id="user_tech_atl1_agent2" model="res.users"><field name="name">Technology ATL-1 Agent 2</field><field name="login">tech.atl1.agent2@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_tech_atl1_agent2"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_technology_agent')])]"/></record>
+        <record id="partner_tech_atl2" model="res.partner"><field name="name">Technology ATL 2</field></record>
+        <record id="user_tech_atl2" model="res.users"><field name="name">Technology ATL 2</field><field name="login">tech.atl2@test.mazenet</field><field name="password">atl123</field><field name="partner_id" ref="partner_tech_atl2"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_technology_atl')])]"/></record>
+        <record id="partner_tech_atl2_agent1" model="res.partner"><field name="name">Technology ATL-2 Agent 1</field></record>
+        <record id="user_tech_atl2_agent1" model="res.users"><field name="name">Technology ATL-2 Agent 1</field><field name="login">tech.atl2.agent1@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_tech_atl2_agent1"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_technology_agent')])]"/></record>
+        <record id="partner_tech_atl2_agent2" model="res.partner"><field name="name">Technology ATL-2 Agent 2</field></record>
+        <record id="user_tech_atl2_agent2" model="res.users"><field name="name">Technology ATL-2 Agent 2</field><field name="login">tech.atl2.agent2@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_tech_atl2_agent2"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_technology_agent')])]"/></record>
+
+        <!-- SWDev TL/ATL layer (9 new) -->
+        <record id="partner_swdev_tl" model="res.partner"><field name="name">SWDev TL</field></record>
+        <record id="user_swdev_tl" model="res.users"><field name="name">SWDev TL</field><field name="login">swdev.tl@test.mazenet</field><field name="password">tl123</field><field name="partner_id" ref="partner_swdev_tl"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_software_tl')])]"/></record>
+        <record id="partner_swdev_tl_agent1" model="res.partner"><field name="name">SWDev TL-Direct Agent 1</field></record>
+        <record id="user_swdev_tl_agent1" model="res.users"><field name="name">SWDev TL-Direct Agent 1</field><field name="login">swdev.tl.agent1@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_swdev_tl_agent1"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_software_tl_direct_agent')])]"/></record>
+        <record id="partner_swdev_tl_agent2" model="res.partner"><field name="name">SWDev TL-Direct Agent 2</field></record>
+        <record id="user_swdev_tl_agent2" model="res.users"><field name="name">SWDev TL-Direct Agent 2</field><field name="login">swdev.tl.agent2@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_swdev_tl_agent2"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_software_tl_direct_agent')])]"/></record>
+        <record id="partner_swdev_atl1" model="res.partner"><field name="name">SWDev ATL 1</field></record>
+        <record id="user_swdev_atl1" model="res.users"><field name="name">SWDev ATL 1</field><field name="login">swdev.atl1@test.mazenet</field><field name="password">atl123</field><field name="partner_id" ref="partner_swdev_atl1"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_software_atl')])]"/></record>
+        <record id="partner_swdev_atl1_agent1" model="res.partner"><field name="name">SWDev ATL-1 Agent 1</field></record>
+        <record id="user_swdev_atl1_agent1" model="res.users"><field name="name">SWDev ATL-1 Agent 1</field><field name="login">swdev.atl1.agent1@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_swdev_atl1_agent1"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_software_agent')])]"/></record>
+        <record id="partner_swdev_atl1_agent2" model="res.partner"><field name="name">SWDev ATL-1 Agent 2</field></record>
+        <record id="user_swdev_atl1_agent2" model="res.users"><field name="name">SWDev ATL-1 Agent 2</field><field name="login">swdev.atl1.agent2@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_swdev_atl1_agent2"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_software_agent')])]"/></record>
+        <record id="partner_swdev_atl2" model="res.partner"><field name="name">SWDev ATL 2</field></record>
+        <record id="user_swdev_atl2" model="res.users"><field name="name">SWDev ATL 2</field><field name="login">swdev.atl2@test.mazenet</field><field name="password">atl123</field><field name="partner_id" ref="partner_swdev_atl2"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_software_atl')])]"/></record>
+        <record id="partner_swdev_atl2_agent1" model="res.partner"><field name="name">SWDev ATL-2 Agent 1</field></record>
+        <record id="user_swdev_atl2_agent1" model="res.users"><field name="name">SWDev ATL-2 Agent 1</field><field name="login">swdev.atl2.agent1@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_swdev_atl2_agent1"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_software_agent')])]"/></record>
+        <record id="partner_swdev_atl2_agent2" model="res.partner"><field name="name">SWDev ATL-2 Agent 2</field></record>
+        <record id="user_swdev_atl2_agent2" model="res.users"><field name="name">SWDev ATL-2 Agent 2</field><field name="login">swdev.atl2.agent2@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_swdev_atl2_agent2"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_software_agent')])]"/></record>
+
+        <!-- MIS TL/ATL layer (9 new) -->
+        <record id="partner_mis_tl" model="res.partner"><field name="name">MIS TL</field></record>
+        <record id="user_mis_tl" model="res.users"><field name="name">MIS TL</field><field name="login">mis.tl@test.mazenet</field><field name="password">tl123</field><field name="partner_id" ref="partner_mis_tl"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_mis_tl')])]"/></record>
+        <record id="partner_mis_tl_agent1" model="res.partner"><field name="name">MIS TL-Direct Agent 1</field></record>
+        <record id="user_mis_tl_agent1" model="res.users"><field name="name">MIS TL-Direct Agent 1</field><field name="login">mis.tl.agent1@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_mis_tl_agent1"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_mis_tl_direct_agent')])]"/></record>
+        <record id="partner_mis_tl_agent2" model="res.partner"><field name="name">MIS TL-Direct Agent 2</field></record>
+        <record id="user_mis_tl_agent2" model="res.users"><field name="name">MIS TL-Direct Agent 2</field><field name="login">mis.tl.agent2@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_mis_tl_agent2"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_mis_tl_direct_agent')])]"/></record>
+        <record id="partner_mis_atl1" model="res.partner"><field name="name">MIS ATL 1</field></record>
+        <record id="user_mis_atl1" model="res.users"><field name="name">MIS ATL 1</field><field name="login">mis.atl1@test.mazenet</field><field name="password">atl123</field><field name="partner_id" ref="partner_mis_atl1"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_mis_atl')])]"/></record>
+        <record id="partner_mis_atl1_agent1" model="res.partner"><field name="name">MIS ATL-1 Agent 1</field></record>
+        <record id="user_mis_atl1_agent1" model="res.users"><field name="name">MIS ATL-1 Agent 1</field><field name="login">mis.atl1.agent1@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_mis_atl1_agent1"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_mis_agent')])]"/></record>
+        <record id="partner_mis_atl1_agent2" model="res.partner"><field name="name">MIS ATL-1 Agent 2</field></record>
+        <record id="user_mis_atl1_agent2" model="res.users"><field name="name">MIS ATL-1 Agent 2</field><field name="login">mis.atl1.agent2@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_mis_atl1_agent2"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_mis_agent')])]"/></record>
+        <record id="partner_mis_atl2" model="res.partner"><field name="name">MIS ATL 2</field></record>
+        <record id="user_mis_atl2" model="res.users"><field name="name">MIS ATL 2</field><field name="login">mis.atl2@test.mazenet</field><field name="password">atl123</field><field name="partner_id" ref="partner_mis_atl2"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_mis_atl')])]"/></record>
+        <record id="partner_mis_atl2_agent1" model="res.partner"><field name="name">MIS ATL-2 Agent 1</field></record>
+        <record id="user_mis_atl2_agent1" model="res.users"><field name="name">MIS ATL-2 Agent 1</field><field name="login">mis.atl2.agent1@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_mis_atl2_agent1"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_mis_agent')])]"/></record>
+        <record id="partner_mis_atl2_agent2" model="res.partner"><field name="name">MIS ATL-2 Agent 2</field></record>
+        <record id="user_mis_atl2_agent2" model="res.users"><field name="name">MIS ATL-2 Agent 2</field><field name="login">mis.atl2.agent2@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_mis_atl2_agent2"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_mis_agent')])]"/></record>
+
+        <!-- Hunter ATL layer (6 new) -->
+        <record id="partner_hunter_atl1" model="res.partner"><field name="name">Hunter ATL 1</field></record>
+        <record id="user_hunter_atl1" model="res.users"><field name="name">Hunter ATL 1</field><field name="login">hunter.atl1@test.mazenet</field><field name="password">atl123</field><field name="partner_id" ref="partner_hunter_atl1"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_hunter_atl')])]"/></record>
+        <record id="partner_hunter_atl1_agent1" model="res.partner"><field name="name">Hunter ATL-1 Agent 1</field></record>
+        <record id="user_hunter_atl1_agent1" model="res.users"><field name="name">Hunter ATL-1 Agent 1</field><field name="login">hunter.atl1.agent1@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_hunter_atl1_agent1"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_hunter_agent')])]"/></record>
+        <record id="partner_hunter_atl1_agent2" model="res.partner"><field name="name">Hunter ATL-1 Agent 2</field></record>
+        <record id="user_hunter_atl1_agent2" model="res.users"><field name="name">Hunter ATL-1 Agent 2</field><field name="login">hunter.atl1.agent2@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_hunter_atl1_agent2"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_hunter_agent')])]"/></record>
+        <record id="partner_hunter_atl2" model="res.partner"><field name="name">Hunter ATL 2</field></record>
+        <record id="user_hunter_atl2" model="res.users"><field name="name">Hunter ATL 2</field><field name="login">hunter.atl2@test.mazenet</field><field name="password">atl123</field><field name="partner_id" ref="partner_hunter_atl2"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_hunter_atl')])]"/></record>
+        <record id="partner_hunter_atl2_agent1" model="res.partner"><field name="name">Hunter ATL-2 Agent 1</field></record>
+        <record id="user_hunter_atl2_agent1" model="res.users"><field name="name">Hunter ATL-2 Agent 1</field><field name="login">hunter.atl2.agent1@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_hunter_atl2_agent1"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_hunter_agent')])]"/></record>
+        <record id="partner_hunter_atl2_agent2" model="res.partner"><field name="name">Hunter ATL-2 Agent 2</field></record>
+        <record id="user_hunter_atl2_agent2" model="res.users"><field name="name">Hunter ATL-2 Agent 2</field><field name="login">hunter.atl2.agent2@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_hunter_atl2_agent2"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_hunter_agent')])]"/></record>
+
+        <!-- Account Manager ATL layer (6 new) -->
+        <record id="partner_am_atl1" model="res.partner"><field name="name">Account Manager ATL 1</field></record>
+        <record id="user_am_atl1" model="res.users"><field name="name">Account Manager ATL 1</field><field name="login">am.atl1@test.mazenet</field><field name="password">atl123</field><field name="partner_id" ref="partner_am_atl1"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_account_manager_atl')])]"/></record>
+        <record id="partner_am_atl1_agent1" model="res.partner"><field name="name">Account Manager ATL-1 Agent 1</field></record>
+        <record id="user_am_atl1_agent1" model="res.users"><field name="name">Account Manager ATL-1 Agent 1</field><field name="login">am.atl1.agent1@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_am_atl1_agent1"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_account_manager_agent')])]"/></record>
+        <record id="partner_am_atl1_agent2" model="res.partner"><field name="name">Account Manager ATL-1 Agent 2</field></record>
+        <record id="user_am_atl1_agent2" model="res.users"><field name="name">Account Manager ATL-1 Agent 2</field><field name="login">am.atl1.agent2@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_am_atl1_agent2"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_account_manager_agent')])]"/></record>
+        <record id="partner_am_atl2" model="res.partner"><field name="name">Account Manager ATL 2</field></record>
+        <record id="user_am_atl2" model="res.users"><field name="name">Account Manager ATL 2</field><field name="login">am.atl2@test.mazenet</field><field name="password">atl123</field><field name="partner_id" ref="partner_am_atl2"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_account_manager_atl')])]"/></record>
+        <record id="partner_am_atl2_agent1" model="res.partner"><field name="name">Account Manager ATL-2 Agent 1</field></record>
+        <record id="user_am_atl2_agent1" model="res.users"><field name="name">Account Manager ATL-2 Agent 1</field><field name="login">am.atl2.agent1@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_am_atl2_agent1"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_account_manager_agent')])]"/></record>
+        <record id="partner_am_atl2_agent2" model="res.partner"><field name="name">Account Manager ATL-2 Agent 2</field></record>
+        <record id="user_am_atl2_agent2" model="res.users"><field name="name">Account Manager ATL-2 Agent 2</field><field name="login">am.atl2.agent2@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_am_atl2_agent2"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_account_manager_agent')])]"/></record>
+
+        <!-- Corporate Training (9 new - previously unstaffed) -->
+        <record id="partner_train_tl" model="res.partner"><field name="name">Corporate Training TL</field></record>
+        <record id="user_train_tl" model="res.users"><field name="name">Corporate Training TL</field><field name="login">train.tl@test.mazenet</field><field name="password">tl123</field><field name="partner_id" ref="partner_train_tl"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_corporate_training_tl')])]"/></record>
+        <record id="partner_train_tl_agent1" model="res.partner"><field name="name">Corporate Training TL-Direct Agent 1</field></record>
+        <record id="user_train_tl_agent1" model="res.users"><field name="name">Corporate Training TL-Direct Agent 1</field><field name="login">train.tl.agent1@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_train_tl_agent1"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_corporate_training_tl_direct_agent')])]"/></record>
+        <record id="partner_train_tl_agent2" model="res.partner"><field name="name">Corporate Training TL-Direct Agent 2</field></record>
+        <record id="user_train_tl_agent2" model="res.users"><field name="name">Corporate Training TL-Direct Agent 2</field><field name="login">train.tl.agent2@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_train_tl_agent2"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_corporate_training_tl_direct_agent')])]"/></record>
+        <record id="partner_train_atl1" model="res.partner"><field name="name">Corporate Training ATL 1</field></record>
+        <record id="user_train_atl1" model="res.users"><field name="name">Corporate Training ATL 1</field><field name="login">train.atl1@test.mazenet</field><field name="password">atl123</field><field name="partner_id" ref="partner_train_atl1"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_corporate_training_atl')])]"/></record>
+        <record id="partner_train_atl1_agent1" model="res.partner"><field name="name">Corporate Training ATL-1 Agent 1</field></record>
+        <record id="user_train_atl1_agent1" model="res.users"><field name="name">Corporate Training ATL-1 Agent 1</field><field name="login">train.atl1.agent1@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_train_atl1_agent1"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_corporate_training_agent')])]"/></record>
+        <record id="partner_train_atl1_agent2" model="res.partner"><field name="name">Corporate Training ATL-1 Agent 2</field></record>
+        <record id="user_train_atl1_agent2" model="res.users"><field name="name">Corporate Training ATL-1 Agent 2</field><field name="login">train.atl1.agent2@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_train_atl1_agent2"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_corporate_training_agent')])]"/></record>
+        <record id="partner_train_atl2" model="res.partner"><field name="name">Corporate Training ATL 2</field></record>
+        <record id="user_train_atl2" model="res.users"><field name="name">Corporate Training ATL 2</field><field name="login">train.atl2@test.mazenet</field><field name="password">atl123</field><field name="partner_id" ref="partner_train_atl2"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_corporate_training_atl')])]"/></record>
+        <record id="partner_train_atl2_agent1" model="res.partner"><field name="name">Corporate Training ATL-2 Agent 1</field></record>
+        <record id="user_train_atl2_agent1" model="res.users"><field name="name">Corporate Training ATL-2 Agent 1</field><field name="login">train.atl2.agent1@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_train_atl2_agent1"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_corporate_training_agent')])]"/></record>
+        <record id="partner_train_atl2_agent2" model="res.partner"><field name="name">Corporate Training ATL-2 Agent 2</field></record>
+        <record id="user_train_atl2_agent2" model="res.users"><field name="name">Corporate Training ATL-2 Agent 2</field><field name="login">train.atl2.agent2@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_train_atl2_agent2"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_corporate_training_agent')])]"/></record>
+
+        <!-- LMS ATL layer (6 new) -->
+        <record id="partner_lms_atl1" model="res.partner"><field name="name">LMS ATL 1</field></record>
+        <record id="user_lms_atl1" model="res.users"><field name="name">LMS ATL 1</field><field name="login">lms.atl1@test.mazenet</field><field name="password">atl123</field><field name="partner_id" ref="partner_lms_atl1"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_lms_atl')])]"/></record>
+        <record id="partner_lms_atl1_agent1" model="res.partner"><field name="name">LMS ATL-1 Agent 1</field></record>
+        <record id="user_lms_atl1_agent1" model="res.users"><field name="name">LMS ATL-1 Agent 1</field><field name="login">lms.atl1.agent1@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_lms_atl1_agent1"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_lms_agent')])]"/></record>
+        <record id="partner_lms_atl1_agent2" model="res.partner"><field name="name">LMS ATL-1 Agent 2</field></record>
+        <record id="user_lms_atl1_agent2" model="res.users"><field name="name">LMS ATL-1 Agent 2</field><field name="login">lms.atl1.agent2@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_lms_atl1_agent2"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_lms_agent')])]"/></record>
+        <record id="partner_lms_atl2" model="res.partner"><field name="name">LMS ATL 2</field></record>
+        <record id="user_lms_atl2" model="res.users"><field name="name">LMS ATL 2</field><field name="login">lms.atl2@test.mazenet</field><field name="password">atl123</field><field name="partner_id" ref="partner_lms_atl2"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_lms_atl')])]"/></record>
+        <record id="partner_lms_atl2_agent1" model="res.partner"><field name="name">LMS ATL-2 Agent 1</field></record>
+        <record id="user_lms_atl2_agent1" model="res.users"><field name="name">LMS ATL-2 Agent 1</field><field name="login">lms.atl2.agent1@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_lms_atl2_agent1"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_lms_agent')])]"/></record>
+        <record id="partner_lms_atl2_agent2" model="res.partner"><field name="name">LMS ATL-2 Agent 2</field></record>
+        <record id="user_lms_atl2_agent2" model="res.users"><field name="name">LMS ATL-2 Agent 2</field><field name="login">lms.atl2.agent2@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_lms_atl2_agent2"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_lms_agent')])]"/></record>
+
+        <!-- TNH TL-direct agents (2 new) -->
+        <record id="partner_tnh_tl_agent1" model="res.partner"><field name="name">TNH TL-Direct Agent 1</field></record>
+        <record id="user_tnh_tl_agent1" model="res.users"><field name="name">TNH TL-Direct Agent 1</field><field name="login">tnh.tl.agent1@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_tnh_tl_agent1"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_tnh_tl_direct_agent')])]"/></record>
+        <record id="partner_tnh_tl_agent2" model="res.partner"><field name="name">TNH TL-Direct Agent 2</field></record>
+        <record id="user_tnh_tl_agent2" model="res.users"><field name="name">TNH TL-Direct Agent 2</field><field name="login">tnh.tl.agent2@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_tnh_tl_agent2"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_tnh_tl_direct_agent')])]"/></record>
+
+        <!-- Corporate BU Manager direct agents (2 new) -->
+        <record id="partner_corp_mgr_agent1" model="res.partner"><field name="name">Corporate Agent (Mgr-Direct 1)</field></record>
+        <record id="user_corp_mgr_agent1" model="res.users"><field name="name">Corporate Agent (Mgr-Direct 1)</field><field name="login">corp.mgr.agent1@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_corp_mgr_agent1"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_corporate_manager_direct_agent')])]"/></record>
+        <record id="partner_corp_mgr_agent2" model="res.partner"><field name="name">Corporate Agent (Mgr-Direct 2)</field></record>
+        <record id="user_corp_mgr_agent2" model="res.users"><field name="name">Corporate Agent (Mgr-Direct 2)</field><field name="login">corp.mgr.agent2@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_corp_mgr_agent2"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_corporate_manager_direct_agent')])]"/></record>
+
+        <!-- Tally Sales-branch ATL layer (6 new) -->
+        <record id="partner_tally_sales_atl1" model="res.partner"><field name="name">Tally Sales ATL 1</field></record>
+        <record id="user_tally_sales_atl1" model="res.users"><field name="name">Tally Sales ATL 1</field><field name="login">tally.sales.atl1@test.mazenet</field><field name="password">atl123</field><field name="partner_id" ref="partner_tally_sales_atl1"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_tally_atl_sales')])]"/></record>
+        <record id="partner_tally_sales_atl1_agent1" model="res.partner"><field name="name">Tally Sales ATL-1 Agent 1</field></record>
+        <record id="user_tally_sales_atl1_agent1" model="res.users"><field name="name">Tally Sales ATL-1 Agent 1</field><field name="login">tally.sales.atl1.agent1@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_tally_sales_atl1_agent1"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_tally_atl_agents_sales')])]"/></record>
+        <record id="partner_tally_sales_atl1_agent2" model="res.partner"><field name="name">Tally Sales ATL-1 Agent 2</field></record>
+        <record id="user_tally_sales_atl1_agent2" model="res.users"><field name="name">Tally Sales ATL-1 Agent 2</field><field name="login">tally.sales.atl1.agent2@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_tally_sales_atl1_agent2"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_tally_atl_agents_sales')])]"/></record>
+        <record id="partner_tally_sales_atl2" model="res.partner"><field name="name">Tally Sales ATL 2</field></record>
+        <record id="user_tally_sales_atl2" model="res.users"><field name="name">Tally Sales ATL 2</field><field name="login">tally.sales.atl2@test.mazenet</field><field name="password">atl123</field><field name="partner_id" ref="partner_tally_sales_atl2"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_tally_atl_sales')])]"/></record>
+        <record id="partner_tally_sales_atl2_agent1" model="res.partner"><field name="name">Tally Sales ATL-2 Agent 1</field></record>
+        <record id="user_tally_sales_atl2_agent1" model="res.users"><field name="name">Tally Sales ATL-2 Agent 1</field><field name="login">tally.sales.atl2.agent1@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_tally_sales_atl2_agent1"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_tally_atl_agents_sales')])]"/></record>
+        <record id="partner_tally_sales_atl2_agent2" model="res.partner"><field name="name">Tally Sales ATL-2 Agent 2</field></record>
+        <record id="user_tally_sales_atl2_agent2" model="res.users"><field name="name">Tally Sales ATL-2 Agent 2</field><field name="login">tally.sales.atl2.agent2@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_tally_sales_atl2_agent2"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_tally_atl_agents_sales')])]"/></record>
+
+        <!-- Tally Dev-branch 2nd ATL (3 new) -->
+        <record id="partner_tally_dev_atl2" model="res.partner"><field name="name">Tally Dev ATL 2</field></record>
+        <record id="user_tally_dev_atl2" model="res.users"><field name="name">Tally Dev ATL 2</field><field name="login">tally.dev.atl2@test.mazenet</field><field name="password">atl123</field><field name="partner_id" ref="partner_tally_dev_atl2"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_tally_atl_dev')])]"/></record>
+        <record id="partner_tally_dev_atl2_agent1" model="res.partner"><field name="name">Tally Dev ATL-2 Agent 1</field></record>
+        <record id="user_tally_dev_atl2_agent1" model="res.users"><field name="name">Tally Dev ATL-2 Agent 1</field><field name="login">tally.dev.atl2.agent1@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_tally_dev_atl2_agent1"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_tally_atl_agents_dev')])]"/></record>
+        <record id="partner_tally_dev_atl2_agent2" model="res.partner"><field name="name">Tally Dev ATL-2 Agent 2</field></record>
+        <record id="user_tally_dev_atl2_agent2" model="res.users"><field name="name">Tally Dev ATL-2 Agent 2</field><field name="login">tally.dev.atl2.agent2@test.mazenet</field><field name="password">agent123</field><field name="partner_id" ref="partner_tally_dev_atl2_agent2"/><field name="group_ids" eval="[(6, 0, [ref('base.group_user'), ref('mazenet_access_rights.group_mzr_tally_atl_agents_dev')])]"/></record>
+
 
         <!-- All @test.mazenet demo users get in-app Inbox notifications rather than
              Odoo's email-based default, so RED lock alerts (message_notify) show up as a
@@ -350,7 +530,12 @@
 
         <record id="mazenet_crm.team_dmt" model="crm.team">
             <field name="user_id" ref="user_dmt_mgr"/>
-            <field name="member_ids" eval="[(6, 0, [ref('user_dmt_agent1'), ref('user_dmt_agent2')])]"/>
+            <field name="member_ids" eval="[(6, 0, [
+                ref('user_dmt_agent1'), ref('user_dmt_agent2'),
+                ref('user_dmt_tl'), ref('user_dmt_tl_agent1'), ref('user_dmt_tl_agent2'),
+                ref('user_dmt_atl1'), ref('user_dmt_atl1_agent1'), ref('user_dmt_atl1_agent2'),
+                ref('user_dmt_atl2'), ref('user_dmt_atl2_agent1'), ref('user_dmt_atl2_agent2')
+            ])]"/>
         </record>
 
         <!-- Tally BU Manager oversees both branches. TL-1 is the Sales branch, TL-2 (plus
@@ -362,7 +547,9 @@
             <field name="member_ids" eval="[(6, 0, [
                 ref('user_tally_tl1'),
                 ref('user_tally_tl1_agent1'), ref('user_tally_tl1_agent2'),
-                ref('user_tally_direct1')
+                ref('user_tally_direct1'),
+                ref('user_tally_sales_atl1'), ref('user_tally_sales_atl1_agent1'), ref('user_tally_sales_atl1_agent2'),
+                ref('user_tally_sales_atl2'), ref('user_tally_sales_atl2_agent1'), ref('user_tally_sales_atl2_agent2')
             ])]"/>
         </record>
 
@@ -372,7 +559,8 @@
                 ref('user_tally_tl2'), ref('user_tally_atl'),
                 ref('user_tally_tl2_agent1'), ref('user_tally_tl2_agent2'),
                 ref('user_tally_atl_agent1'), ref('user_tally_atl_agent2'),
-                ref('user_tally_direct2')
+                ref('user_tally_direct2'),
+                ref('user_tally_dev_atl2'), ref('user_tally_dev_atl2_agent1'), ref('user_tally_dev_atl2_agent2')
             ])]"/>
         </record>
 
@@ -381,7 +569,10 @@
             <field name="member_ids" eval="[(6, 0, [
                 ref('user_hunter_tl1'), ref('user_hunter_tl2'),
                 ref('user_hunter_tl1_agent1'), ref('user_hunter_tl1_agent2'),
-                ref('user_hunter_tl2_agent1'), ref('user_hunter_tl2_agent2')
+                ref('user_hunter_tl2_agent1'), ref('user_hunter_tl2_agent2'),
+                ref('user_hunter_atl1'), ref('user_hunter_atl1_agent1'), ref('user_hunter_atl1_agent2'),
+                ref('user_hunter_atl2'), ref('user_hunter_atl2_agent1'), ref('user_hunter_atl2_agent2'),
+                ref('user_corp_mgr_agent1'), ref('user_corp_mgr_agent2')
             ])]"/>
         </record>
 
@@ -390,14 +581,18 @@
             <field name="member_ids" eval="[(6, 0, [
                 ref('user_am_tl1'), ref('user_am_tl2'),
                 ref('user_am_tl1_agent1'), ref('user_am_tl1_agent2'),
-                ref('user_am_tl2_agent1'), ref('user_am_tl2_agent2')
+                ref('user_am_tl2_agent1'), ref('user_am_tl2_agent2'),
+                ref('user_am_atl1'), ref('user_am_atl1_agent1'), ref('user_am_atl1_agent2'),
+                ref('user_am_atl2'), ref('user_am_atl2_agent1'), ref('user_am_atl2_agent2')
             ])]"/>
         </record>
 
         <record id="mazenet_crm.team_corp_lms" model="crm.team">
             <field name="user_id" ref="user_corp_mgr"/>
             <field name="member_ids" eval="[(6, 0, [
-                ref('user_lms_tl'), ref('user_lms_tl_agent1'), ref('user_lms_tl_agent2')
+                ref('user_lms_tl'), ref('user_lms_tl_agent1'), ref('user_lms_tl_agent2'),
+                ref('user_lms_atl1'), ref('user_lms_atl1_agent1'), ref('user_lms_atl1_agent2'),
+                ref('user_lms_atl2'), ref('user_lms_atl2_agent1'), ref('user_lms_atl2_agent2')
             ])]"/>
         </record>
 
@@ -407,29 +602,50 @@
                 ref('user_tnh_tl'), ref('user_tnh_atl1'), ref('user_tnh_atl2'), ref('user_tnh_atl3'),
                 ref('user_tnh_atl1_agent1'), ref('user_tnh_atl1_agent2'),
                 ref('user_tnh_atl2_agent1'), ref('user_tnh_atl2_agent2'),
-                ref('user_tnh_atl3_agent1'), ref('user_tnh_atl3_agent2')
+                ref('user_tnh_atl3_agent1'), ref('user_tnh_atl3_agent2'),
+                ref('user_tnh_tl_agent1'), ref('user_tnh_tl_agent2')
             ])]"/>
         </record>
 
-        <!-- New team per mazenet_access_rights, not yet in the signed annexure - leader
-             only for now, no members staffed yet. -->
+        <!-- New team per mazenet_access_rights, not yet in the signed annexure - now
+             staffed with a full TL/ATL layer per the v3.0 hierarchy spreadsheet. -->
         <record id="mazenet_crm.team_corp_training" model="crm.team">
             <field name="user_id" ref="user_corp_mgr"/>
+            <field name="member_ids" eval="[(6, 0, [
+                ref('user_train_tl'), ref('user_train_tl_agent1'), ref('user_train_tl_agent2'),
+                ref('user_train_atl1'), ref('user_train_atl1_agent1'), ref('user_train_atl1_agent2'),
+                ref('user_train_atl2'), ref('user_train_atl2_agent1'), ref('user_train_atl2_agent2')
+            ])]"/>
         </record>
 
         <record id="mazenet_crm.team_tech" model="crm.team">
             <field name="user_id" ref="user_tech_mgr"/>
-            <field name="member_ids" eval="[(6, 0, [ref('user_tech_agent1'), ref('user_tech_agent2')])]"/>
+            <field name="member_ids" eval="[(6, 0, [
+                ref('user_tech_agent1'), ref('user_tech_agent2'),
+                ref('user_tech_tl'), ref('user_tech_tl_agent1'), ref('user_tech_tl_agent2'),
+                ref('user_tech_atl1'), ref('user_tech_atl1_agent1'), ref('user_tech_atl1_agent2'),
+                ref('user_tech_atl2'), ref('user_tech_atl2_agent1'), ref('user_tech_atl2_agent2')
+            ])]"/>
         </record>
 
         <record id="mazenet_crm.team_swdev" model="crm.team">
             <field name="user_id" ref="user_swdev_mgr"/>
-            <field name="member_ids" eval="[(6, 0, [ref('user_swdev_agent1'), ref('user_swdev_agent2')])]"/>
+            <field name="member_ids" eval="[(6, 0, [
+                ref('user_swdev_agent1'), ref('user_swdev_agent2'),
+                ref('user_swdev_tl'), ref('user_swdev_tl_agent1'), ref('user_swdev_tl_agent2'),
+                ref('user_swdev_atl1'), ref('user_swdev_atl1_agent1'), ref('user_swdev_atl1_agent2'),
+                ref('user_swdev_atl2'), ref('user_swdev_atl2_agent1'), ref('user_swdev_atl2_agent2')
+            ])]"/>
         </record>
 
         <record id="mazenet_crm.team_mis" model="crm.team">
             <field name="user_id" ref="user_mis_mgr"/>
-            <field name="member_ids" eval="[(6, 0, [ref('user_mis_agent1'), ref('user_mis_agent2')])]"/>
+            <field name="member_ids" eval="[(6, 0, [
+                ref('user_mis_agent1'), ref('user_mis_agent2'),
+                ref('user_mis_tl'), ref('user_mis_tl_agent1'), ref('user_mis_tl_agent2'),
+                ref('user_mis_atl1'), ref('user_mis_atl1_agent1'), ref('user_mis_atl1_agent2'),
+                ref('user_mis_atl2'), ref('user_mis_atl2_agent1'), ref('user_mis_atl2_agent2')
+            ])]"/>
         </record>
 
 
