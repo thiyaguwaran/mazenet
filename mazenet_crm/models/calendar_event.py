@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-from odoo import models, fields, api
+from odoo import models, fields, api, _
+from odoo.exceptions import UserError
 
 
 class CalendarEvent(models.Model):
@@ -21,16 +22,31 @@ class CalendarEvent(models.Model):
     @api.model_create_multi
     def create(self, vals_list):
         events = super().create(vals_list)
+        events._mz_check_not_scheduled_in_past()
         events._attach_mz_reminders()
         return events
 
     def write(self, vals):
         res = super().write(vals)
+        if 'start' in vals:
+            self._mz_check_not_scheduled_in_past()
         if 'res_model' in vals or 'res_id' in vals:
             self._attach_mz_reminders()
         if vals.get('x_meeting_status') == 'done':
             self._complete_linked_crm_activities()
         return res
+
+    def _mz_check_not_scheduled_in_past(self):
+        """Reject scheduling/moving a CRM-lead meeting to a start time that's already
+        passed - mirrors the same rule enforced for Call/To-Do activities in
+        mail_activity.py's _mz_check_not_scheduled_in_past. Scoped to res_model ==
+        'crm.lead' so it doesn't affect general calendar usage outside the CRM."""
+        now = fields.Datetime.now()
+        for event in self:
+            if event.res_model == 'crm.lead' and event.start and event.start < now:
+                raise UserError(_(
+                    "Can't schedule '%s' in the past. Pick a date/time that hasn't passed yet."
+                ) % event.name)
 
     def _attach_mz_reminders(self):
         """Auto-attach the 30/10-minute popup reminders to meetings scheduled from a CRM
