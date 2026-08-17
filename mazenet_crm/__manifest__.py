@@ -20,7 +20,7 @@ Mazenet CRM - Pipeline Customizations
     'data': [
         'security/ir.model.access.csv',
         'data/teams.xml',
-        'data/stages.xml',
+        # 'data/stages.xml',
         'security/record_rules.xml',
         'data/cron.xml',
         'data/alarms.xml',
@@ -29,7 +29,7 @@ Mazenet CRM - Pipeline Customizations
         'views/calendar_event_views.xml',
         'wizards/archive_wizard_views.xml',
         'wizards/mail_activity_schedule_views.xml',
-        'demo/demo_data.xml',
+        # 'demo/demo_data.xml',
     ],
     'assets': {
         'web.assets_backend': [

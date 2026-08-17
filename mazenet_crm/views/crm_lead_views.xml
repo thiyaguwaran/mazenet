@@ -15,12 +15,21 @@
                             confirm="Release the RED lock on this lead? It will become editable again."/>
                 </xpath>
 
+
+
                 <!-- Whole sheet becomes read-only while x_is_locked is True. Server-side
                      write() enforcement (crm_lead.py) is the real guard; this is the UX
                      mirror of it so users see it as read-only rather than hitting a save
                      error. -->
                 <xpath expr="//sheet" position="attributes">
                     <attribute name="readonly">x_is_locked</attribute>
+                </xpath>
+
+                <xpath expr="//field[@name='user_id']" position="attributes">
+                    <attribute name="readonly">1</attribute>
+                </xpath>
+                <xpath expr="//field[@name='user_id']" position="before">
+                    <field name="team_id" required="1"/>
                 </xpath>
 
                 <!-- The header (stage statusbar + Won/Lost/Convert/Restore buttons) sits
