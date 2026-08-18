@@ -116,6 +116,8 @@ class CrmLead(models.Model):
         if self.x_assign_type == 'self':
             self.user_id = self.env.user
             return
+        if self.x_assign_type == 'team':
+            self.user_id = self.team_id.create_lead_id and self.team_id.create_lead_id[0] or False
         if not self.x_can_assign_beyond_self:
             # Agents (and anyone with no recognized mazenet_access_rights role) can
             # only assign to themselves - bounce back to Self rather than leave them
@@ -129,8 +131,8 @@ class CrmLead(models.Model):
                               "or assign internally. Agents can only assign to themselves."),
             }}
         # 'team' or 'internal': hand-picked from x_assignable_user_ids.
-        if self.user_id not in self.x_assignable_user_ids:
-            self.user_id = False
+        # if self.user_id not in self.x_assignable_user_ids:
+        #     self.user_id = False
 
     @api.depends(
         'activity_ids.date_deadline', 'activity_ids.calendar_event_id.start',
