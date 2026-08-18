@@ -21,13 +21,13 @@
         </record>
         <record id="team_technology" model="crm.team">
             <field name="name">Technology</field>
-            <field name="x_bu_category"></field>
+            <field name="x_bu_category">tech</field>
             <field name="use_leads">True</field>
             <field name="use_opportunities">True</field>
         </record>
         <record id="team_software" model="crm.team">
             <field name="name">Software</field>
-            <field name="x_bu_category"></field>
+            <field name="x_bu_category">swdev</field>
             <field name="use_leads">True</field>
             <field name="use_opportunities">True</field>
         </record>

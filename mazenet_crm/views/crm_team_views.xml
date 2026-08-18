@@ -8,7 +8,8 @@
             <field name="arch" type="xml">
                 <xpath expr="//field[@name='user_id']" position="after">
                     <field name="x_bu_category"/>
-                    <field name="create_lead_id" string="Create Lead To"/>
+                    <field name="create_lead_id" string="Create Lead To" widget="many2many_tags"/>
+                    <field name="privelege_ids" string="Privileges" widget="many2many_tags"/>
                 </xpath>
             </field>
         </record>

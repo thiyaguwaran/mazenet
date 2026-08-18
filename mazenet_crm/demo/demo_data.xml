@@ -538,24 +538,20 @@
             ])]"/>
         </record>
 
-        <!-- Tally BU Manager oversees both branches. TL-1 is the Sales branch, TL-2 (plus
-             the ATL under it) is the Development branch - matching each user's group_ids
-             above (group_mzr_tally_tl_sales / group_mzr_tally_tl_development). The two
-             Manager-Direct agents are split one per branch for demo variety. -->
-        <record id="mazenet_crm.team_tally_sales" model="crm.team">
+        <!-- Tally BU Manager oversees both branches, now consolidated into one
+             team_tally crm.team (teams.xml) - member_ids is the union of what were
+             previously the separate Sales-branch and Development-branch teams.
+             TL-1 is the Sales branch, TL-2 (plus the ATL under it) is the
+             Development branch - matching each user's group_ids above
+             (group_mzr_tally_tl_sales / group_mzr_tally_tl_development). -->
+        <record id="mazenet_crm.team_tally" model="crm.team">
             <field name="user_id" ref="user_tally_mgr"/>
             <field name="member_ids" eval="[(6, 0, [
                 ref('user_tally_tl1'),
                 ref('user_tally_tl1_agent1'), ref('user_tally_tl1_agent2'),
                 ref('user_tally_direct1'),
                 ref('user_tally_sales_atl1'), ref('user_tally_sales_atl1_agent1'), ref('user_tally_sales_atl1_agent2'),
-                ref('user_tally_sales_atl2'), ref('user_tally_sales_atl2_agent1'), ref('user_tally_sales_atl2_agent2')
-            ])]"/>
-        </record>
-
-        <record id="mazenet_crm.team_tally_dev" model="crm.team">
-            <field name="user_id" ref="user_tally_mgr"/>
-            <field name="member_ids" eval="[(6, 0, [
+                ref('user_tally_sales_atl2'), ref('user_tally_sales_atl2_agent1'), ref('user_tally_sales_atl2_agent2'),
                 ref('user_tally_tl2'), ref('user_tally_atl'),
                 ref('user_tally_tl2_agent1'), ref('user_tally_tl2_agent2'),
                 ref('user_tally_atl_agent1'), ref('user_tally_atl_agent2'),
@@ -564,7 +560,12 @@
             ])]"/>
         </record>
 
-        <record id="mazenet_crm.team_corp_hunter" model="crm.team">
+        <!-- Corporate BU Manager oversees all 5 former sub-teams (Hunter, Account
+             Manager, LMS, TNH, Training), now consolidated into one team_corporate
+             crm.team (teams.xml) - member_ids is the union of all 5. Each sub-team's
+             own TL/ATL group isolation (mazenet_access_rights) is unaffected; only
+             crm.team-level grouping was collapsed. -->
+        <record id="mazenet_crm.team_corporate" model="crm.team">
             <field name="user_id" ref="user_corp_mgr"/>
             <field name="member_ids" eval="[(6, 0, [
                 ref('user_hunter_tl1'), ref('user_hunter_tl2'),
@@ -572,53 +573,27 @@
                 ref('user_hunter_tl2_agent1'), ref('user_hunter_tl2_agent2'),
                 ref('user_hunter_atl1'), ref('user_hunter_atl1_agent1'), ref('user_hunter_atl1_agent2'),
                 ref('user_hunter_atl2'), ref('user_hunter_atl2_agent1'), ref('user_hunter_atl2_agent2'),
-                ref('user_corp_mgr_agent1'), ref('user_corp_mgr_agent2')
-            ])]"/>
-        </record>
-
-        <record id="mazenet_crm.team_corp_am" model="crm.team">
-            <field name="user_id" ref="user_corp_mgr"/>
-            <field name="member_ids" eval="[(6, 0, [
+                ref('user_corp_mgr_agent1'), ref('user_corp_mgr_agent2'),
                 ref('user_am_tl1'), ref('user_am_tl2'),
                 ref('user_am_tl1_agent1'), ref('user_am_tl1_agent2'),
                 ref('user_am_tl2_agent1'), ref('user_am_tl2_agent2'),
                 ref('user_am_atl1'), ref('user_am_atl1_agent1'), ref('user_am_atl1_agent2'),
-                ref('user_am_atl2'), ref('user_am_atl2_agent1'), ref('user_am_atl2_agent2')
-            ])]"/>
-        </record>
-
-        <record id="mazenet_crm.team_corp_lms" model="crm.team">
-            <field name="user_id" ref="user_corp_mgr"/>
-            <field name="member_ids" eval="[(6, 0, [
+                ref('user_am_atl2'), ref('user_am_atl2_agent1'), ref('user_am_atl2_agent2'),
                 ref('user_lms_tl'), ref('user_lms_tl_agent1'), ref('user_lms_tl_agent2'),
                 ref('user_lms_atl1'), ref('user_lms_atl1_agent1'), ref('user_lms_atl1_agent2'),
-                ref('user_lms_atl2'), ref('user_lms_atl2_agent1'), ref('user_lms_atl2_agent2')
-            ])]"/>
-        </record>
-
-        <record id="mazenet_crm.team_corp_tnh" model="crm.team">
-            <field name="user_id" ref="user_corp_mgr"/>
-            <field name="member_ids" eval="[(6, 0, [
+                ref('user_lms_atl2'), ref('user_lms_atl2_agent1'), ref('user_lms_atl2_agent2'),
                 ref('user_tnh_tl'), ref('user_tnh_atl1'), ref('user_tnh_atl2'), ref('user_tnh_atl3'),
                 ref('user_tnh_atl1_agent1'), ref('user_tnh_atl1_agent2'),
                 ref('user_tnh_atl2_agent1'), ref('user_tnh_atl2_agent2'),
                 ref('user_tnh_atl3_agent1'), ref('user_tnh_atl3_agent2'),
-                ref('user_tnh_tl_agent1'), ref('user_tnh_tl_agent2')
-            ])]"/>
-        </record>
-
-        <!-- New team per mazenet_access_rights, not yet in the signed annexure - now
-             staffed with a full TL/ATL layer per the v3.0 hierarchy spreadsheet. -->
-        <record id="mazenet_crm.team_corp_training" model="crm.team">
-            <field name="user_id" ref="user_corp_mgr"/>
-            <field name="member_ids" eval="[(6, 0, [
+                ref('user_tnh_tl_agent1'), ref('user_tnh_tl_agent2'),
                 ref('user_train_tl'), ref('user_train_tl_agent1'), ref('user_train_tl_agent2'),
                 ref('user_train_atl1'), ref('user_train_atl1_agent1'), ref('user_train_atl1_agent2'),
                 ref('user_train_atl2'), ref('user_train_atl2_agent1'), ref('user_train_atl2_agent2')
             ])]"/>
         </record>
 
-        <record id="mazenet_crm.team_tech" model="crm.team">
+        <record id="mazenet_crm.team_technology" model="crm.team">
             <field name="user_id" ref="user_tech_mgr"/>
             <field name="member_ids" eval="[(6, 0, [
                 ref('user_tech_agent1'), ref('user_tech_agent2'),
@@ -628,7 +603,7 @@
             ])]"/>
         </record>
 
-        <record id="mazenet_crm.team_swdev" model="crm.team">
+        <record id="mazenet_crm.team_software" model="crm.team">
             <field name="user_id" ref="user_swdev_mgr"/>
             <field name="member_ids" eval="[(6, 0, [
                 ref('user_swdev_agent1'), ref('user_swdev_agent2'),
@@ -655,7 +630,7 @@
 
         <record id="lead_tally_atl1" model="crm.lead">
             <field name="name">Tally Enterprise Deal - Agent ATL1</field>
-            <field name="team_id" ref="mazenet_crm.team_tally_dev"/>
+            <field name="team_id" ref="mazenet_crm.team_tally"/>
             <field name="stage_id" ref="mazenet_crm.stage_tally_new"/>
             <field name="user_id" ref="user_tally_atl_agent1"/>
             <field name="expected_revenue">50000</field>
@@ -663,7 +638,7 @@
 
         <record id="lead_tally_atl2" model="crm.lead">
             <field name="name">Tally Gold License - Agent ATL2</field>
-            <field name="team_id" ref="mazenet_crm.team_tally_dev"/>
+            <field name="team_id" ref="mazenet_crm.team_tally"/>
             <field name="stage_id" ref="mazenet_crm.stage_tally_demo"/>
             <field name="user_id" ref="user_tally_atl_agent2"/>
             <field name="expected_revenue">30000</field>
@@ -671,7 +646,7 @@
 
         <record id="lead_tally_tl2_direct" model="crm.lead">
             <field name="name">Tally Customization - TL2 Direct Agent</field>
-            <field name="team_id" ref="mazenet_crm.team_tally_dev"/>
+            <field name="team_id" ref="mazenet_crm.team_tally"/>
             <field name="stage_id" ref="mazenet_crm.stage_tally_proposal"/>
             <field name="user_id" ref="user_tally_tl2_agent1"/>
             <field name="expected_revenue">75000</field>
@@ -679,7 +654,7 @@
 
         <record id="lead_tally_tl1_agent" model="crm.lead">
             <field name="name">Tally Prime Upgrade - TL1 Agent</field>
-            <field name="team_id" ref="mazenet_crm.team_tally_sales"/>
+            <field name="team_id" ref="mazenet_crm.team_tally"/>
             <field name="stage_id" ref="mazenet_crm.stage_tally_contacted"/>
             <field name="user_id" ref="user_tally_tl1_agent1"/>
             <field name="expected_revenue">20000</field>
@@ -687,7 +662,7 @@
 
         <record id="lead_corp_hunter1" model="crm.lead">
             <field name="name">Corporate Cloud Infrastructure Deal</field>
-            <field name="team_id" ref="mazenet_crm.team_corp_hunter"/>
+            <field name="team_id" ref="mazenet_crm.team_corporate"/>
             <field name="stage_id" ref="mazenet_crm.stage_corp_new"/>
             <field name="user_id" ref="user_hunter_tl1_agent1"/>
             <field name="expected_revenue">150000</field>
@@ -695,7 +670,7 @@
 
         <record id="lead_dmt_originated_corp" model="crm.lead">
             <field name="name">DMT Lead Transferred to Corporate</field>
-            <field name="team_id" ref="mazenet_crm.team_corp_hunter"/>
+            <field name="team_id" ref="mazenet_crm.team_corporate"/>
             <field name="stage_id" ref="mazenet_crm.stage_corp_qualification"/>
             <field name="user_id" ref="user_hunter_tl1_agent1"/>
             <field name="expected_revenue">250000</field>

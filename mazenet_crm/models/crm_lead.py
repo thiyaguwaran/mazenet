@@ -50,10 +50,87 @@ class CrmLead(models.Model):
              "sort to the bottom (NULL last)."
     )
 
+    @api.model
+    def _default_x_assign_type(self):
+        """Agents can't use 'team' or 'internal' (see x_can_assign_beyond_self), so
+        defaulting everyone to 'team' meant every Agent got bounced back to 'self'
+        with a warning on every single new lead. Pick the default from the current
+        user's own tier instead, so an Agent starts on 'self' - the only option
+        that was ever going to stick for them - and TL/ATL/Manager keep the
+        original 'team' default."""
+        tier, _chain = self._mz_user_tier_chain(self.env.user)
+        return 'team' if tier in ('atl', 'tl', 'manager') else 'self'
 
-    @api.onchange('team_id')
+    x_assign_type = fields.Selection(
+        [('self', 'Self'), ('team', 'Team'), ('internal', 'Internal')],
+        string="Assign Type", default=_default_x_assign_type,
+        help="How user_id gets populated:\n"
+             "- Self: always the current user. Available to everyone.\n"
+             "- Team: hand-picked from the selected team's 'Create To' users.\n"
+             "- Internal: hand-picked from any member of the selected team.\n"
+             "'Team' and 'Internal' are only offered to Team Leads, ATLs and BU Managers "
+             "(mazenet_access_rights) - an Agent has no one to delegate to, so both are "
+             "restricted to Self for them."
+    )
+    x_can_assign_beyond_self = fields.Boolean(
+        compute='_compute_x_assignable_user_ids',
+        string="Can Assign Beyond Self",
+        help="Whether the CURRENT user (the one viewing/editing this lead right now) "
+             "holds at least ATL tier in mazenet_access_rights, and so may use the "
+             "'Team' or 'Internal' assign types (Agents are restricted to 'Self'). Not "
+             "stored and not a property of the lead itself - it reflects whoever has "
+             "the form open."
+    )
+    x_assignable_user_ids = fields.Many2many(
+        'res.users', compute='_compute_x_assignable_user_ids',
+        string="Assignable Users",
+        help="The users user_id may be hand-picked from, when the current user is "
+             "allowed to assign beyond Self (see x_can_assign_beyond_self) - otherwise "
+             "empty. For 'Team': the selected team's create_lead_id members. For "
+             "'Internal': all members of the selected team. Used as user_id's domain "
+             "in the view; not stored, purely a UI helper. An onchange-returned domain "
+             "isn't reliably honored by the web client for Many2one search, so the "
+             "domain lives in the view via this computed field instead."
+    )
+
+    @api.depends('team_id', 'x_assign_type')
+    def _compute_x_assignable_user_ids(self):
+        tier, _chain = self._mz_user_tier_chain(self.env.user)
+        can_beyond_self = tier in ('atl', 'tl', 'manager')
+        for lead in self:
+            lead.x_can_assign_beyond_self = can_beyond_self
+            if not can_beyond_self:
+                lead.x_assignable_user_ids = False
+            elif lead.x_assign_type == 'team':
+                lead.x_assignable_user_ids = lead.team_id.create_lead_id
+            else:
+                lead.x_assignable_user_ids = lead.team_id.member_ids
+
+    @api.onchange('x_assign_type', 'team_id')
     def assign_salesperson(self):
-        self.user_id = self.sudo().team_id.create_lead_id or False
+        """x_assign_type drives how user_id gets populated - see the field's help.
+        'Team' and 'Internal' both leave user_id hand-pickable, restricted to
+        x_assignable_user_ids (create_lead_id members for 'Team', full team roster
+        for 'Internal') - create_lead_id is a Many2many now, so there's no longer a
+        single value to auto-assign for 'Team'."""
+        if self.x_assign_type == 'self':
+            self.user_id = self.env.user
+            return
+        if not self.x_can_assign_beyond_self:
+            # Agents (and anyone with no recognized mazenet_access_rights role) can
+            # only assign to themselves - bounce back to Self rather than leave them
+            # on 'team' (which they shouldn't get to use) or 'internal' (which would
+            # show an empty dropdown anyway).
+            self.x_assign_type = 'self'
+            self.user_id = self.env.user
+            return {'warning': {
+                'title': _("Assignment restricted"),
+                'message': _("Only Team Leads, ATLs and BU Managers can assign to a team "
+                              "or assign internally. Agents can only assign to themselves."),
+            }}
+        # 'team' or 'internal': hand-picked from x_assignable_user_ids.
+        if self.user_id not in self.x_assignable_user_ids:
+            self.user_id = False
 
     @api.depends(
         'activity_ids.date_deadline', 'activity_ids.calendar_event_id.start',
@@ -71,6 +148,20 @@ class CrmLead(models.Model):
         string="RED Lock Active",
         default=False,
         help="Indicates if lead is currently locked due to RED timer expiration."
+    )
+
+    x_lock_escalation_level = fields.Integer(
+        string="RED Lock Escalation Level", default=0,
+        help="How many steps up the owner's team hierarchy have already been notified "
+             "about this RED lock (0 = only the owner). _cron_escalate_red_locks bumps "
+             "this by one, per _mz_red_lock_escalation_targets(), each time "
+             "MZ_RED_LOCK_GRACE_MINUTES pass without a release. Reset to 0 on release."
+    )
+    x_lock_last_escalated = fields.Datetime(
+        string="RED Lock Last Escalated",
+        help="When the owner (level 0) or the current escalation step was last "
+             "notified about this RED lock. _cron_escalate_red_locks only bumps to "
+             "the next step once this is more than MZ_RED_LOCK_GRACE_MINUTES in the past."
     )
 
     x_lock_date = fields.Datetime(
@@ -129,16 +220,33 @@ class CrmLead(models.Model):
             and u.partner_id in next_activity.calendar_event_id.partner_ids
         )
 
+    def _mz_check_assign_type_allowed(self, vals):
+        """Server-side backstop for x_assign_type in ('team', 'internal'): the view
+        only offers those to ATL/TL/Manager tier (x_can_assign_beyond_self), and the
+        onchange bounces an Agent back to 'self' - but both are UI-only, so a direct
+        RPC/API write could still set either. Raises the same way the UI would have
+        refused, instead of silently accepting it."""
+        if vals.get('x_assign_type') not in ('team', 'internal') or self.env.su:
+            return
+        tier, _chain = self._mz_user_tier_chain(self.env.user)
+        if tier not in ('atl', 'tl', 'manager'):
+            raise AccessError(_(
+                "Only Team Leads, ATLs and BU Managers can assign to a team or assign "
+                "internally. Agents can only assign to themselves."))
+
     @api.model_create_multi
     def create(self, vals_list):
         u = self.env.user
         if not self.env.su and u.has_group("mazenet_access_rights.group_mzr_md"):
             raise AccessError(_("MD role is read-only across all CRM models and cannot create leads."))
+        for vals in vals_list:
+            self._mz_check_assign_type_allowed(vals)
         return super(CrmLead, self).create(vals_list)
 
     def write(self, vals):
         u = self.env.user
         is_cto_admin = u.has_group("mazenet_access_rights.group_mzr_cto_admin")
+        self._mz_check_assign_type_allowed(vals)
 
         # Direct Lead Archiving Restriction: leads are archived only via the Archive Lead
         # Wizard (which stamps mz_archive_wizard on the context), never a raw active=False.
@@ -181,38 +289,66 @@ class CrmLead(models.Model):
             raise AccessError(_("Deletion of leads is disabled for all roles. Please use the Archive Lead Wizard to archive leads."))
         return super(CrmLead, self).unlink()
 
-    # crm.team xmlid (unqualified, same module) -> (Team Lead-tier group, BU Manager-tier
-    # group) in mazenet_access_rights. Used to resolve RED-lock release authority: whoever
-    # holds the TL-tier group for the lead owner's team is their "head"; the Manager-tier
-    # group is the "superior" fallback. Both checks collapse into a single has_group() call
-    # per level because of how the groups module built implied_ids: Manager already implies
-    # TL (and CTO/Admin already implies every Manager), so "does this user hold the head
-    # group" is also true for anyone above the head - no separate "superior" check needed.
-    MZR_TEAM_TIER_GROUPS = {
-        'team_dmt': ('group_mzr_dmt_tl', 'group_mzr_dmt_manager'),
-        'team_tech': ('group_mzr_technology_tl', 'group_mzr_technology_manager'),
-        'team_swdev': ('group_mzr_software_tl', 'group_mzr_software_manager'),
-        'team_mis': ('group_mzr_mis_tl', 'group_mzr_mis_manager'),
-        'team_corp_hunter': ('group_mzr_hunter_tl', 'group_mzr_corporate_manager'),
-        'team_corp_am': ('group_mzr_account_manager_tl', 'group_mzr_corporate_manager'),
-        'team_corp_training': ('group_mzr_corporate_training_tl', 'group_mzr_corporate_manager'),
-        'team_corp_lms': ('group_mzr_lms_tl', 'group_mzr_corporate_manager'),
-        'team_corp_tnh': ('group_mzr_tnh_tl', 'group_mzr_corporate_manager'),
-        'team_tally_dev': ('group_mzr_tally_tl_development', 'group_tally_manager'),
-        'team_tally_sales': ('group_mzr_tally_tl_sales', 'group_tally_manager'),
-    }
+    # (Agent-tier, ATL-tier, Team Lead-tier, BU Manager-tier) group chains from
+    # mazenet_access_rights, independent of crm.team. teams.xml consolidates Hunter/
+    # Account Manager/Corporate Training/LMS/TNH into one team_corporate record, and
+    # Tally's Development/Sales branches into one team_tally record - but the
+    # access-rights GROUP hierarchy stays fully separate per sub-team regardless (e.g.
+    # group_mzr_hunter_tl is not the same group as group_mzr_lms_tl). That means a
+    # single crm.team can no longer be mapped to one fixed tier-group tuple, so both
+    # RED-lock release authority (_mz_team_tier_groups) and the "Team"/"Internal" assign-type
+    # gate (_compute_x_assignable_user_ids) resolve tier from a user's actual
+    # group membership instead of from a crm.team: each user can only belong to one of
+    # these chains, so checking which one they hold gives an unambiguous answer
+    # regardless of how teams.xml groups crm.team records.
+    MZR_TIER_GROUP_CHAINS = [
+        ('group_mzr_dmt_agent', 'group_mzr_dmt_atl', 'group_mzr_dmt_tl', 'group_mzr_dmt_manager'),
+        ('group_mzr_technology_agent', 'group_mzr_technology_atl', 'group_mzr_technology_tl', 'group_mzr_technology_manager'),
+        ('group_mzr_software_agent', 'group_mzr_software_atl', 'group_mzr_software_tl', 'group_mzr_software_manager'),
+        ('group_mzr_mis_agent', 'group_mzr_mis_atl', 'group_mzr_mis_tl', 'group_mzr_mis_manager'),
+        ('group_mzr_hunter_agent', 'group_mzr_hunter_atl', 'group_mzr_hunter_tl', 'group_mzr_corporate_manager'),
+        ('group_mzr_account_manager_agent', 'group_mzr_account_manager_atl', 'group_mzr_account_manager_tl', 'group_mzr_corporate_manager'),
+        ('group_mzr_corporate_training_agent', 'group_mzr_corporate_training_atl', 'group_mzr_corporate_training_tl', 'group_mzr_corporate_manager'),
+        ('group_mzr_lms_agent', 'group_mzr_lms_atl', 'group_mzr_lms_tl', 'group_mzr_corporate_manager'),
+        ('group_mzr_tnh_agent', 'group_mzr_tnh_atl', 'group_mzr_tnh_tl', 'group_mzr_corporate_manager'),
+        ('group_mzr_tally_atl_agents_dev', 'group_mzr_tally_atl_dev', 'group_mzr_tally_tl_development', 'group_tally_manager'),
+        ('group_mzr_tally_atl_agents_sales', 'group_mzr_tally_atl_sales', 'group_mzr_tally_tl_sales', 'group_tally_manager'),
+    ]
+    MZR_TIER_RANK = {'agent': 0, 'atl': 1, 'tl': 2, 'manager': 3}
 
     def _mz_team_tier_groups(self):
-        """(tl_group, manager_group) xmlids (unqualified, mazenet_access_rights module) for
-        this lead's team, or None if the team isn't one we recognize."""
+        """(tl_group, manager_group) xmlids (unqualified, mazenet_access_rights module)
+        for this lead's OWNER, resolved from their actual group membership - or None if
+        the owner isn't in any recognized chain."""
         self.ensure_one()
-        if not self.team_id:
+        owner = self.user_id
+        if not owner:
             return None
-        for xmlid, chain in self.MZR_TEAM_TIER_GROUPS.items():
-            team = self.env.ref(f'mazenet_crm.{xmlid}', raise_if_not_found=False)
-            if team and team == self.team_id:
-                return chain
+        for agent_group, atl_group, tl_group, manager_group in self.MZR_TIER_GROUP_CHAINS:
+            if (owner.has_group(f'mazenet_access_rights.{agent_group}')
+                    or owner.has_group(f'mazenet_access_rights.{atl_group}')
+                    or owner.has_group(f'mazenet_access_rights.{tl_group}')
+                    or owner.has_group(f'mazenet_access_rights.{manager_group}')):
+                return (tl_group, manager_group)
         return None
+
+    @api.model
+    def _mz_user_tier_chain(self, user):
+        """('agent'|'atl'|'tl'|'manager', chain) for `user`, or (None, None) if they
+        hold no recognized mazenet_access_rights role. `chain` is the matching 4-tuple
+        from MZR_TIER_GROUP_CHAINS (checked highest tier first, since e.g. a Manager
+        also holds the Agent group transitively via implied_ids)."""
+        for chain in self.MZR_TIER_GROUP_CHAINS:
+            agent_g, atl_g, tl_g, manager_g = chain
+            if user.has_group(f'mazenet_access_rights.{manager_g}'):
+                return ('manager', chain)
+            if user.has_group(f'mazenet_access_rights.{tl_g}'):
+                return ('tl', chain)
+            if user.has_group(f'mazenet_access_rights.{atl_g}'):
+                return ('atl', chain)
+            if user.has_group(f'mazenet_access_rights.{agent_g}'):
+                return ('agent', chain)
+        return (None, None)
 
     def _mz_release_head_group(self):
         """The mazenet_access_rights group whose members (directly, or via implied_ids from
@@ -261,7 +397,12 @@ class CrmLead(models.Model):
                     "the owner's Team Lead/Manager (or CTO/Admin) can release it."
                 ) % lead.name)
 
-            lead.write({'x_is_locked': False, 'x_lock_date': False})
+            lead.write({
+                'x_is_locked': False,
+                'x_lock_date': False,
+                'x_lock_escalation_level': 0,
+                'x_lock_last_escalated': False,
+            })
             lead.message_post(body=_("RED lock released by %s. Lead is editable again.") % self.env.user.name)
 
             if lead.user_id:
@@ -336,59 +477,140 @@ class CrmLead(models.Model):
             lead.write({
                 'x_is_locked': True,
                 'x_lock_date': now,
+                'x_lock_escalation_level': 0,
+                'x_lock_last_escalated': now,
             })
             lead._notify_red_lock_triggered()
 
-    # Team xmlid -> (company name pool, lead-name template). Corp category is split per
-    # actual team (Hunter/AM/LMS/TNH), not lumped by x_bu_category, since they represent
-    # different lines of business despite sharing the "corp" category.
+    def _mz_red_lock_escalation_targets(self):
+        """Ordered list of res.users recordsets to escalate this lead's RED lock to,
+        one entry per step above the owner - resolved entirely from data the team
+        admin configures on crm.team (privelege_ids, member_ids):
+        1. Refer the lead's team, collect all groups across its selected
+           privileges (crm.team.privelege_ids -> privilege.group_ids).
+        2. Check which of those groups the salesperson (owner) is actually in -
+           checked privilege by privilege, since sequence only ranks groups
+           WITHIN one privilege (e.g. a Corporate team's 5 sub-team privileges
+           each restart their own 10/20/25/30/35/40 numbering).
+        3. Walk that privilege's remaining groups upward by sequence. At each
+           step, whoever in team.member_ids holds that group is the escalation
+           target for that step - a step nobody on the team holds is skipped.
+        Empty if the owner is unrecognized, the team has no privileges
+        configured, or the owner holds none of those privileges' groups."""
+        self.ensure_one()
+        owner = self.user_id
+        team = self.team_id
+        if not owner or not team or not team.privelege_ids:
+            return []
+
+        owner_privilege = None
+        owner_group = None
+        for privilege in team.privelege_ids:
+            for group in privilege.group_ids.sorted('sequence', reverse=True):
+                if owner in group.user_ids:
+                    owner_privilege = privilege
+                    owner_group = group
+                    break
+            if owner_group:
+                break
+        if not owner_group:
+            return []
+
+        higher_groups = owner_privilege.group_ids.filtered(
+            lambda g: g.sequence > owner_group.sequence
+        ).sorted('sequence')
+
+        targets = []
+        for group in higher_groups:
+            members = team.member_ids & group.user_ids
+            if members:
+                targets.append(members)
+        return targets
+
+    def _mz_notify_red_lock_escalation(self, targets):
+        """Chatter + Inbox + standing activity to `targets` (a res.users recordset -
+        one step from _mz_red_lock_escalation_targets()) that this lead's owner
+        hasn't released the RED lock within a grace period. Same notification
+        channel as the initial owner notification in _notify_red_lock_triggered."""
+        self.ensure_one()
+        owner_name = self.user_id.name if self.user_id else _("Unassigned")
+        self.message_post(
+            body=_("RED LOCK escalation: still locked and unreleased (owner: %s). Escalating to %s.")
+                 % (owner_name, ', '.join(targets.mapped('name'))),
+            subtype_xmlid="mail.mt_note",
+        )
+        self._push_notification(
+            targets,
+            subject=_("RED Lock Escalation: Action Required"),
+            body=_("Lead '%s' (owner: %s) is still RED-locked and has not been released. "
+                   "Please review and release it.") % (self.name, owner_name),
+        )
+        for user in targets:
+            self.activity_schedule(
+                'mail.mail_activity_data_todo',
+                summary=_("RED Lock Escalation: %s") % self.name,
+                note=_("Lead is still RED-locked (owner: %s) and was not released in time.") % owner_name,
+                user_id=user.id,
+            )
+
+    @api.model
+    def _cron_escalate_red_locks(self):
+        """Works through already-locked leads that still haven't been released:
+        every MZ_RED_LOCK_GRACE_MINUTES since the owner (or the previous escalation
+        step) was last notified, bumps to the next step up the owner's team
+        hierarchy (_mz_red_lock_escalation_targets) - repeating until either the
+        lock is released (action_release_lock resets the escalation fields) or the
+        top of that hierarchy has been notified."""
+        now = fields.Datetime.now()
+        cutoff = now - timedelta(minutes=MZ_RED_LOCK_GRACE_MINUTES)
+
+        leads = self.sudo().search([
+            ('x_is_locked', '=', True),
+            ('x_lock_last_escalated', '!=', False),
+            ('x_lock_last_escalated', '<', cutoff),
+        ])
+        for lead in leads:
+            targets = lead._mz_red_lock_escalation_targets()
+            next_level = lead.x_lock_escalation_level + 1
+            if next_level <= len(targets):
+                lead._mz_notify_red_lock_escalation(targets[next_level - 1])
+                lead.write({'x_lock_escalation_level': next_level, 'x_lock_last_escalated': now})
+            else:
+                lead.write({'x_lock_last_escalated': now})
+
+    # Team xmlid -> (company name pool, lead-name template, base revenue). teams.xml
+    # consolidated Hunter/Account Manager/Corporate Training/LMS/TNH into one
+    # team_corporate record, and Tally's Development/Sales branches into one
+    # team_tally record, so their formerly-separate pools are merged here too
+    # (company lists combined for variety; template/revenue picked as one
+    # representative value rather than kept per sub-team, since crm.team no
+    # longer distinguishes them).
     _MZ_TEAM_LEAD_POOLS = {
         'mazenet_crm.team_dmt': (
             ["Rajesh Traders", "Sunrise Textiles", "Om Sai Enterprises", "Kaveri Foods Pvt Ltd",
              "Shree Balaji Hardware", "New Bharat Stationers", "Ganpati Agro Foods", "Vinayak Plastics"],
             "Inquiry - %s", 15000,
         ),
-        'mazenet_crm.team_tally_dev': (
+        'mazenet_crm.team_tally': (
             ["Sharma & Sons Traders", "Golden Textiles Mills", "Anand Auto Spares", "Krishna Rice Mill",
              "Vishal Electricals", "Om Enterprises", "Patel Hardware Store", "Laxmi Garments"],
-            "Tally Customization - %s", 25000,
+            "Tally Deal - %s", 25000,
         ),
-        'mazenet_crm.team_tally_sales': (
-            ["Sharma & Sons Traders", "Golden Textiles Mills", "Anand Auto Spares", "Krishna Rice Mill",
-             "Vishal Electricals", "Om Enterprises", "Patel Hardware Store", "Laxmi Garments"],
-            "Tally License - %s", 25000,
-        ),
-        'mazenet_crm.team_corp_training': (
+        'mazenet_crm.team_corporate': (
             ["Meridian Logistics Pvt Ltd", "Zenith Manufacturing Corp", "Apex Infrastructure Ltd", "Orion Retail Chain",
-             "Falcon Energy Solutions", "Skyline Constructions", "Prime Steel Industries", "Coastal Shipping Corp"],
-            "Corporate Training - %s", 70000,
-        ),
-        'mazenet_crm.team_corp_hunter': (
-            ["Meridian Logistics Pvt Ltd", "Zenith Manufacturing Corp", "Apex Infrastructure Ltd", "Orion Retail Chain",
-             "Falcon Energy Solutions", "Skyline Constructions", "Prime Steel Industries", "Coastal Shipping Corp"],
-            "New Business - %s", 150000,
-        ),
-        'mazenet_crm.team_corp_am': (
-            ["Meridian Logistics Pvt Ltd", "Zenith Manufacturing Corp", "Apex Infrastructure Ltd", "Orion Retail Chain",
-             "Falcon Energy Solutions", "Skyline Constructions", "Prime Steel Industries", "Coastal Shipping Corp"],
-            "Account Renewal - %s", 100000,
-        ),
-        'mazenet_crm.team_corp_lms': (
-            ["Bright Future Public School", "Global Institute of Technology", "Sunrise Degree College",
-             "National Skill Academy", "Everest Public School", "Coastal Management Institute"],
-            "LMS Deal - %s", 60000,
-        ),
-        'mazenet_crm.team_corp_tnh': (
-            ["Blue Orchid Resorts", "Grand Palace Hotels", "Coastal Getaway Resorts", "Heritage Inn Group",
+             "Falcon Energy Solutions", "Skyline Constructions", "Prime Steel Industries", "Coastal Shipping Corp",
+             "Bright Future Public School", "Global Institute of Technology", "Sunrise Degree College",
+             "National Skill Academy", "Everest Public School", "Coastal Management Institute",
+             "Blue Orchid Resorts", "Grand Palace Hotels", "Coastal Getaway Resorts", "Heritage Inn Group",
              "Emerald Beach Resort", "Silver Sands Hotel"],
-            "TNH Deal - %s", 80000,
+            "Corporate Deal - %s", 90000,
         ),
-        'mazenet_crm.team_tech': (
+        'mazenet_crm.team_technology': (
             ["NextGen Solutions", "Skyline Systems", "Vertex Apps", "Quantum Labs",
              "Bluewave Technologies", "Ironclad Networks"],
             "Tech Project - %s", 90000,
         ),
-        'mazenet_crm.team_swdev': (
+        'mazenet_crm.team_software': (
             ["Om Industries", "Shree Traders", "Metro Retail", "Apex Corp",
              "Vertex Pharma", "Nova Logistics"],
             "Custom Dev - %s", 120000,
