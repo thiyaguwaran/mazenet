@@ -181,37 +181,44 @@ class CrmLead(models.Model):
             raise AccessError(_("Deletion of leads is disabled for all roles. Please use the Archive Lead Wizard to archive leads."))
         return super(CrmLead, self).unlink()
 
-    # crm.team xmlid (unqualified, same module) -> (Team Lead-tier group, BU Manager-tier
-    # group) in mazenet_access_rights. Used to resolve RED-lock release authority: whoever
-    # holds the TL-tier group for the lead owner's team is their "head"; the Manager-tier
-    # group is the "superior" fallback. Both checks collapse into a single has_group() call
-    # per level because of how the groups module built implied_ids: Manager already implies
-    # TL (and CTO/Admin already implies every Manager), so "does this user hold the head
-    # group" is also true for anyone above the head - no separate "superior" check needed.
-    MZR_TEAM_TIER_GROUPS = {
-        'team_dmt': ('group_mzr_dmt_tl', 'group_mzr_dmt_manager'),
-        'team_tech': ('group_mzr_technology_tl', 'group_mzr_technology_manager'),
-        'team_swdev': ('group_mzr_software_tl', 'group_mzr_software_manager'),
-        'team_mis': ('group_mzr_mis_tl', 'group_mzr_mis_manager'),
-        'team_corp_hunter': ('group_mzr_hunter_tl', 'group_mzr_corporate_manager'),
-        'team_corp_am': ('group_mzr_account_manager_tl', 'group_mzr_corporate_manager'),
-        'team_corp_training': ('group_mzr_corporate_training_tl', 'group_mzr_corporate_manager'),
-        'team_corp_lms': ('group_mzr_lms_tl', 'group_mzr_corporate_manager'),
-        'team_corp_tnh': ('group_mzr_tnh_tl', 'group_mzr_corporate_manager'),
-        'team_tally_dev': ('group_mzr_tally_tl_development', 'group_tally_manager'),
-        'team_tally_sales': ('group_mzr_tally_tl_sales', 'group_tally_manager'),
-    }
+    # (Agent-tier group, Team Lead-tier group, BU Manager-tier group) chains from
+    # mazenet_access_rights, independent of crm.team. teams.xml consolidates Hunter/
+    # Account Manager/Corporate Training/LMS/TNH into one team_corporate record, and
+    # Tally's Development/Sales branches into one team_tally record - but the
+    # access-rights GROUP hierarchy stays fully separate per sub-team regardless (e.g.
+    # group_mzr_hunter_tl is not the same group as group_mzr_lms_tl). That means a
+    # single crm.team can no longer be mapped to one fixed (tl_group, manager_group)
+    # pair, so RED-lock release authority is resolved from the lead OWNER's actual
+    # group membership instead of from the lead's team_id: each owner can only be a
+    # member of exactly one of these chains, so checking which one they hold still
+    # gives an unambiguous answer, and it stays correct however teams.xml is organized.
+    MZR_TIER_GROUP_CHAINS = [
+        ('group_mzr_dmt_agent', 'group_mzr_dmt_tl', 'group_mzr_dmt_manager'),
+        ('group_mzr_technology_agent', 'group_mzr_technology_tl', 'group_mzr_technology_manager'),
+        ('group_mzr_software_agent', 'group_mzr_software_tl', 'group_mzr_software_manager'),
+        ('group_mzr_mis_agent', 'group_mzr_mis_tl', 'group_mzr_mis_manager'),
+        ('group_mzr_hunter_agent', 'group_mzr_hunter_tl', 'group_mzr_corporate_manager'),
+        ('group_mzr_account_manager_agent', 'group_mzr_account_manager_tl', 'group_mzr_corporate_manager'),
+        ('group_mzr_corporate_training_agent', 'group_mzr_corporate_training_tl', 'group_mzr_corporate_manager'),
+        ('group_mzr_lms_agent', 'group_mzr_lms_tl', 'group_mzr_corporate_manager'),
+        ('group_mzr_tnh_agent', 'group_mzr_tnh_tl', 'group_mzr_corporate_manager'),
+        ('group_mzr_tally_atl_agents_dev', 'group_mzr_tally_tl_development', 'group_tally_manager'),
+        ('group_mzr_tally_atl_agents_sales', 'group_mzr_tally_tl_sales', 'group_tally_manager'),
+    ]
 
     def _mz_team_tier_groups(self):
-        """(tl_group, manager_group) xmlids (unqualified, mazenet_access_rights module) for
-        this lead's team, or None if the team isn't one we recognize."""
+        """(tl_group, manager_group) xmlids (unqualified, mazenet_access_rights module)
+        for this lead's OWNER, resolved from their actual group membership - or None if
+        the owner isn't in any recognized chain."""
         self.ensure_one()
-        if not self.team_id:
+        owner = self.user_id
+        if not owner:
             return None
-        for xmlid, chain in self.MZR_TEAM_TIER_GROUPS.items():
-            team = self.env.ref(f'mazenet_crm.{xmlid}', raise_if_not_found=False)
-            if team and team == self.team_id:
-                return chain
+        for agent_group, tl_group, manager_group in self.MZR_TIER_GROUP_CHAINS:
+            if (owner.has_group(f'mazenet_access_rights.{agent_group}')
+                    or owner.has_group(f'mazenet_access_rights.{tl_group}')
+                    or owner.has_group(f'mazenet_access_rights.{manager_group}')):
+                return (tl_group, manager_group)
         return None
 
     def _mz_release_head_group(self):
@@ -339,56 +346,39 @@ class CrmLead(models.Model):
             })
             lead._notify_red_lock_triggered()
 
-    # Team xmlid -> (company name pool, lead-name template). Corp category is split per
-    # actual team (Hunter/AM/LMS/TNH), not lumped by x_bu_category, since they represent
-    # different lines of business despite sharing the "corp" category.
+    # Team xmlid -> (company name pool, lead-name template, base revenue). teams.xml
+    # consolidated Hunter/Account Manager/Corporate Training/LMS/TNH into one
+    # team_corporate record, and Tally's Development/Sales branches into one
+    # team_tally record, so their formerly-separate pools are merged here too
+    # (company lists combined for variety; template/revenue picked as one
+    # representative value rather than kept per sub-team, since crm.team no
+    # longer distinguishes them).
     _MZ_TEAM_LEAD_POOLS = {
         'mazenet_crm.team_dmt': (
             ["Rajesh Traders", "Sunrise Textiles", "Om Sai Enterprises", "Kaveri Foods Pvt Ltd",
              "Shree Balaji Hardware", "New Bharat Stationers", "Ganpati Agro Foods", "Vinayak Plastics"],
             "Inquiry - %s", 15000,
         ),
-        'mazenet_crm.team_tally_dev': (
+        'mazenet_crm.team_tally': (
             ["Sharma & Sons Traders", "Golden Textiles Mills", "Anand Auto Spares", "Krishna Rice Mill",
              "Vishal Electricals", "Om Enterprises", "Patel Hardware Store", "Laxmi Garments"],
-            "Tally Customization - %s", 25000,
+            "Tally Deal - %s", 25000,
         ),
-        'mazenet_crm.team_tally_sales': (
-            ["Sharma & Sons Traders", "Golden Textiles Mills", "Anand Auto Spares", "Krishna Rice Mill",
-             "Vishal Electricals", "Om Enterprises", "Patel Hardware Store", "Laxmi Garments"],
-            "Tally License - %s", 25000,
-        ),
-        'mazenet_crm.team_corp_training': (
+        'mazenet_crm.team_corporate': (
             ["Meridian Logistics Pvt Ltd", "Zenith Manufacturing Corp", "Apex Infrastructure Ltd", "Orion Retail Chain",
-             "Falcon Energy Solutions", "Skyline Constructions", "Prime Steel Industries", "Coastal Shipping Corp"],
-            "Corporate Training - %s", 70000,
-        ),
-        'mazenet_crm.team_corp_hunter': (
-            ["Meridian Logistics Pvt Ltd", "Zenith Manufacturing Corp", "Apex Infrastructure Ltd", "Orion Retail Chain",
-             "Falcon Energy Solutions", "Skyline Constructions", "Prime Steel Industries", "Coastal Shipping Corp"],
-            "New Business - %s", 150000,
-        ),
-        'mazenet_crm.team_corp_am': (
-            ["Meridian Logistics Pvt Ltd", "Zenith Manufacturing Corp", "Apex Infrastructure Ltd", "Orion Retail Chain",
-             "Falcon Energy Solutions", "Skyline Constructions", "Prime Steel Industries", "Coastal Shipping Corp"],
-            "Account Renewal - %s", 100000,
-        ),
-        'mazenet_crm.team_corp_lms': (
-            ["Bright Future Public School", "Global Institute of Technology", "Sunrise Degree College",
-             "National Skill Academy", "Everest Public School", "Coastal Management Institute"],
-            "LMS Deal - %s", 60000,
-        ),
-        'mazenet_crm.team_corp_tnh': (
-            ["Blue Orchid Resorts", "Grand Palace Hotels", "Coastal Getaway Resorts", "Heritage Inn Group",
+             "Falcon Energy Solutions", "Skyline Constructions", "Prime Steel Industries", "Coastal Shipping Corp",
+             "Bright Future Public School", "Global Institute of Technology", "Sunrise Degree College",
+             "National Skill Academy", "Everest Public School", "Coastal Management Institute",
+             "Blue Orchid Resorts", "Grand Palace Hotels", "Coastal Getaway Resorts", "Heritage Inn Group",
              "Emerald Beach Resort", "Silver Sands Hotel"],
-            "TNH Deal - %s", 80000,
+            "Corporate Deal - %s", 90000,
         ),
-        'mazenet_crm.team_tech': (
+        'mazenet_crm.team_technology': (
             ["NextGen Solutions", "Skyline Systems", "Vertex Apps", "Quantum Labs",
              "Bluewave Technologies", "Ironclad Networks"],
             "Tech Project - %s", 90000,
         ),
-        'mazenet_crm.team_swdev': (
+        'mazenet_crm.team_software': (
             ["Om Industries", "Shree Traders", "Metro Retail", "Apex Corp",
              "Vertex Pharma", "Nova Logistics"],
             "Custom Dev - %s", 120000,
