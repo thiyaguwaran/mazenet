@@ -14,5 +14,9 @@ class CrmTeam(models.Model):
         ('mis', 'MIS'),
     ], string="BU Category", default='corp')
 
-    create_lead_id = fields.Many2one('res.users',
-    string='Create To',ondelete='set null',domain="[('id', 'in', member_ids)]")
+    create_lead_id = fields.Many2many('res.users',
+        'mazenet_crm_team_create_lead_users_rel', 'team_id', 'user_id',
+        string='Create To', domain="[('id', 'in', member_ids)]")
+
+
+    

@@ -50,10 +50,87 @@ class CrmLead(models.Model):
              "sort to the bottom (NULL last)."
     )
 
+    @api.model
+    def _default_x_assign_type(self):
+        """Agents can't use 'team' or 'internal' (see x_can_assign_beyond_self), so
+        defaulting everyone to 'team' meant every Agent got bounced back to 'self'
+        with a warning on every single new lead. Pick the default from the current
+        user's own tier instead, so an Agent starts on 'self' - the only option
+        that was ever going to stick for them - and TL/ATL/Manager keep the
+        original 'team' default."""
+        tier, _chain = self._mz_user_tier_chain(self.env.user)
+        return 'team' if tier in ('atl', 'tl', 'manager') else 'self'
 
-    @api.onchange('team_id')
+    x_assign_type = fields.Selection(
+        [('self', 'Self'), ('team', 'Team'), ('internal', 'Internal')],
+        string="Assign Type", default=_default_x_assign_type,
+        help="How user_id gets populated:\n"
+             "- Self: always the current user. Available to everyone.\n"
+             "- Team: hand-picked from the selected team's 'Create To' users.\n"
+             "- Internal: hand-picked from any member of the selected team.\n"
+             "'Team' and 'Internal' are only offered to Team Leads, ATLs and BU Managers "
+             "(mazenet_access_rights) - an Agent has no one to delegate to, so both are "
+             "restricted to Self for them."
+    )
+    x_can_assign_beyond_self = fields.Boolean(
+        compute='_compute_x_assignable_user_ids',
+        string="Can Assign Beyond Self",
+        help="Whether the CURRENT user (the one viewing/editing this lead right now) "
+             "holds at least ATL tier in mazenet_access_rights, and so may use the "
+             "'Team' or 'Internal' assign types (Agents are restricted to 'Self'). Not "
+             "stored and not a property of the lead itself - it reflects whoever has "
+             "the form open."
+    )
+    x_assignable_user_ids = fields.Many2many(
+        'res.users', compute='_compute_x_assignable_user_ids',
+        string="Assignable Users",
+        help="The users user_id may be hand-picked from, when the current user is "
+             "allowed to assign beyond Self (see x_can_assign_beyond_self) - otherwise "
+             "empty. For 'Team': the selected team's create_lead_id members. For "
+             "'Internal': all members of the selected team. Used as user_id's domain "
+             "in the view; not stored, purely a UI helper. An onchange-returned domain "
+             "isn't reliably honored by the web client for Many2one search, so the "
+             "domain lives in the view via this computed field instead."
+    )
+
+    @api.depends('team_id', 'x_assign_type')
+    def _compute_x_assignable_user_ids(self):
+        tier, _chain = self._mz_user_tier_chain(self.env.user)
+        can_beyond_self = tier in ('atl', 'tl', 'manager')
+        for lead in self:
+            lead.x_can_assign_beyond_self = can_beyond_self
+            if not can_beyond_self:
+                lead.x_assignable_user_ids = False
+            elif lead.x_assign_type == 'team':
+                lead.x_assignable_user_ids = lead.team_id.create_lead_id
+            else:
+                lead.x_assignable_user_ids = lead.team_id.member_ids
+
+    @api.onchange('x_assign_type', 'team_id')
     def assign_salesperson(self):
-        self.user_id = self.sudo().team_id.create_lead_id or False
+        """x_assign_type drives how user_id gets populated - see the field's help.
+        'Team' and 'Internal' both leave user_id hand-pickable, restricted to
+        x_assignable_user_ids (create_lead_id members for 'Team', full team roster
+        for 'Internal') - create_lead_id is a Many2many now, so there's no longer a
+        single value to auto-assign for 'Team'."""
+        if self.x_assign_type == 'self':
+            self.user_id = self.env.user
+            return
+        if not self.x_can_assign_beyond_self:
+            # Agents (and anyone with no recognized mazenet_access_rights role) can
+            # only assign to themselves - bounce back to Self rather than leave them
+            # on 'team' (which they shouldn't get to use) or 'internal' (which would
+            # show an empty dropdown anyway).
+            self.x_assign_type = 'self'
+            self.user_id = self.env.user
+            return {'warning': {
+                'title': _("Assignment restricted"),
+                'message': _("Only Team Leads, ATLs and BU Managers can assign to a team "
+                              "or assign internally. Agents can only assign to themselves."),
+            }}
+        # 'team' or 'internal': hand-picked from x_assignable_user_ids.
+        if self.user_id not in self.x_assignable_user_ids:
+            self.user_id = False
 
     @api.depends(
         'activity_ids.date_deadline', 'activity_ids.calendar_event_id.start',
@@ -129,16 +206,33 @@ class CrmLead(models.Model):
             and u.partner_id in next_activity.calendar_event_id.partner_ids
         )
 
+    def _mz_check_assign_type_allowed(self, vals):
+        """Server-side backstop for x_assign_type in ('team', 'internal'): the view
+        only offers those to ATL/TL/Manager tier (x_can_assign_beyond_self), and the
+        onchange bounces an Agent back to 'self' - but both are UI-only, so a direct
+        RPC/API write could still set either. Raises the same way the UI would have
+        refused, instead of silently accepting it."""
+        if vals.get('x_assign_type') not in ('team', 'internal') or self.env.su:
+            return
+        tier, _chain = self._mz_user_tier_chain(self.env.user)
+        if tier not in ('atl', 'tl', 'manager'):
+            raise AccessError(_(
+                "Only Team Leads, ATLs and BU Managers can assign to a team or assign "
+                "internally. Agents can only assign to themselves."))
+
     @api.model_create_multi
     def create(self, vals_list):
         u = self.env.user
         if not self.env.su and u.has_group("mazenet_access_rights.group_mzr_md"):
             raise AccessError(_("MD role is read-only across all CRM models and cannot create leads."))
+        for vals in vals_list:
+            self._mz_check_assign_type_allowed(vals)
         return super(CrmLead, self).create(vals_list)
 
     def write(self, vals):
         u = self.env.user
         is_cto_admin = u.has_group("mazenet_access_rights.group_mzr_cto_admin")
+        self._mz_check_assign_type_allowed(vals)
 
         # Direct Lead Archiving Restriction: leads are archived only via the Archive Lead
         # Wizard (which stamps mz_archive_wizard on the context), never a raw active=False.
@@ -181,30 +275,32 @@ class CrmLead(models.Model):
             raise AccessError(_("Deletion of leads is disabled for all roles. Please use the Archive Lead Wizard to archive leads."))
         return super(CrmLead, self).unlink()
 
-    # (Agent-tier group, Team Lead-tier group, BU Manager-tier group) chains from
+    # (Agent-tier, ATL-tier, Team Lead-tier, BU Manager-tier) group chains from
     # mazenet_access_rights, independent of crm.team. teams.xml consolidates Hunter/
     # Account Manager/Corporate Training/LMS/TNH into one team_corporate record, and
     # Tally's Development/Sales branches into one team_tally record - but the
     # access-rights GROUP hierarchy stays fully separate per sub-team regardless (e.g.
     # group_mzr_hunter_tl is not the same group as group_mzr_lms_tl). That means a
-    # single crm.team can no longer be mapped to one fixed (tl_group, manager_group)
-    # pair, so RED-lock release authority is resolved from the lead OWNER's actual
-    # group membership instead of from the lead's team_id: each owner can only be a
-    # member of exactly one of these chains, so checking which one they hold still
-    # gives an unambiguous answer, and it stays correct however teams.xml is organized.
+    # single crm.team can no longer be mapped to one fixed tier-group tuple, so both
+    # RED-lock release authority (_mz_team_tier_groups) and the "Team"/"Internal" assign-type
+    # gate (_compute_x_assignable_user_ids) resolve tier from a user's actual
+    # group membership instead of from a crm.team: each user can only belong to one of
+    # these chains, so checking which one they hold gives an unambiguous answer
+    # regardless of how teams.xml groups crm.team records.
     MZR_TIER_GROUP_CHAINS = [
-        ('group_mzr_dmt_agent', 'group_mzr_dmt_tl', 'group_mzr_dmt_manager'),
-        ('group_mzr_technology_agent', 'group_mzr_technology_tl', 'group_mzr_technology_manager'),
-        ('group_mzr_software_agent', 'group_mzr_software_tl', 'group_mzr_software_manager'),
-        ('group_mzr_mis_agent', 'group_mzr_mis_tl', 'group_mzr_mis_manager'),
-        ('group_mzr_hunter_agent', 'group_mzr_hunter_tl', 'group_mzr_corporate_manager'),
-        ('group_mzr_account_manager_agent', 'group_mzr_account_manager_tl', 'group_mzr_corporate_manager'),
-        ('group_mzr_corporate_training_agent', 'group_mzr_corporate_training_tl', 'group_mzr_corporate_manager'),
-        ('group_mzr_lms_agent', 'group_mzr_lms_tl', 'group_mzr_corporate_manager'),
-        ('group_mzr_tnh_agent', 'group_mzr_tnh_tl', 'group_mzr_corporate_manager'),
-        ('group_mzr_tally_atl_agents_dev', 'group_mzr_tally_tl_development', 'group_tally_manager'),
-        ('group_mzr_tally_atl_agents_sales', 'group_mzr_tally_tl_sales', 'group_tally_manager'),
+        ('group_mzr_dmt_agent', 'group_mzr_dmt_atl', 'group_mzr_dmt_tl', 'group_mzr_dmt_manager'),
+        ('group_mzr_technology_agent', 'group_mzr_technology_atl', 'group_mzr_technology_tl', 'group_mzr_technology_manager'),
+        ('group_mzr_software_agent', 'group_mzr_software_atl', 'group_mzr_software_tl', 'group_mzr_software_manager'),
+        ('group_mzr_mis_agent', 'group_mzr_mis_atl', 'group_mzr_mis_tl', 'group_mzr_mis_manager'),
+        ('group_mzr_hunter_agent', 'group_mzr_hunter_atl', 'group_mzr_hunter_tl', 'group_mzr_corporate_manager'),
+        ('group_mzr_account_manager_agent', 'group_mzr_account_manager_atl', 'group_mzr_account_manager_tl', 'group_mzr_corporate_manager'),
+        ('group_mzr_corporate_training_agent', 'group_mzr_corporate_training_atl', 'group_mzr_corporate_training_tl', 'group_mzr_corporate_manager'),
+        ('group_mzr_lms_agent', 'group_mzr_lms_atl', 'group_mzr_lms_tl', 'group_mzr_corporate_manager'),
+        ('group_mzr_tnh_agent', 'group_mzr_tnh_atl', 'group_mzr_tnh_tl', 'group_mzr_corporate_manager'),
+        ('group_mzr_tally_atl_agents_dev', 'group_mzr_tally_atl_dev', 'group_mzr_tally_tl_development', 'group_tally_manager'),
+        ('group_mzr_tally_atl_agents_sales', 'group_mzr_tally_atl_sales', 'group_mzr_tally_tl_sales', 'group_tally_manager'),
     ]
+    MZR_TIER_RANK = {'agent': 0, 'atl': 1, 'tl': 2, 'manager': 3}
 
     def _mz_team_tier_groups(self):
         """(tl_group, manager_group) xmlids (unqualified, mazenet_access_rights module)
@@ -214,12 +310,31 @@ class CrmLead(models.Model):
         owner = self.user_id
         if not owner:
             return None
-        for agent_group, tl_group, manager_group in self.MZR_TIER_GROUP_CHAINS:
+        for agent_group, atl_group, tl_group, manager_group in self.MZR_TIER_GROUP_CHAINS:
             if (owner.has_group(f'mazenet_access_rights.{agent_group}')
+                    or owner.has_group(f'mazenet_access_rights.{atl_group}')
                     or owner.has_group(f'mazenet_access_rights.{tl_group}')
                     or owner.has_group(f'mazenet_access_rights.{manager_group}')):
                 return (tl_group, manager_group)
         return None
+
+    @api.model
+    def _mz_user_tier_chain(self, user):
+        """('agent'|'atl'|'tl'|'manager', chain) for `user`, or (None, None) if they
+        hold no recognized mazenet_access_rights role. `chain` is the matching 4-tuple
+        from MZR_TIER_GROUP_CHAINS (checked highest tier first, since e.g. a Manager
+        also holds the Agent group transitively via implied_ids)."""
+        for chain in self.MZR_TIER_GROUP_CHAINS:
+            agent_g, atl_g, tl_g, manager_g = chain
+            if user.has_group(f'mazenet_access_rights.{manager_g}'):
+                return ('manager', chain)
+            if user.has_group(f'mazenet_access_rights.{tl_g}'):
+                return ('tl', chain)
+            if user.has_group(f'mazenet_access_rights.{atl_g}'):
+                return ('atl', chain)
+            if user.has_group(f'mazenet_access_rights.{agent_g}'):
+                return ('agent', chain)
+        return (None, None)
 
     def _mz_release_head_group(self):
         """The mazenet_access_rights group whose members (directly, or via implied_ids from
