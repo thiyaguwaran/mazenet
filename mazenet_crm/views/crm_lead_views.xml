@@ -24,7 +24,7 @@
                 </xpath>
                 <xpath expr="//field[@name='user_id']" position="before">
                     <field name="x_assign_type" widget="radio" options="{'horizontal': true}"/>
-                    <field name="team_id" invisible="x_assign_type == 'self'" required="x_assign_type != 'self'"/>
+                    <field name="team_id" readonly="x_assign_type == 'self'" required="x_assign_type != 'self'"/>
                     <field name="x_can_assign_beyond_self" invisible="1"/>
                     <field name="x_assignable_user_ids" invisible="1"/>
                 </xpath>
