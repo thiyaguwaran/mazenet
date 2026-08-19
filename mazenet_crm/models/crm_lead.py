@@ -57,6 +57,36 @@ class CrmLead(models.Model):
     )
 
     @api.model
+    def _mz_user_own_team(self, user=None):
+        """The crm.team `user` is a direct member of, resolved from
+        crm.team.member_ids - the relation mazenet_crm's own access-control logic
+        actually uses everywhere (_mz_can_edit_by_team, _mz_can_edit_owned,
+        record_rules.xml's team-scoped rules, etc.). Deliberately NOT
+        res.users.crm_team_ids: that's stock Odoo's OWN, separate team-membership
+        mechanism (computed from crm.team.member join records - sales_team's
+        res_users.py), which demo data never populates here, so it's empty for
+        every user in this project and silently wrong for this purpose. Assumes
+        one team per user, which matches how every mazenet_access_rights role is
+        actually set up; returns an empty recordset if none/ambiguous."""
+        user = user or self.env.user
+        return self.env['crm.team'].search([('member_ids', '=', user.id)], limit=1)
+
+    @api.model
+    def _mz_default_team_id(self):
+        """Default a new lead's Sales Team to the CREATING user's own team
+        (_mz_user_own_team) - without this, a new lead's team_id falls back to
+        whatever stock CRM's own _get_default_team_id resolves, which isn't
+        guaranteed to match the actual creator's team. Since write() now strictly
+        requires being a member of a lead's CURRENT team_id to touch it at all
+        (see _mz_can_edit_owned), a wrong default here means hitting an
+        AccessError on the very first save - this is what actually prevents
+        that, for both the full form and the Kanban quick-create
+        (crm.quick_create_opportunity_form, inherited to show team_id)."""
+        return self._mz_user_own_team().id
+
+    team_id = fields.Many2one(default=_mz_default_team_id)
+
+    @api.model
     def _default_x_assign_type(self):
         """Agents can't use 'team' or 'internal' (see x_can_assign_beyond_self), so
         defaulting everyone to 'team' meant every Agent got bounced back to 'self'
@@ -122,7 +152,7 @@ class CrmLead(models.Model):
         single value to auto-assign for 'Team'."""
         if self.x_assign_type == 'self':
             self.user_id = self.env.user
-            self.team_id = self.env.user.crm_team_ids and self.env.user.crm_team_ids[0] or False
+            self.team_id = self._mz_user_own_team()
             return
         if self.x_assign_type == 'team':
             self.user_id = self.team_id.create_lead_id and self.team_id.create_lead_id[0] or False

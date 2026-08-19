@@ -93,5 +93,27 @@
                 </xpath>
             </field>
         </record>
+
+        <!-- Kanban Quick-Create Form: show Sales Team, defaulted to the creating user's
+             own team (crm_lead.py _mz_default_team_id) - stock CRM ships this field but
+             keeps it invisible="1". Since write() now requires being a member of a
+             lead's CURRENT team_id to touch it at all, whatever team_id a lead gets
+             created with has to be right from the start; surfacing the field here lets
+             the creator see/confirm/correct it (e.g. TL/ATL/Manager assigning straight
+             to a different team) instead of it being an invisible, silent default. -->
+        <record id="view_crm_lead_quick_create_inherit_mz" model="ir.ui.view">
+            <field name="name">crm.lead.form.quick_create.inherit.mz</field>
+            <field name="model">crm.lead</field>
+            <field name="inherit_id" ref="crm.quick_create_opportunity_form"/>
+            <field name="arch" type="xml">
+                <xpath expr="//field[@name='team_id']" position="replace">
+                    <div class="d-flex align-items-center" colspan="2">
+                        <i class="fa fa-users" title="Sales Team"/>
+                        <field name="team_id" nolabel="1" class="o_field_highlight w-100 mb-0"
+                               options="{'no_create': True}"/>
+                    </div>
+                </xpath>
+            </field>
+        </record>
     </data>
 </odoo>
