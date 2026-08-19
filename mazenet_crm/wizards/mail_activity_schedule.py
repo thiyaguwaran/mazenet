@@ -51,10 +51,12 @@ class MailActivitySchedule(models.TransientModel):
         activities = super(MailActivitySchedule, self)._action_schedule_activities()
         activities.mz_activity_time = self.mz_activity_time
         activities._mz_check_not_scheduled_in_past()
+        activities._mz_check_no_double_booking()
         return activities
 
     def _action_schedule_activities_personal(self):
         activity = super(MailActivitySchedule, self)._action_schedule_activities_personal()
         activity.mz_activity_time = self.mz_activity_time
         activity._mz_check_not_scheduled_in_past()
+        activity._mz_check_no_double_booking()
         return activity

@@ -95,6 +95,61 @@ class MailActivity(models.Model):
         tz_name = (self.user_id.tz if self.user_id else self.env.user.tz) or 'UTC'
         return mz_localize_to_utc(self.date_deadline, hour, tz_name)
 
+    def _mz_check_no_double_booking(self):
+        """Reject scheduling a Call/To-Do/Email activity for a CRM lead at the same moment
+        the same user already has something else due on a *different* lead - another
+        Call/To-Do/Email, or a Meeting. Mirrors the equivalent rule calendar_event.py
+        enforces for Meetings, so a user can't double-book themselves no matter which
+        activity type they use to do it. Meeting activities aren't checked here - their
+        placeholder date_deadline isn't a real time yet; calendar_event.py checks meetings
+        against the linked event's actual start/stop instead.
+        """
+        for activity in self:
+            if activity.res_model != 'crm.lead' or not activity.user_id \
+                    or activity.activity_type_id.category == 'meeting':
+                continue
+            instant = activity._mz_resolve_activity_datetime()
+            if not instant:
+                continue
+
+            other_activities = self.env['mail.activity'].search([
+                ('id', '!=', activity.id),
+                ('res_model', '=', 'crm.lead'),
+                ('res_id', '!=', activity.res_id),
+                ('user_id', '=', activity.user_id.id),
+                ('activity_type_id.category', '!=', 'meeting'),
+            ])
+            clash = next(
+                (other for other in other_activities if other._mz_resolve_activity_datetime() == instant),
+                None,
+            )
+            if clash:
+                raise UserError(_(
+                    "%(user)s already has \"%(other)s\" scheduled for %(when)s, on a "
+                    "different lead. Pick another time."
+                ) % {
+                    'user': activity.user_id.name,
+                    'other': clash.summary or clash.activity_type_id.name,
+                    'when': instant,
+                })
+
+            clashing_meeting = self.env['calendar.event'].search([
+                ('res_model', '=', 'crm.lead'),
+                ('res_id', '!=', activity.res_id),
+                ('user_id', '=', activity.user_id.id),
+                ('start', '<=', instant),
+                ('stop', '>', instant),
+            ], limit=1)
+            if clashing_meeting:
+                raise UserError(_(
+                    "%(user)s already has a meeting scheduled for %(when)s (\"%(other)s\"), "
+                    "on a different lead. Pick another time."
+                ) % {
+                    'user': activity.user_id.name,
+                    'other': clashing_meeting.name,
+                    'when': instant,
+                })
+
     def _mz_check_not_scheduled_in_past(self):
         """Reject Call/To-Do activities on a CRM lead whose resolved date+time has already
         passed. Called explicitly by the scheduling wizard once both date_deadline and
