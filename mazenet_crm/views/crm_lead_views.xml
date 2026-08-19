@@ -15,39 +15,20 @@
                             confirm="Release the RED lock on this lead? It will become editable again."/>
                 </xpath>
 
-
-
-                <!-- Whole sheet becomes read-only while x_is_locked is True. Server-side
-                     write() enforcement (crm_lead.py) is the real guard; this is the UX
-                     mirror of it so users see it as read-only rather than hitting a save
-                     error. -->
                 <xpath expr="//sheet" position="attributes">
                     <attribute name="readonly">x_is_locked</attribute>
                 </xpath>
-
-                <!-- user_id is auto-populated only for 'self' (assign_salesperson() in
-                     crm_lead.py); 'team' and 'internal' both leave it hand-pickable,
-                     restricted to x_assignable_user_ids (a view-level domain, not an
-                     onchange-returned one - the web client doesn't reliably honor a
-                     Many2one search domain patched in via onchange). -->
                 <xpath expr="//field[@name='user_id']" position="attributes">
                     <attribute name="readonly">x_is_locked or x_assign_type == 'self'</attribute>
                     <attribute name="domain">[('id', 'in', x_assignable_user_ids)]</attribute>
                 </xpath>
                 <xpath expr="//field[@name='user_id']" position="before">
-                    <field name="team_id" required="1"/>
                     <field name="x_assign_type" widget="radio" options="{'horizontal': true}"/>
+                    <field name="team_id" readonly="x_assign_type == 'self'" required="x_assign_type != 'self'"/>
                     <field name="x_can_assign_beyond_self" invisible="1"/>
                     <field name="x_assignable_user_ids" invisible="1"/>
                 </xpath>
 
-                <!-- The header (stage statusbar + Won/Lost/Convert/Restore buttons) sits
-                     OUTSIDE the sheet, so the readonly attribute above doesn't reach it -
-                     without this, those stayed fully clickable while locked (client-reported:
-                     "still able to edit the lead"). Server-side write() already rejects the
-                     resulting change either way, but a clickable-then-rejected control reads
-                     as broken, not as locked - hide them instead so the only header action
-                     available while locked is Release RED Lock itself. -->
                 <xpath expr="//field[@name='stage_id']" position="attributes">
                     <attribute name="readonly">won_status == 'lost' or not active or x_is_locked</attribute>
                 </xpath>

@@ -17,18 +17,20 @@ Mazenet CRM - Pipeline Customizations
     'author': 'Mazenet Tech / Development Team',
     'website': 'https://www.mazenet.com',
     'depends': ['crm', 'mail', 'calendar', 'mazenet_access_rights'],
-    'data': [
-        'security/ir.model.access.csv',
-        'data/teams.xml',
-        'data/stages.xml',
-        'security/record_rules.xml',
-        'data/cron.xml',
-        'data/alarms.xml',
-        'views/crm_lead_views.xml',
-        'views/crm_team_views.xml',
-        'views/calendar_event_views.xml',
-        'wizards/archive_wizard_views.xml',
-        'wizards/mail_activity_schedule_views.xml',
+    "data": [
+        "data/alarms.xml",
+        "data/cron.xml",
+        "data/stages.xml",
+        "data/teams.xml",
+        "security/ir.model.access.csv",
+        "security/record_rules.xml",
+        "views/calendar_event_views.xml",
+        "views/crm_lead_views.xml",
+        "views/crm_team_views.xml",
+        "views/res_company_views.xml",
+        "views/res_users_views.xml",
+        "wizards/archive_wizard_views.xml",
+        "wizards/mail_activity_schedule_views.xml"
     ],
     'assets': {
         'web.assets_backend': [

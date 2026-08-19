@@ -115,6 +115,7 @@ class CrmLead(models.Model):
         single value to auto-assign for 'Team'."""
         if self.x_assign_type == 'self':
             self.user_id = self.env.user
+            self.team_id = self.env.user.crm_team_ids and self.env.user.crm_team_ids[0] or False
             return
         if self.x_assign_type == 'team':
             self.user_id = self.team_id.create_lead_id and self.team_id.create_lead_id[0] or False
@@ -150,20 +151,6 @@ class CrmLead(models.Model):
         string="RED Lock Active",
         default=False,
         help="Indicates if lead is currently locked due to RED timer expiration."
-    )
-
-    x_lock_escalation_level = fields.Integer(
-        string="RED Lock Escalation Level", default=0,
-        help="How many steps up the owner's team hierarchy have already been notified "
-             "about this RED lock (0 = only the owner). _cron_escalate_red_locks bumps "
-             "this by one, per _mz_red_lock_escalation_targets(), each time "
-             "MZ_RED_LOCK_GRACE_MINUTES pass without a release. Reset to 0 on release."
-    )
-    x_lock_last_escalated = fields.Datetime(
-        string="RED Lock Last Escalated",
-        help="When the owner (level 0) or the current escalation step was last "
-             "notified about this RED lock. _cron_escalate_red_locks only bumps to "
-             "the next step once this is more than MZ_RED_LOCK_GRACE_MINUTES in the past."
     )
 
     x_lock_date = fields.Datetime(
@@ -399,12 +386,7 @@ class CrmLead(models.Model):
                     "the owner's Team Lead/Manager (or CTO/Admin) can release it."
                 ) % lead.name)
 
-            lead.write({
-                'x_is_locked': False,
-                'x_lock_date': False,
-                'x_lock_escalation_level': 0,
-                'x_lock_last_escalated': False,
-            })
+            lead.write({'x_is_locked': False, 'x_lock_date': False})
             lead.message_post(body=_("RED lock released by %s. Lead is editable again.") % self.env.user.name)
 
             if lead.user_id:
@@ -466,7 +448,9 @@ class CrmLead(models.Model):
         10:15, not the instant 10:00 passes - gives the owner a short window to still make
         it before it counts against them."""
         now = fields.Datetime.now()
-        cutoff = now - timedelta(minutes=MZ_RED_LOCK_GRACE_MINUTES)
+        current_company = self.env.company
+        grace_time = current_company.grace_time
+        cutoff = now - timedelta(minutes=grace_time)
 
         leads = self.sudo().search([
             ('x_next_activity_datetime', '!=', False),
@@ -479,114 +463,58 @@ class CrmLead(models.Model):
             lead.write({
                 'x_is_locked': True,
                 'x_lock_date': now,
-                'x_lock_escalation_level': 0,
-                'x_lock_last_escalated': now,
             })
             lead._notify_red_lock_triggered()
+    
 
-    def _mz_red_lock_escalation_targets(self):
-        """Ordered list of res.users recordsets to escalate this lead's RED lock to,
-        one entry per step above the owner - resolved entirely from data the team
-        admin configures on crm.team (privelege_ids, member_ids):
-        1. Refer the lead's team, collect all groups across its selected
-           privileges (crm.team.privelege_ids -> privilege.group_ids).
-        2. Check which of those groups the salesperson (owner) is actually in -
-           checked privilege by privilege, since sequence only ranks groups
-           WITHIN one privilege (e.g. a Corporate team's 5 sub-team privileges
-           each restart their own 10/20/25/30/35/40 numbering).
-        3. Walk that privilege's remaining groups upward by sequence. At each
-           step, whoever in team.member_ids holds that group is the escalation
-           target for that step - a step nobody on the team holds is skipped.
-        Empty if the owner is unrecognized, the team has no privileges
-        configured, or the owner holds none of those privileges' groups."""
-        self.ensure_one()
-        owner = self.user_id
-        team = self.team_id
-        if not owner or not team or not team.privelege_ids:
-            return []
 
-        owner_privilege = None
-        owner_group = None
-        for privilege in team.privelege_ids:
-            for group in privilege.group_ids.sorted('sequence', reverse=True):
-                if owner in group.user_ids:
-                    owner_privilege = privilege
-                    owner_group = group
-                    break
-            if owner_group:
-                break
-        if not owner_group:
-            return []
+    def _get_parent_hierarchy(self, group):
+            """Recursively fetch all parent/ancestor groups."""
+            parents = self.env['res.groups'].search([('implied_ids', 'in', group.id)])
+            for parent in parents:
+                parents |= self._get_parent_hierarchy(parent)
+            return parents
 
-        higher_groups = owner_privilege.group_ids.filtered(
-            lambda g: g.sequence > owner_group.sequence
-        ).sorted('sequence')
+    def check_red_lock_recods(self):
+        red_lock_rec_vals = self.search([('x_is_locked', '=', True)])
+        company = self.env.company
+        grace_time = company.grace_time or 0
+        todo_activity_type = self.env.ref('mail.mail_activity_data_todo', raise_if_not_found=False)
+        activity_type_id = todo_activity_type.id if todo_activity_type else False
+        for lead in red_lock_rec_vals:
+            if lead.x_lock_date and (fields.Datetime.now() - lead.x_lock_date).total_seconds() / 60 > grace_time:
+                user = lead.user_id
+                if not user:
+                    continue
+                target_groups = lead.team_id.privelege_ids.mapped('group_ids')
+                matching_groups = target_groups & user.group_ids
+                parent_users = self.env['res.users']
+                for group in matching_groups:
+                    all_parents = self._get_parent_hierarchy(group)
+                    for parent in all_parents:
+                        parent_users |= parent.user_ids
+                escalation_users = parent_users - user
+                for parent_user in escalation_users:
+                    existing_activity = self.env['mail.activity'].sudo().search([
+                        ('res_model', '=', 'crm.lead'),
+                        ('res_id', '=', lead.id),
+                        ('user_id', '=', parent_user.id),
+                        ('summary', '=', 'Red Lock Release Pending'),
+                    ], limit=1)
+                    if not existing_activity:
+                        lead.activity_schedule(
+                            activity_type_id=activity_type_id,
+                            summary="Red Lock Release Pending",
+                            note=(
+                                f"<p><strong>Alert:</strong> No one has released the Red Lock on lead "
+                                f"<strong>{lead.name}</strong> assigned to <strong>{user.name}</strong>.</p>"
+                                f"<p>Grace period of {grace_time} minutes has been exceeded.</p>"
+                            ),
+                            user_id=parent_user.id,
+                            date_deadline=fields.Date.context_today(self),)
 
-        targets = []
-        for group in higher_groups:
-            members = team.member_ids & group.user_ids
-            if members:
-                targets.append(members)
-        return targets
 
-    def _mz_notify_red_lock_escalation(self, targets):
-        """Chatter + Inbox + standing activity to `targets` (a res.users recordset -
-        one step from _mz_red_lock_escalation_targets()) that this lead's owner
-        hasn't released the RED lock within a grace period. Same notification
-        channel as the initial owner notification in _notify_red_lock_triggered."""
-        self.ensure_one()
-        owner_name = self.user_id.name if self.user_id else _("Unassigned")
-        self.message_post(
-            body=_("RED LOCK escalation: still locked and unreleased (owner: %s). Escalating to %s.")
-                 % (owner_name, ', '.join(targets.mapped('name'))),
-            subtype_xmlid="mail.mt_note",
-        )
-        self._push_notification(
-            targets,
-            subject=_("RED Lock Escalation: Action Required"),
-            body=_("Lead '%s' (owner: %s) is still RED-locked and has not been released. "
-                   "Please review and release it.") % (self.name, owner_name),
-        )
-        for user in targets:
-            self.activity_schedule(
-                'mail.mail_activity_data_todo',
-                summary=_("RED Lock Escalation: %s") % self.name,
-                note=_("Lead is still RED-locked (owner: %s) and was not released in time.") % owner_name,
-                user_id=user.id,
-            )
 
-    @api.model
-    def _cron_escalate_red_locks(self):
-        """Works through already-locked leads that still haven't been released:
-        every MZ_RED_LOCK_GRACE_MINUTES since the owner (or the previous escalation
-        step) was last notified, bumps to the next step up the owner's team
-        hierarchy (_mz_red_lock_escalation_targets) - repeating until either the
-        lock is released (action_release_lock resets the escalation fields) or the
-        top of that hierarchy has been notified."""
-        now = fields.Datetime.now()
-        cutoff = now - timedelta(minutes=MZ_RED_LOCK_GRACE_MINUTES)
-
-        leads = self.sudo().search([
-            ('x_is_locked', '=', True),
-            ('x_lock_last_escalated', '!=', False),
-            ('x_lock_last_escalated', '<', cutoff),
-        ])
-        for lead in leads:
-            targets = lead._mz_red_lock_escalation_targets()
-            next_level = lead.x_lock_escalation_level + 1
-            if next_level <= len(targets):
-                lead._mz_notify_red_lock_escalation(targets[next_level - 1])
-                lead.write({'x_lock_escalation_level': next_level, 'x_lock_last_escalated': now})
-            else:
-                lead.write({'x_lock_last_escalated': now})
-
-    # Team xmlid -> (company name pool, lead-name template, base revenue). teams.xml
-    # consolidated Hunter/Account Manager/Corporate Training/LMS/TNH into one
-    # team_corporate record, and Tally's Development/Sales branches into one
-    # team_tally record, so their formerly-separate pools are merged here too
-    # (company lists combined for variety; template/revenue picked as one
-    # representative value rather than kept per sub-team, since crm.team no
-    # longer distinguishes them).
     _MZ_TEAM_LEAD_POOLS = {
         'mazenet_crm.team_dmt': (
             ["Rajesh Traders", "Sunrise Textiles", "Om Sai Enterprises", "Kaveri Foods Pvt Ltd",
