@@ -531,6 +531,7 @@
         <record id="mazenet_crm.team_dmt" model="crm.team">
             <field name="user_id" ref="user_dmt_mgr"/>
             <field name="member_ids" eval="[(6, 0, [
+                ref('user_dmt_mgr'),
                 ref('user_dmt_agent1'), ref('user_dmt_agent2'),
                 ref('user_dmt_tl'), ref('user_dmt_tl_agent1'), ref('user_dmt_tl_agent2'),
                 ref('user_dmt_atl1'), ref('user_dmt_atl1_agent1'), ref('user_dmt_atl1_agent2'),
@@ -547,6 +548,7 @@
         <record id="mazenet_crm.team_tally" model="crm.team">
             <field name="user_id" ref="user_tally_mgr"/>
             <field name="member_ids" eval="[(6, 0, [
+                ref('user_tally_mgr'),
                 ref('user_tally_tl1'),
                 ref('user_tally_tl1_agent1'), ref('user_tally_tl1_agent2'),
                 ref('user_tally_direct1'),
@@ -568,6 +570,7 @@
         <record id="mazenet_crm.team_corporate" model="crm.team">
             <field name="user_id" ref="user_corp_mgr"/>
             <field name="member_ids" eval="[(6, 0, [
+                ref('user_corp_mgr'),
                 ref('user_hunter_tl1'), ref('user_hunter_tl2'),
                 ref('user_hunter_tl1_agent1'), ref('user_hunter_tl1_agent2'),
                 ref('user_hunter_tl2_agent1'), ref('user_hunter_tl2_agent2'),
@@ -596,6 +599,7 @@
         <record id="mazenet_crm.team_technology" model="crm.team">
             <field name="user_id" ref="user_tech_mgr"/>
             <field name="member_ids" eval="[(6, 0, [
+                ref('user_tech_mgr'),
                 ref('user_tech_agent1'), ref('user_tech_agent2'),
                 ref('user_tech_tl'), ref('user_tech_tl_agent1'), ref('user_tech_tl_agent2'),
                 ref('user_tech_atl1'), ref('user_tech_atl1_agent1'), ref('user_tech_atl1_agent2'),
@@ -606,6 +610,7 @@
         <record id="mazenet_crm.team_software" model="crm.team">
             <field name="user_id" ref="user_swdev_mgr"/>
             <field name="member_ids" eval="[(6, 0, [
+                ref('user_swdev_mgr'),
                 ref('user_swdev_agent1'), ref('user_swdev_agent2'),
                 ref('user_swdev_tl'), ref('user_swdev_tl_agent1'), ref('user_swdev_tl_agent2'),
                 ref('user_swdev_atl1'), ref('user_swdev_atl1_agent1'), ref('user_swdev_atl1_agent2'),
@@ -616,6 +621,7 @@
         <record id="mazenet_crm.team_mis" model="crm.team">
             <field name="user_id" ref="user_mis_mgr"/>
             <field name="member_ids" eval="[(6, 0, [
+                ref('user_mis_mgr'),
                 ref('user_mis_agent1'), ref('user_mis_agent2'),
                 ref('user_mis_tl'), ref('user_mis_tl_agent1'), ref('user_mis_tl_agent2'),
                 ref('user_mis_atl1'), ref('user_mis_atl1_agent1'), ref('user_mis_atl1_agent2'),

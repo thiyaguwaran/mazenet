@@ -48,9 +48,14 @@
                 <xpath expr="//field[@name='won_status']" position="before">
                     <field name="x_is_locked" invisible="1"/>
                     <field name="x_content_readonly_for_me" invisible="1"/>
+                    <field name="x_team_transfer_readonly" invisible="1"/>
                     <div class="alert alert-danger mb-0" role="alert" invisible="not x_is_locked">
                         <i class="fa fa-lock me-1" title="RED Lock"/>
                         <b>RED LOCKED</b> - this lead is overdue and read-only until released.
+                    </div>
+                    <div class="alert alert-secondary mb-0" role="alert" invisible="not x_team_transfer_readonly">
+                        <i class="fa fa-arrow-right-arrow-left me-1" title="Transferred"/>
+                        <b>TRANSFERRED</b> - this lead has moved to another Sales Team and is read-only for you.
                     </div>
                 </xpath>
             </field>
@@ -66,6 +71,7 @@
                     <field name="x_is_locked"/>
                     <field name="activity_state"/>
                     <field name="x_activity_warning"/>
+                    <field name="x_team_transfer_readonly"/>
                 </xpath>
                 <xpath expr="//t[@t-name='card']/*[1]" position="before">
                     <!-- Small corner ribbon + a subtle tint/border (via kanban_red.css, keyed off
@@ -80,6 +86,10 @@
                          invisible condition needed here beyond the field's own value. -->
                     <span t-if="record.x_activity_warning.raw_value == 'purple'" class="mz-activity-purple-card d-none"/>
                     <span t-if="record.x_activity_warning.raw_value == 'orange'" class="mz-activity-orange-card d-none"/>
+                    <!-- Read-only because Sales Team moved off whoever's browsing (not a
+                         RED lock - that already gets the red treatment above) - grey tint,
+                         same marker-span pattern, see kanban_red.css. -->
+                    <span t-if="record.x_team_transfer_readonly.raw_value" class="mz-team-transferred-card d-none"/>
                 </xpath>
             </field>
         </record>

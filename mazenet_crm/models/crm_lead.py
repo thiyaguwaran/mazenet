@@ -9,7 +9,13 @@ from odoo.exceptions import AccessError
 # 10:00 passes.
 MZ_RED_LOCK_GRACE_MINUTES = 15
 
-REASSIGN_FIELDS = {"user_id", "team_id", "stage_id"}
+# x_assign_type drives user_id alongside team_id (assign_salesperson onchange) - it's
+# part of the same reassignment picker, not lead "content", so it belongs here too:
+# without it, a BU Manager doing a normal Self/Team/Internal team hand-off through the
+# form (which always touches x_assign_type together with team_id/user_id) would trip
+# the "Managers view and reassign; content edits go through the Team Lead" rule below
+# on a lead they don't own, even though nothing about the lead's actual content changed.
+REASSIGN_FIELDS = {"user_id", "team_id", "stage_id", "x_assign_type"}
 SYSTEM_FIELDS = {
     "message_follower_ids", "activity_ids", "message_ids", "message_main_attachment_id",
     "website_message_ids", "message_has_error", "message_has_error_counter", "message_needaction",
@@ -94,6 +100,7 @@ class CrmLead(models.Model):
     )
 
     @api.depends('team_id', 'x_assign_type')
+    @api.depends_context('uid')
     def _compute_x_assignable_user_ids(self):
         tier, _chain = self._mz_user_tier_chain(self.env.user)
         can_beyond_self = tier in ('atl', 'tl', 'manager')
@@ -163,17 +170,22 @@ class CrmLead(models.Model):
         string="Read-Only For Me",
         help="Whether write() would actually reject a content edit from the CURRENT "
              "user right now - covers both RED-lock read-only AND the team-transfer "
-             "rule: once a lead's team_id moves off whatever team gave someone "
-             "ATL/TL/Manager-level access (_mz_can_edit_by_team), it goes read-only "
-             "for them, locked or not. CTO/Admin bypass both. The lead's own OWNER "
-             "keeps editing it across a team transfer when unlocked (base-tier 'edit "
-             "own lead' semantics) - but NOT while locked, since being locked out is "
-             "the whole point of RED lock for the owner specifically. Not stored - it "
+             "rule: once a lead's team_id moves off wherever gave someone access "
+             "(_mz_can_edit_owned/_mz_can_edit_by_team), it goes read-only for them, "
+             "locked or not - there is NO owner exemption while unlocked either, "
+             "Sales Team (team_id) is the single source of truth for both the "
+             "transfer action and this check, whether the lead is owned or not (an "
+             "unowned lead just always fails the 'am I the owner' half of "
+             "_mz_can_edit_owned, so it needs ATL/TL/Manager tier same as a non-owner "
+             "editing someone else's lead). CTO/Admin bypass everything. While LOCKED "
+             "specifically, the owner is excluded even on their own team - being "
+             "locked out is the whole point of RED lock for them. Not stored - it "
              "reflects whoever has the form open, same pattern as "
              "x_can_assign_beyond_self."
     )
 
     @api.depends('x_is_locked', 'team_id', 'user_id')
+    @api.depends_context('uid')
     def _compute_x_content_readonly_for_me(self):
         u = self.env.user
         is_cto_admin = u.has_group("mazenet_access_rights.group_mzr_cto_admin")
@@ -183,9 +195,28 @@ class CrmLead(models.Model):
             elif lead.x_is_locked:
                 lead.x_content_readonly_for_me = not lead._mz_can_edit_by_team(u)
             else:
-                lead.x_content_readonly_for_me = not (
-                    lead.user_id == u or lead._mz_can_edit_by_team(u)
-                )
+                lead.x_content_readonly_for_me = not lead._mz_can_edit_owned(u)
+
+    x_team_transfer_readonly = fields.Boolean(
+        compute="_compute_x_team_transfer_readonly",
+        string="Read-Only (Team Transfer)",
+        help="True specifically when this lead is read-only for the CURRENT user "
+             "because of the Sales Team rule (_mz_can_edit_owned) - NOT because of a "
+             "RED lock. Kept separate from x_content_readonly_for_me (which covers "
+             "both) so the UI can color-code the two causes differently: RED lock "
+             "already gets red (ribbon/tint/banner) elsewhere, this one drives a "
+             "grey tint/banner instead, in the kanban card and the form, so a "
+             "lead that's simply moved off your team doesn't read as 'overdue' when "
+             "it isn't. Not stored - same per-user reasoning as "
+             "x_content_readonly_for_me."
+    )
+
+    @api.depends('x_is_locked', 'x_content_readonly_for_me')
+    def _compute_x_team_transfer_readonly(self):
+        for lead in self:
+            lead.x_team_transfer_readonly = (
+                lead.x_content_readonly_for_me and not lead.x_is_locked
+            )
 
     x_activity_warning = fields.Selection(
         [
@@ -311,11 +342,14 @@ class CrmLead(models.Model):
             # (granted to every staging user for CRM-menu/team visibility, see
             # feedback_sales_group_visibility memory) is unrestricted, so
             # record_rules.xml's team-scoped write rules no longer actually gate
-            # anything on their own. _mz_can_edit_by_team re-enforces that scoping at
-            # the application layer: a non-owner ATL/TL/Manager only keeps editing a
-            # lead while it's still on their team; the lead's own OWNER is exempt from
-            # this one check (unlike the locked case) - editing your own lead across a
-            # team hand-off is normal CRM use, not something RED lock is about.
+            # anything on their own. Sales Team (team_id) is the single source of
+            # truth for both the transfer action and this check, same as it is for
+            # RED-lock escalation - there is NO owner exemption here: once team_id
+            # moves off wherever gave someone access, it's read-only for them too,
+            # owner included (_mz_can_edit_owned). That's different from the LOCKED
+            # branch just above, where the owner is deliberately excluded even on
+            # their OWN team - being locked out is the whole point of RED lock for
+            # them specifically.
             if content_touched:
                 for lead in self:
                     if lead.x_is_locked:
@@ -324,7 +358,7 @@ class CrmLead(models.Model):
                                 "Lead '%s' is RED-locked and read-only. Use 'Release RED Lock' "
                                 "before it can be edited again."
                             ) % lead.name)
-                    elif lead.user_id != u and not lead._mz_can_edit_by_team(u):
+                    elif not lead._mz_can_edit_owned(u):
                         raise AccessError(_(
                             "Lead '%s' has been transferred to another team and is "
                             "read-only for you now."
@@ -461,14 +495,35 @@ class CrmLead(models.Model):
 
         Used two ways in write() - while RED-locked, this is the ONLY non-CTO/Admin
         path to edit at all (the owner is deliberately excluded there too, being
-        locked out is the point); once unlocked, it's OR'd with plain ownership so a
-        non-owner ATL/TL/Manager still loses access the instant team_id moves off
-        their team, while the owner keeps editing their own lead regardless."""
+        locked out is the point); once unlocked, _mz_can_edit_owned uses this for any
+        NON-owner (a TL/ATL/Manager working a lead they don't personally own), OR'd
+        with a separate, tier-agnostic membership check for the owner themselves."""
         self.ensure_one()
         if not self.team_id or user not in self.team_id.member_ids:
             return False
         tier, _chain = self._mz_user_tier_chain(user)
         return tier in ('atl', 'tl', 'manager')
+
+    def _mz_can_edit_owned(self, user):
+        """Whether `user` may edit this UNLOCKED lead's content - owned or not, name
+        aside this is the general-purpose check for the non-locked case. Sales Team
+        (team_id) is the single source of truth, no owner exemption - `user` must
+        currently be a member of team_id.member_ids, full stop. Within that, two
+        cases: the lead's OWNER (if any - an unowned lead never matches this) may
+        edit it at ANY tier (an Agent editing their own lead is normal day-to-day CRM
+        use, not something this rule should block) as long as they're still on the
+        team it's filed under; anyone else - including on an unowned lead, where this
+        is the ONLY path in - additionally needs ATL/TL/Manager tier
+        (_mz_can_edit_by_team). Either way, the moment team_id moves elsewhere,
+        whoever isn't a member of the NEW team loses access - owner included -
+        matching how the transfer itself only ever considers Sales Team, nothing
+        else."""
+        self.ensure_one()
+        if not self.team_id or user not in self.team_id.member_ids:
+            return False
+        if user == self.user_id:
+            return True
+        return self._mz_can_edit_by_team(user)
 
     def action_release_lock(self):
         """Clears the RED lock, making the lead editable again - only for whoever

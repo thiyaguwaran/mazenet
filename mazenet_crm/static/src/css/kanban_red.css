@@ -1,8 +1,10 @@
-/* Mazenet CRM - RED Lock Kanban Card Styling.
-   Subtle by design: a soft red tint + a slim left accent border, card content stays fully
+/* Mazenet CRM - Kanban Card State Styling (RED Lock, pre-lock warnings, team transfer).
+   Subtle by design: a soft tint + a slim left accent border, card content stays fully
    visible and legible (no full-card color fill, no forced white text). A corner ribbon
-   ("Overdue", from the kanban view's web_ribbon widget) is the primary attention-getter;
-   this tint is the secondary at-a-glance signal when scanning a column of cards.
+   ("Overdue", from the kanban view's web_ribbon widget) is the primary attention-getter
+   for the RED-lock case; the tint is the secondary at-a-glance signal when scanning a
+   column of cards - and the only signal for states (like a team transfer) that aren't
+   "overdue" at all and so don't get a ribbon.
 
    Scoped strictly to the individual overdue/locked card (.o_kanban_record that directly
    contains .mz-red-locked-card) - NOT to any ancestor. A previous version used
@@ -53,5 +55,25 @@
     .o_kanban_record_has_image:has(> .mz-activity-orange-card) {
         background-color: rgba(240, 178, 122, 0.16) !important;
         border-left-color: rgba(240, 178, 122, 0.65) !important;
+    }
+}
+
+/* Team-transfer readonly - grey, not red: this isn't overdue or locked, it's simply a
+   lead that moved to another Sales Team and is read-only for whoever's currently
+   browsing (crm_lead.py x_team_transfer_readonly / _mz_can_edit_owned). Mutually
+   exclusive with the RED-lock tint above by construction (x_team_transfer_readonly is
+   explicitly False whenever x_is_locked is True). */
+.o_kanban_record:has(> .mz-team-transferred-card),
+.o_kanban_record_has_image:has(> .mz-team-transferred-card) {
+    background-color: rgba(120, 120, 120, 0.08) !important;
+    border-left: 3px solid rgba(120, 120, 120, 0.5) !important;
+    border-radius: 4px;
+}
+
+@media (prefers-color-scheme: dark) {
+    .o_kanban_record:has(> .mz-team-transferred-card),
+    .o_kanban_record_has_image:has(> .mz-team-transferred-card) {
+        background-color: rgba(180, 180, 180, 0.12) !important;
+        border-left-color: rgba(180, 180, 180, 0.55) !important;
     }
 }
