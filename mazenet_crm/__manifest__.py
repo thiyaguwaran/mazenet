@@ -28,6 +28,7 @@ Mazenet CRM - Pipeline Customizations
         "views/crm_lead_views.xml",
         "views/crm_team_views.xml",
         "views/res_company_views.xml",
+        "views/res_users_views.xml",
         "wizards/archive_wizard_views.xml",
         "wizards/mail_activity_schedule_views.xml"
     ],

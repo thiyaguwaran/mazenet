@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    
+    <!-- View res.users form -->
+    <record id="view_res_users_form_inherit" model="ir.ui.view">
+        <field name="name">view.res.users.form.inherit</field>
+        <field name="model">res.users</field>
+        <field name="inherit_id" ref="base.view_users_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//sheet/group/field[@name='partner_id']" position="after">
+                <field name="crm_team_ids" string="CRM Teams" widget="many2many_tags"/>
+            </xpath>
+        </field>
+    </record>
+
+</odoo>
