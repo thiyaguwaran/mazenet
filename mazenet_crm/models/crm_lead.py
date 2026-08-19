@@ -465,14 +465,56 @@ class CrmLead(models.Model):
                 'x_lock_date': now,
             })
             lead._notify_red_lock_triggered()
+    
 
-    # Team xmlid -> (company name pool, lead-name template, base revenue). teams.xml
-    # consolidated Hunter/Account Manager/Corporate Training/LMS/TNH into one
-    # team_corporate record, and Tally's Development/Sales branches into one
-    # team_tally record, so their formerly-separate pools are merged here too
-    # (company lists combined for variety; template/revenue picked as one
-    # representative value rather than kept per sub-team, since crm.team no
-    # longer distinguishes them).
+
+    def _get_parent_hierarchy(self, group):
+            """Recursively fetch all parent/ancestor groups."""
+            parents = self.env['res.groups'].search([('implied_ids', 'in', group.id)])
+            for parent in parents:
+                parents |= self._get_parent_hierarchy(parent)
+            return parents
+
+    def check_red_lock_recods(self):
+        red_lock_rec_vals = self.search([('x_is_locked', '=', True)])
+        company = self.env.company
+        grace_time = company.grace_time or 0
+        todo_activity_type = self.env.ref('mail.mail_activity_data_todo', raise_if_not_found=False)
+        activity_type_id = todo_activity_type.id if todo_activity_type else False
+        for lead in red_lock_rec_vals:
+            if lead.x_lock_date and (fields.Datetime.now() - lead.x_lock_date).total_seconds() / 60 > grace_time:
+                user = lead.user_id
+                if not user:
+                    continue
+                target_groups = lead.team_id.privelege_ids.mapped('group_ids')
+                matching_groups = target_groups & user.group_ids
+                parent_users = self.env['res.users']
+                for group in matching_groups:
+                    all_parents = self._get_parent_hierarchy(group)
+                    for parent in all_parents:
+                        parent_users |= parent.user_ids
+                escalation_users = parent_users - user
+                for parent_user in escalation_users:
+                    existing_activity = self.env['mail.activity'].sudo().search([
+                        ('res_model', '=', 'crm.lead'),
+                        ('res_id', '=', lead.id),
+                        ('user_id', '=', parent_user.id),
+                        ('summary', '=', 'Red Lock Release Pending'),
+                    ], limit=1)
+                    if not existing_activity:
+                        lead.activity_schedule(
+                            activity_type_id=activity_type_id,
+                            summary="Red Lock Release Pending",
+                            note=(
+                                f"<p><strong>Alert:</strong> No one has released the Red Lock on lead "
+                                f"<strong>{lead.name}</strong> assigned to <strong>{user.name}</strong>.</p>"
+                                f"<p>Grace period of {grace_time} minutes has been exceeded.</p>"
+                            ),
+                            user_id=parent_user.id,
+                            date_deadline=fields.Date.context_today(self),)
+
+
+
     _MZ_TEAM_LEAD_POOLS = {
         'mazenet_crm.team_dmt': (
             ["Rajesh Traders", "Sunrise Textiles", "Om Sai Enterprises", "Kaveri Foods Pvt Ltd",
