@@ -26,7 +26,7 @@
             <field name="name">DMT: Agent</field>
             <field name="sequence">10</field>
             <field name="privilege_id" ref="res_groups_privilege_mzr_dmt"/>
-            <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+            <field name="implied_ids" eval="[(4, ref('base.group_user')), (4, ref('sales_team.group_sale_salesman')), (4, ref('sales_team.group_sale_salesman_all_leads'))]"/>
             <field name="comment">ATL-supervised front-line agent on the DMT team only. No visibility into other teams.</field>
         </record>
         <record id="group_mzr_dmt_atl" model="res.groups">
@@ -44,6 +44,7 @@
             <field name="sequence">25</field>
             <field name="privilege_id" ref="res_groups_privilege_mzr_dmt"/>
             <!-- <field name="implied_ids" eval="[(4, ref('group_mzr_dmt_agent'))]"/> -->
+            <field name="implied_ids" eval="[(4, ref('sales_team.group_sale_salesman')), (4, ref('sales_team.group_sale_salesman_all_leads'))]"/>
             <field name="comment">This is the TL-Direct Agent group for the DMT team.</field>
         </record>
         <record id="group_mzr_dmt_tl" model="res.groups">
@@ -59,6 +60,7 @@
             <field name="sequence">35</field>
             <field name="privilege_id" ref="res_groups_privilege_mzr_dmt"/>
             <!-- <field name="implied_ids" eval="[(4, ref('group_mzr_dmt_agent'))]"/> -->
+            <field name="implied_ids" eval="[(4, ref('sales_team.group_sale_salesman')), (4, ref('sales_team.group_sale_salesman_all_leads'))]"/>
             <field name="comment">This is the Manager-Direct Agent group for the DMT team.</field>
         </record>
 
@@ -89,7 +91,7 @@
             <field name="name">Technology: Agent</field>
             <field name="sequence">10</field>
             <field name="privilege_id" ref="res_groups_privilege_mzr_technology"/>
-            <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+            <field name="implied_ids" eval="[(4, ref('base.group_user')), (4, ref('sales_team.group_sale_salesman')), (4, ref('sales_team.group_sale_salesman_all_leads'))]"/>
             <field name="comment">ATL-supervised front-line agent on the Technology team only. No visibility into other teams.</field>
         </record>
         <record id="group_mzr_technology_atl" model="res.groups">
@@ -104,6 +106,7 @@
             <field name="sequence">25</field>
             <field name="privilege_id" ref="res_groups_privilege_mzr_technology"/>
             <!-- <field name="implied_ids" eval="[(4, ref('group_mzr_technology_agent'))]"/> -->
+            <field name="implied_ids" eval="[(4, ref('sales_team.group_sale_salesman')), (4, ref('sales_team.group_sale_salesman_all_leads'))]"/>
             <field name="comment">This is the TL-Direct Agent group for the Technology team.</field>
         </record>
         <record id="group_mzr_technology_tl" model="res.groups">
@@ -119,6 +122,7 @@
             <field name="sequence">35</field>
             <field name="privilege_id" ref="res_groups_privilege_mzr_technology"/>
             <!-- <field name="implied_ids" eval="[(4, ref('group_mzr_technology_agent'))]"/> -->
+            <field name="implied_ids" eval="[(4, ref('sales_team.group_sale_salesman')), (4, ref('sales_team.group_sale_salesman_all_leads'))]"/>
             <field name="comment">This is the Manager-Direct Agent group for the Technology team.</field>
         </record>
         <record id="group_mzr_technology_manager" model="res.groups">
@@ -148,7 +152,7 @@
             <field name="name">software: Agent</field>
             <field name="sequence">10</field>
             <field name="privilege_id" ref="res_groups_privilege_mzr_software"/>
-            <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+            <field name="implied_ids" eval="[(4, ref('base.group_user')), (4, ref('sales_team.group_sale_salesman')), (4, ref('sales_team.group_sale_salesman_all_leads'))]"/>
             <field name="comment">ATL-supervised front-line agent on the software team only. No visibility into other teams.</field>
         </record>
         <record id="group_mzr_software_atl" model="res.groups">
@@ -163,6 +167,7 @@
             <field name="sequence">25</field>
             <field name="privilege_id" ref="res_groups_privilege_mzr_software"/>
             <!-- <field name="implied_ids" eval="[(4, ref('group_mzr_software_agent'))]"/> -->
+            <field name="implied_ids" eval="[(4, ref('sales_team.group_sale_salesman')), (4, ref('sales_team.group_sale_salesman_all_leads'))]"/>
             <field name="comment">This is the TL-Direct Agent group for the software team.</field>
         </record>
         <record id="group_mzr_software_tl" model="res.groups">
@@ -178,6 +183,7 @@
             <field name="sequence">35</field>
             <field name="privilege_id" ref="res_groups_privilege_mzr_software"/>
             <!-- <field name="implied_ids" eval="[(4, ref('group_mzr_software_agent'))]"/> -->
+            <field name="implied_ids" eval="[(4, ref('sales_team.group_sale_salesman')), (4, ref('sales_team.group_sale_salesman_all_leads'))]"/>
             <field name="comment">This is the Manager-Direct Agent group for the software team.</field>
         </record>
         <record id="group_mzr_software_manager" model="res.groups">
@@ -207,7 +213,7 @@
             <field name="name">MIS: Agent</field>
             <field name="sequence">10</field>
             <field name="privilege_id" ref="res_groups_privilege_mzr_mis"/>
-            <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+            <field name="implied_ids" eval="[(4, ref('base.group_user')), (4, ref('sales_team.group_sale_salesman')), (4, ref('sales_team.group_sale_salesman_all_leads'))]"/>
             <field name="comment">ATL-supervised front-line agent on the MIS team only. No visibility into other teams.</field>
         </record>
         <record id="group_mzr_mis_atl" model="res.groups">
@@ -222,6 +228,7 @@
             <field name="sequence">25</field>
             <field name="privilege_id" ref="res_groups_privilege_mzr_mis"/>
             <!-- <field name="implied_ids" eval="[(4, ref('group_mzr_mis_agent'))]"/> -->
+            <field name="implied_ids" eval="[(4, ref('sales_team.group_sale_salesman')), (4, ref('sales_team.group_sale_salesman_all_leads'))]"/>
             <field name="comment">This is the TL-Direct Agent group for the MIS team.</field>
         </record>
         <record id="group_mzr_mis_tl" model="res.groups">
@@ -237,6 +244,7 @@
             <field name="sequence">35</field>
             <field name="privilege_id" ref="res_groups_privilege_mzr_mis"/>
             <!-- <field name="implied_ids" eval="[(4, ref('group_mzr_mis_agent'))]"/> -->
+            <field name="implied_ids" eval="[(4, ref('sales_team.group_sale_salesman')), (4, ref('sales_team.group_sale_salesman_all_leads'))]"/>
             <field name="comment">This is the Manager-Direct Agent group for the MIS team.</field>
         </record>
         <record id="group_mzr_mis_manager" model="res.groups">
@@ -275,7 +283,7 @@
             <field name="name">Hunter: Agent</field>
             <field name="sequence">10</field>
             <field name="privilege_id" ref="res_groups_privilege_mzr_hunter"/>
-            <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+            <field name="implied_ids" eval="[(4, ref('base.group_user')), (4, ref('sales_team.group_sale_salesman')), (4, ref('sales_team.group_sale_salesman_all_leads'))]"/>
             <field name="comment">ATL-supervised front-line agent on the Hunter team only. No visibility into other teams.</field>
         </record>
         <record id="group_mzr_hunter_atl" model="res.groups">
@@ -289,6 +297,7 @@
             <field name="name">Hunter: TL-Direct Agent</field>
             <field name="sequence">25</field>
             <field name="privilege_id" ref="res_groups_privilege_mzr_hunter"/>
+            <field name="implied_ids" eval="[(4, ref('sales_team.group_sale_salesman')), (4, ref('sales_team.group_sale_salesman_all_leads'))]"/>
             <field name="comment">This is the TL-Direct Agent group for the Hunter team.</field>
         </record>
         <record id="group_mzr_hunter_tl" model="res.groups">
@@ -315,7 +324,7 @@
             <field name="name">Account Manager: Agent</field>
             <field name="sequence">10</field>
             <field name="privilege_id" ref="res_groups_privilege_mzr_account_manager"/>
-            <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+            <field name="implied_ids" eval="[(4, ref('base.group_user')), (4, ref('sales_team.group_sale_salesman')), (4, ref('sales_team.group_sale_salesman_all_leads'))]"/>
             <field name="comment">ATL-supervised front-line agent on the Account Manager team only. No visibility into other teams.</field>
         </record>
         <record id="group_mzr_account_manager_atl" model="res.groups">
@@ -329,6 +338,7 @@
             <field name="name">Account Manager: TL-Direct Agent</field>
             <field name="sequence">25</field>
             <field name="privilege_id" ref="res_groups_privilege_mzr_account_manager"/>
+            <field name="implied_ids" eval="[(4, ref('sales_team.group_sale_salesman')), (4, ref('sales_team.group_sale_salesman_all_leads'))]"/>
             <field name="comment">This is the TL-Direct Agent group for the Account Manager team.</field>
         </record>
         <record id="group_mzr_account_manager_tl" model="res.groups">
@@ -357,7 +367,7 @@
             <field name="name">Corporate Training: Agent</field>
             <field name="sequence">10</field>
             <field name="privilege_id" ref="res_groups_privilege_mzr_corporate_training"/>
-            <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+            <field name="implied_ids" eval="[(4, ref('base.group_user')), (4, ref('sales_team.group_sale_salesman')), (4, ref('sales_team.group_sale_salesman_all_leads'))]"/>
             <field name="comment">ATL-supervised front-line agent on the Corporate Training team only. No visibility into other teams.</field>
         </record>
         <record id="group_mzr_corporate_training_atl" model="res.groups">
@@ -371,6 +381,7 @@
             <field name="name">Corporate Training: TL-Direct Agent</field>
             <field name="sequence">25</field>
             <field name="privilege_id" ref="res_groups_privilege_mzr_corporate_training"/>
+            <field name="implied_ids" eval="[(4, ref('sales_team.group_sale_salesman')), (4, ref('sales_team.group_sale_salesman_all_leads'))]"/>
             <field name="comment">This is the TL-Direct Agent group for the Corporate Training team.</field>
         </record>
         <record id="group_mzr_corporate_training_tl" model="res.groups">
@@ -397,7 +408,7 @@
             <field name="name">LMS: Agent</field>
             <field name="sequence">10</field>
             <field name="privilege_id" ref="res_groups_privilege_mzr_lms"/>
-            <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+            <field name="implied_ids" eval="[(4, ref('base.group_user')), (4, ref('sales_team.group_sale_salesman')), (4, ref('sales_team.group_sale_salesman_all_leads'))]"/>
             <field name="comment">ATL-supervised front-line agent on the LMS team only. No visibility into other teams.</field>
         </record>
         <record id="group_mzr_lms_atl" model="res.groups">
@@ -411,6 +422,7 @@
             <field name="name">LMS: TL-Direct Agent</field>
             <field name="sequence">25</field>
             <field name="privilege_id" ref="res_groups_privilege_mzr_lms"/>
+            <field name="implied_ids" eval="[(4, ref('sales_team.group_sale_salesman')), (4, ref('sales_team.group_sale_salesman_all_leads'))]"/>
             <field name="comment">This is the TL-Direct Agent group for the LMS team.</field>
         </record>
         <record id="group_mzr_lms_tl" model="res.groups">
@@ -437,7 +449,7 @@
             <field name="name">TNH: Agent</field>
             <field name="sequence">10</field>
             <field name="privilege_id" ref="res_groups_privilege_mzr_tnh"/>
-            <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+            <field name="implied_ids" eval="[(4, ref('base.group_user')), (4, ref('sales_team.group_sale_salesman')), (4, ref('sales_team.group_sale_salesman_all_leads'))]"/>
             <field name="comment">ATL-supervised front-line agent on the TNH team only. No visibility into other teams.</field>
         </record>
         <record id="group_mzr_tnh_atl" model="res.groups">
@@ -451,6 +463,7 @@
             <field name="name">TNH: TL-Direct Agent</field>
             <field name="sequence">25</field>
             <field name="privilege_id" ref="res_groups_privilege_mzr_tnh"/>
+            <field name="implied_ids" eval="[(4, ref('sales_team.group_sale_salesman')), (4, ref('sales_team.group_sale_salesman_all_leads'))]"/>
             <field name="comment">This is the TL-Direct Agent group for the TNH team.</field>
         </record>
         <record id="group_mzr_tnh_tl" model="res.groups">
@@ -484,6 +497,7 @@
             <field name="name">Corporate: Manager-Direct Agent</field>
             <field name="sequence">10</field>
             <field name="privilege_id" ref="res_groups_privilege_mzr_corporate"/>
+            <field name="implied_ids" eval="[(4, ref('sales_team.group_sale_salesman')), (4, ref('sales_team.group_sale_salesman_all_leads'))]"/>
             <field name="comment">This is the Manager-Direct Agent group for the Corporate BU Manager.</field>
         </record>
         <record id="group_mzr_corporate_manager" model="res.groups">
@@ -524,6 +538,7 @@
             <field name="name">Tally: Manager-Direct Agent</field>
             <field name="sequence">10</field>
             <field name="privilege_id" ref="res_groups_privilege_mzr_tally"/>
+            <field name="implied_ids" eval="[(4, ref('sales_team.group_sale_salesman')), (4, ref('sales_team.group_sale_salesman_all_leads'))]"/>
             <field name="comment">This is the Manager-Direct Agent group for the Tally BU Manager.</field>
         </record>
 
@@ -531,13 +546,14 @@
             <field name="name">Tally: Developer-Direct Agent</field>
             <field name="sequence">10</field>
             <field name="privilege_id" ref="res_groups_privilege_mzr_tally"/>
+            <field name="implied_ids" eval="[(4, ref('sales_team.group_sale_salesman')), (4, ref('sales_team.group_sale_salesman_all_leads'))]"/>
             <field name="comment">This is the Developer-Direct Agent group for the Tally: TL-Development branch.</field>
         </record>
         <record id="group_mzr_tally_atl_agents_dev" model="res.groups">
             <field name="name">Tally: Developer ATL Agents</field>
             <field name="sequence">10</field>
             <field name="privilege_id" ref="res_groups_privilege_mzr_tally"/>
-            <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+            <field name="implied_ids" eval="[(4, ref('base.group_user')), (4, ref('sales_team.group_sale_salesman')), (4, ref('sales_team.group_sale_salesman_all_leads'))]"/>
             <field name="comment">ATL-supervised front-line agent on the Tally Development branch only. No visibility into other teams.</field>
         </record>
 
@@ -555,13 +571,14 @@
             <field name="name">Tally: Sales-Direct Agent</field>
             <field name="sequence">10</field>
             <field name="privilege_id" ref="res_groups_privilege_mzr_tally"/>
+            <field name="implied_ids" eval="[(4, ref('sales_team.group_sale_salesman')), (4, ref('sales_team.group_sale_salesman_all_leads'))]"/>
             <field name="comment">This is the Sales-Direct Agent group for the Tally: TL-Sales branch.</field>
         </record>
         <record id="group_mzr_tally_atl_agents_sales" model="res.groups">
             <field name="name">Tally: Sales ATL Agents</field>
             <field name="sequence">10</field>
             <field name="privilege_id" ref="res_groups_privilege_mzr_tally"/>
-            <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+            <field name="implied_ids" eval="[(4, ref('base.group_user')), (4, ref('sales_team.group_sale_salesman')), (4, ref('sales_team.group_sale_salesman_all_leads'))]"/>
             <field name="comment">ATL-supervised front-line agent on the Tally Sales branch only. No visibility into other teams.</field>
         </record>
 
@@ -643,6 +660,8 @@
                 (4, ref('group_mzr_mis_manager')),
                 (4, ref('group_mzr_corporate_manager')),
                 (4, ref('group_tally_manager')),
+                (4, ref('sales_team.group_sale_salesman')),
+                (4, ref('sales_team.group_sale_salesman_all_leads')),
             ]"/>
             <field name="comment">Full access across DMT, Technology, software, MIS, the Corporate BU (Hunter, Account Manager, Corporate Training, LMS, TNH) and Tally. The single company-wide "All access" role from the org chart - not duplicated per team.</field>
         </record>
@@ -656,7 +675,7 @@
             <field name="name">MD (Read-Only, All Teams)</field>
             <field name="sequence">20</field>
             <field name="privilege_id" ref="res_groups_privilege_mzr_global"/>
-            <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+            <field name="implied_ids" eval="[(4, ref('base.group_user')), (4, ref('sales_team.group_sale_salesman')), (4, ref('sales_team.group_sale_salesman_all_leads'))]"/>
             <field name="comment">Read-only oversight across DMT, Technology, software and MIS. Not part of the write-access chain of any team (parallel role, not a reporting line) - grant it read access via ir.rule, not implied_ids, when wiring up models.</field>
         </record>
 
