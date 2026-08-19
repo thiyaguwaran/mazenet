@@ -16,10 +16,10 @@
                 </xpath>
 
                 <xpath expr="//sheet" position="attributes">
-                    <attribute name="readonly">x_locked_readonly_for_me</attribute>
+                    <attribute name="readonly">x_content_readonly_for_me</attribute>
                 </xpath>
                 <xpath expr="//field[@name='user_id']" position="attributes">
-                    <attribute name="readonly">x_locked_readonly_for_me or x_assign_type == 'self'</attribute>
+                    <attribute name="readonly">x_content_readonly_for_me or x_assign_type == 'self'</attribute>
                     <attribute name="domain">[('id', 'in', x_assignable_user_ids)]</attribute>
                 </xpath>
                 <xpath expr="//field[@name='user_id']" position="before">
@@ -30,24 +30,24 @@
                 </xpath>
 
                 <xpath expr="//field[@name='stage_id']" position="attributes">
-                    <attribute name="readonly">won_status == 'lost' or not active or x_locked_readonly_for_me</attribute>
+                    <attribute name="readonly">won_status == 'lost' or not active or x_content_readonly_for_me</attribute>
                 </xpath>
                 <xpath expr="//button[@name='action_set_won_rainbowman']" position="attributes">
-                    <attribute name="invisible" add="x_locked_readonly_for_me" separator="or"/>
+                    <attribute name="invisible" add="x_content_readonly_for_me" separator="or"/>
                 </xpath>
                 <xpath expr="//button[@name='%(crm.action_crm_lead2opportunity_partner)d']" position="attributes">
-                    <attribute name="invisible" add="x_locked_readonly_for_me" separator="or"/>
+                    <attribute name="invisible" add="x_content_readonly_for_me" separator="or"/>
                 </xpath>
                 <xpath expr="//button[@name='action_restore']" position="attributes">
-                    <attribute name="invisible" add="x_locked_readonly_for_me" separator="or"/>
+                    <attribute name="invisible" add="x_content_readonly_for_me" separator="or"/>
                 </xpath>
                 <xpath expr="//button[@name='%(crm.crm_lead_lost_action)d']" position="attributes">
-                    <attribute name="invisible" add="x_locked_readonly_for_me" separator="or"/>
+                    <attribute name="invisible" add="x_content_readonly_for_me" separator="or"/>
                 </xpath>
 
                 <xpath expr="//field[@name='won_status']" position="before">
                     <field name="x_is_locked" invisible="1"/>
-                    <field name="x_locked_readonly_for_me" invisible="1"/>
+                    <field name="x_content_readonly_for_me" invisible="1"/>
                     <div class="alert alert-danger mb-0" role="alert" invisible="not x_is_locked">
                         <i class="fa fa-lock me-1" title="RED Lock"/>
                         <b>RED LOCKED</b> - this lead is overdue and read-only until released.
