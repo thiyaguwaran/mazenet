@@ -115,7 +115,7 @@ class CrmLead(models.Model):
         single value to auto-assign for 'Team'."""
         if self.x_assign_type == 'self':
             self.user_id = self.env.user
-            self.team_id = False
+            self.team_id = self.env.user.crm_team_ids and self.env.user.crm_team_ids[0] or False
             return
         if self.x_assign_type == 'team':
             self.user_id = self.team_id.create_lead_id and self.team_id.create_lead_id[0] or False
