@@ -467,7 +467,9 @@ class CrmLead(models.Model):
         10:15, not the instant 10:00 passes - gives the owner a short window to still make
         it before it counts against them."""
         now = fields.Datetime.now()
-        cutoff = now - timedelta(minutes=MZ_RED_LOCK_GRACE_MINUTES)
+        current_company = self.env.company
+        grace_time = current_company.grace_time
+        cutoff = now - timedelta(minutes=grace_time)
 
         leads = self.sudo().search([
             ('x_next_activity_datetime', '!=', False),
