@@ -3,10 +3,11 @@
     <data noupdate="0">
         <!-- Section 7.6 (M2): auto-trigger the RED lock on overdue leads. -->
         <record id="ir_cron_mz_trigger_red_locks" model="ir.cron">
-            <field name="name">Mazenet CRM: Trigger RED Locks on Overdue Leads</field>
+            <field name="name">Mazenet CRM: Trigger &amp; Escalate RED Locks on Overdue Leads</field>
             <field name="model_id" ref="crm.model_crm_lead"/>
             <field name="state">code</field>
-            <field name="code">model._cron_trigger_red_locks()</field>
+            <field name="code">model._cron_trigger_red_locks()
+model.check_red_lock_recods()</field>
             <!-- 2 minutes for active dev/UAT testing so lock/notify behavior is visible
                  almost immediately. Widen this back out (e.g. 15 min) before anything
                  resembling a production/staging cadence - a 2-minute poll isn't meant to

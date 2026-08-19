@@ -132,8 +132,8 @@ class CrmLead(models.Model):
                               "or assign internally. Agents can only assign to themselves."),
             }}
         # 'team' or 'internal': hand-picked from x_assignable_user_ids.
-        # if self.user_id not in self.x_assignable_user_ids:
-        #     self.user_id = False
+        if self.user_id not in self.x_assignable_user_ids:
+            self.user_id = False
 
     @api.depends(
         'activity_ids.date_deadline', 'activity_ids.calendar_event_id.start',
@@ -157,6 +157,28 @@ class CrmLead(models.Model):
         string="RED Lock Date",
         help="Timestamp when RED lock was triggered."
     )
+
+    x_locked_readonly_for_me = fields.Boolean(
+        compute="_compute_x_locked_readonly_for_me",
+        string="Read-Only (Locked)",
+        help="Whether the RED lock actually makes this lead read-only for the CURRENT "
+             "user - not the same as x_is_locked itself. CTO/Admin and the CURRENT "
+             "team_id's ATL/TL/Manager (see _mz_can_edit_locked) can still edit a locked "
+             "lead as long as it's still on their team; the instant team_id is "
+             "reassigned elsewhere, this flips to True for them too - same as everyone "
+             "else not on the new team. Not stored - it reflects whoever has the form "
+             "open, same pattern as x_can_assign_beyond_self."
+    )
+
+    @api.depends('x_is_locked', 'team_id')
+    def _compute_x_locked_readonly_for_me(self):
+        u = self.env.user
+        is_cto_admin = u.has_group("mazenet_access_rights.group_mzr_cto_admin")
+        for lead in self:
+            lead.x_locked_readonly_for_me = bool(
+                lead.x_is_locked and not self.env.su and not is_cto_admin
+                and not lead._mz_can_edit_locked(u)
+            )
 
     x_activity_warning = fields.Selection(
         [
@@ -212,16 +234,34 @@ class CrmLead(models.Model):
     def _mz_check_assign_type_allowed(self, vals):
         """Server-side backstop for x_assign_type in ('team', 'internal'): the view
         only offers those to ATL/TL/Manager tier (x_can_assign_beyond_self), and the
-        onchange bounces an Agent back to 'self' - but both are UI-only, so a direct
-        RPC/API write could still set either. Raises the same way the UI would have
-        refused, instead of silently accepting it."""
-        if vals.get('x_assign_type') not in ('team', 'internal') or self.env.su:
+        onchange bounces an Agent back to 'self' and clears user_id if it falls outside
+        x_assignable_user_ids - but all of that is UI-only, so a direct RPC/API write
+        could still set either. Raises the same way the UI would have refused, instead
+        of silently accepting it."""
+        assign_type = vals.get('x_assign_type')
+        if assign_type not in ('team', 'internal') or self.env.su:
             return
         tier, _chain = self._mz_user_tier_chain(self.env.user)
         if tier not in ('atl', 'tl', 'manager'):
             raise AccessError(_(
                 "Only Team Leads, ATLs and BU Managers can assign to a team or assign "
                 "internally. Agents can only assign to themselves."))
+
+        if not vals.get('user_id'):
+            return
+        # Mirrors _compute_x_assignable_user_ids' pool for 'team'/'internal': records
+        # being written each keep their own team_id unless vals overrides it; create()
+        # calls this before any record exists, so there's nothing to fall back to but
+        # vals itself.
+        for record in (self or [self.env['crm.lead']]):
+            team_id = vals['team_id'] if 'team_id' in vals else (record.team_id.id if record else False)
+            team = self.env['crm.team'].browse(team_id) if team_id else self.env['crm.team']
+            pool_ids = (team.create_lead_id if assign_type == 'team' else team.member_ids).ids
+            if vals['user_id'] not in pool_ids:
+                raise AccessError(_(
+                    "The selected salesperson isn't in the allowed assignment pool for "
+                    "this team under '%s' assignment. Pick from the assignable list."
+                ) % assign_type)
 
     @api.model_create_multi
     def create(self, vals_list):
@@ -250,12 +290,17 @@ class CrmLead(models.Model):
 
             content_touched = set(vals.keys()) - SYSTEM_FIELDS
 
-            # RED Lock Enforcement: a locked lead is read-only for everyone until released via
-            # action_release_lock(). Only bookkeeping/system fields (chatter, activities, and
-            # the lock fields themselves - so the release action can clear them) are exempt.
+            # RED Lock Enforcement: a locked lead is read-only until released via
+            # action_release_lock() - EXCEPT for the CURRENT team_id's ATL/TL/Manager
+            # (_mz_can_edit_locked), who can keep working it (including reassigning it
+            # to a different team via team_id) as long as it's still on their team. The
+            # moment such a reassignment lands, they stop qualifying for the NEW
+            # team_id and lose that access too, same as anyone else not on it. Only
+            # bookkeeping/system fields (chatter, activities, and the lock fields
+            # themselves - so the release action can clear them) are exempt regardless.
             if content_touched:
                 for lead in self:
-                    if lead.x_is_locked:
+                    if lead.x_is_locked and not lead._mz_can_edit_locked(u):
                         raise AccessError(_(
                             "Lead '%s' is RED-locked and read-only. Use 'Release RED Lock' "
                             "before it can be edited again."
@@ -375,6 +420,26 @@ class CrmLead(models.Model):
         if not head_group:
             return False
         return u.has_group(f'mazenet_access_rights.{head_group}')
+
+    def _mz_can_edit_locked(self, user):
+        """Whether `user` may still edit this lead's content while it's RED-locked -
+        besides CTO/Admin (checked separately by callers), that's the CURRENT team_id's
+        ATL/TL/Manager: a member of team_id.member_ids who holds at least ATL tier
+        (_mz_user_tier_chain). Deliberately gated on team_id/member_ids rather than the
+        lead OWNER's own group chain (what can_user_release_lock/_mz_team_tier_groups
+        use) - that chain is fixed to the owner's personal groups and wouldn't change
+        just because team_id does, which would defeat the point: the moment someone
+        transfers this lead to a different team via the team_id field, whoever used to
+        qualify here (the old team's ATL/TL/Manager) stops being a member of the NEW
+        team_id and the lead goes fully read-only for them, exactly like everyone else
+        not on that new team. Until such a transfer, this is what lets the owning
+        team's leadership keep working a locked lead (and use team_id to hand it off)
+        instead of being locked out same as the owner who missed the deadline."""
+        self.ensure_one()
+        if not self.team_id or user not in self.team_id.member_ids:
+            return False
+        tier, _chain = self._mz_user_tier_chain(user)
+        return tier in ('atl', 'tl', 'manager')
 
     def action_release_lock(self):
         """Clears the RED lock, making the lead editable again - only for whoever
