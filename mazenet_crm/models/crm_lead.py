@@ -128,16 +128,39 @@ class CrmLead(models.Model):
              "isn't reliably honored by the web client for Many2one search, so the "
              "domain lives in the view via this computed field instead."
     )
+    x_is_dmt_user = fields.Boolean(
+        compute='_compute_x_assignable_user_ids',
+        string="Is DMT User",
+        help="Whether the CURRENT user (viewing/editing this lead right now) belongs "
+             "to the DMT team - used in the view to exempt user_id from the general "
+             "x_content_readonly_for_me gate for DMT, on top of the unrestricted "
+             "assignment pool above. Not stored - reflects whoever has the form open."
+    )
 
     @api.depends('team_id', 'x_assign_type')
     @api.depends_context('uid')
     def _compute_x_assignable_user_ids(self):
-        tier, _chain = self._mz_user_tier_chain(self.env.user)
-        can_beyond_self = tier in ('atl', 'tl', 'manager')
+        """DMT is a special case: a DMT team member may assign to ANY of the team's
+        users under both 'Team' and 'Internal' - no create_lead_id narrowing, and no
+        ATL/TL/Manager tier gate either (DMT membership itself is enough - the
+        Agent-restricted-to-Self rule is entirely waived for DMT). Everyone else
+        keeps the normal tier-gated behavior: 'Team' restricted to create_lead_id
+        members, 'Internal' to the full team roster. See _mz_check_assign_type_allowed
+        for the matching server-side backstop - it must waive the tier gate for DMT
+        the same way, or a DMT Agent could pick 'Team'/'Internal' here and then get
+        rejected on save."""
+        user = self.env.user
+        dmt_team = self.env.ref('mazenet_crm.team_dmt', raise_if_not_found=False)
+        user_is_dmt = bool(dmt_team) and self._mz_user_own_team(user) == dmt_team
+        tier, _chain = self._mz_user_tier_chain(user)
+        can_beyond_self = user_is_dmt or tier in ('atl', 'tl', 'manager')
         for lead in self:
+            lead.x_is_dmt_user = user_is_dmt
             lead.x_can_assign_beyond_self = can_beyond_self
             if not can_beyond_self:
                 lead.x_assignable_user_ids = False
+            elif user_is_dmt:
+                lead.x_assignable_user_ids = lead.team_id.member_ids
             elif lead.x_assign_type == 'team':
                 lead.x_assignable_user_ids = lead.team_id.create_lead_id
             else:
@@ -150,6 +173,7 @@ class CrmLead(models.Model):
         x_assignable_user_ids (create_lead_id members for 'Team', full team roster
         for 'Internal') - create_lead_id is a Many2many now, so there's no longer a
         single value to auto-assign for 'Team'."""
+        user = self.env.user
         if self.x_assign_type == 'self':
             self.user_id = self.env.user
             self.team_id = self._mz_user_own_team()
@@ -157,18 +181,13 @@ class CrmLead(models.Model):
         if self.x_assign_type == 'team':
             self.user_id = self.team_id.create_lead_id and self.team_id.create_lead_id[0] or False
         if not self.x_can_assign_beyond_self:
-            # Agents (and anyone with no recognized mazenet_access_rights role) can
-            # only assign to themselves - bounce back to Self rather than leave them
-            # on 'team' (which they shouldn't get to use) or 'internal' (which would
-            # show an empty dropdown anyway).
             self.x_assign_type = 'self'
-            self.user_id = self.env.user
+            self.user_id = user
             return {'warning': {
                 'title': _("Assignment restricted"),
                 'message': _("Only Team Leads, ATLs and BU Managers can assign to a team "
-                              "or assign internally. Agents can only assign to themselves."),
+                            "or assign internally. Agents can only assign to themselves."),
             }}
-        # 'team' or 'internal': hand-picked from x_assignable_user_ids.
         if self.user_id not in self.x_assignable_user_ids:
             self.user_id = False
 
@@ -305,12 +324,18 @@ class CrmLead(models.Model):
         onchange bounces an Agent back to 'self' and clears user_id if it falls outside
         x_assignable_user_ids - but all of that is UI-only, so a direct RPC/API write
         could still set either. Raises the same way the UI would have refused, instead
-        of silently accepting it."""
+        of silently accepting it. Mirrors _compute_x_assignable_user_ids' DMT waiver:
+        a DMT team member skips the tier gate entirely and gets the full team roster
+        as their pool for both 'team' and 'internal' - keep the two in sync, or a DMT
+        Agent could pick 'Team'/'Internal' in the UI and then get rejected on save."""
         assign_type = vals.get('x_assign_type')
         if assign_type not in ('team', 'internal') or self.env.su:
             return
-        tier, _chain = self._mz_user_tier_chain(self.env.user)
-        if tier not in ('atl', 'tl', 'manager'):
+        user = self.env.user
+        dmt_team = self.env.ref('mazenet_crm.team_dmt', raise_if_not_found=False)
+        user_is_dmt = bool(dmt_team) and self._mz_user_own_team(user) == dmt_team
+        tier, _chain = self._mz_user_tier_chain(user)
+        if not user_is_dmt and tier not in ('atl', 'tl', 'manager'):
             raise AccessError(_(
                 "Only Team Leads, ATLs and BU Managers can assign to a team or assign "
                 "internally. Agents can only assign to themselves."))
@@ -324,7 +349,10 @@ class CrmLead(models.Model):
         for record in (self or [self.env['crm.lead']]):
             team_id = vals['team_id'] if 'team_id' in vals else (record.team_id.id if record else False)
             team = self.env['crm.team'].browse(team_id) if team_id else self.env['crm.team']
-            pool_ids = (team.create_lead_id if assign_type == 'team' else team.member_ids).ids
+            if user_is_dmt:
+                pool_ids = team.member_ids.ids
+            else:
+                pool_ids = (team.create_lead_id if assign_type == 'team' else team.member_ids).ids
             if vals['user_id'] not in pool_ids:
                 raise AccessError(_(
                     "The selected salesperson isn't in the allowed assignment pool for "
