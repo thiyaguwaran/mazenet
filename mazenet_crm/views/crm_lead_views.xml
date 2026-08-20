@@ -19,7 +19,7 @@
                     <attribute name="readonly">x_content_readonly_for_me</attribute>
                 </xpath>
                 <xpath expr="//field[@name='user_id']" position="attributes">
-                    <attribute name="readonly">x_content_readonly_for_me or x_assign_type == 'self'</attribute>
+                    <attribute name="readonly">(x_content_readonly_for_me and not x_is_dmt_user) or x_assign_type == 'self'</attribute>
                     <attribute name="domain">[('id', 'in', x_assignable_user_ids)]</attribute>
                 </xpath>
                 <xpath expr="//field[@name='user_id']" position="before">
@@ -27,6 +27,7 @@
                     <field name="team_id" readonly="x_assign_type == 'self'" required="x_assign_type != 'self'"/>
                     <field name="x_can_assign_beyond_self" invisible="1"/>
                     <field name="x_assignable_user_ids" invisible="1"/>
+                    <field name="x_is_dmt_user" invisible="1"/>
                 </xpath>
 
                 <xpath expr="//field[@name='stage_id']" position="attributes">
