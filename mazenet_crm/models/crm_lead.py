@@ -132,16 +132,22 @@ class CrmLead(models.Model):
     @api.depends('team_id', 'x_assign_type')
     @api.depends_context('uid')
     def _compute_x_assignable_user_ids(self):
-        tier, _chain = self._mz_user_tier_chain(self.env.user)
-        can_beyond_self = tier in ('atl', 'tl', 'manager')
-        for lead in self:
-            lead.x_can_assign_beyond_self = can_beyond_self
-            if not can_beyond_self:
-                lead.x_assignable_user_ids = False
-            elif lead.x_assign_type == 'team':
-                lead.x_assignable_user_ids = lead.team_id.create_lead_id
-            else:
-                lead.x_assignable_user_ids = lead.team_id.member_ids
+        user = self.env.user
+        if user.crm_team_ids:
+            if user.crm_team_ids[0].id == self.env.ref('mazenet_crm.team_dmt').id:
+                if self.x_assign_type in ('team','internal'):
+                    lead.x_assignable_user_ids = lead.team_id.member_ids
+        else:
+            tier, _chain = self._mz_user_tier_chain(self.env.user)
+            can_beyond_self = tier in ('atl', 'tl', 'manager')
+            for lead in self:
+                lead.x_can_assign_beyond_self = can_beyond_self
+                if not can_beyond_self:
+                    lead.x_assignable_user_ids = False
+                elif lead.x_assign_type == 'team':
+                    lead.x_assignable_user_ids = lead.team_id.create_lead_id
+                else:
+                    lead.x_assignable_user_ids = lead.team_id.member_ids
 
     @api.onchange('x_assign_type', 'team_id')
     def assign_salesperson(self):
@@ -150,6 +156,7 @@ class CrmLead(models.Model):
         x_assignable_user_ids (create_lead_id members for 'Team', full team roster
         for 'Internal') - create_lead_id is a Many2many now, so there's no longer a
         single value to auto-assign for 'Team'."""
+        user = self.env.user
         if self.x_assign_type == 'self':
             self.user_id = self.env.user
             self.team_id = self._mz_user_own_team()
@@ -157,18 +164,13 @@ class CrmLead(models.Model):
         if self.x_assign_type == 'team':
             self.user_id = self.team_id.create_lead_id and self.team_id.create_lead_id[0] or False
         if not self.x_can_assign_beyond_self:
-            # Agents (and anyone with no recognized mazenet_access_rights role) can
-            # only assign to themselves - bounce back to Self rather than leave them
-            # on 'team' (which they shouldn't get to use) or 'internal' (which would
-            # show an empty dropdown anyway).
             self.x_assign_type = 'self'
-            self.user_id = self.env.user
+            self.user_id = user
             return {'warning': {
                 'title': _("Assignment restricted"),
                 'message': _("Only Team Leads, ATLs and BU Managers can assign to a team "
-                              "or assign internally. Agents can only assign to themselves."),
+                            "or assign internally. Agents can only assign to themselves."),
             }}
-        # 'team' or 'internal': hand-picked from x_assignable_user_ids.
         if self.user_id not in self.x_assignable_user_ids:
             self.user_id = False
 
