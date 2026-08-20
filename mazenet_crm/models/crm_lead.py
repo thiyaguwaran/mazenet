@@ -72,6 +72,16 @@ class CrmLead(models.Model):
         return self.env['crm.team'].search([('member_ids', '=', user.id)], limit=1)
 
     @api.model
+    def _mz_user_is_dmt(self, user=None):
+        """Whether `user` (default: current user) is a direct member of the DMT team
+        (_mz_user_own_team). Shared by every DMT waiver in this file - the assignable-
+        pool compute, the create()/write() pool backstop (_mz_check_assign_type_allowed),
+        and the write() RED-lock/team-transfer gate - so they can't drift out of sync."""
+        user = user or self.env.user
+        dmt_team = self.env.ref('mazenet_crm.team_dmt', raise_if_not_found=False)
+        return bool(dmt_team) and self._mz_user_own_team(user) == dmt_team
+
+    @api.model
     def _mz_default_team_id(self):
         """Default a new lead's Sales Team to the CREATING user's own team
         (_mz_user_own_team) - without this, a new lead's team_id falls back to
@@ -150,8 +160,7 @@ class CrmLead(models.Model):
         the same way, or a DMT Agent could pick 'Team'/'Internal' here and then get
         rejected on save."""
         user = self.env.user
-        dmt_team = self.env.ref('mazenet_crm.team_dmt', raise_if_not_found=False)
-        user_is_dmt = bool(dmt_team) and self._mz_user_own_team(user) == dmt_team
+        user_is_dmt = self._mz_user_is_dmt(user)
         tier, _chain = self._mz_user_tier_chain(user)
         can_beyond_self = user_is_dmt or tier in ('atl', 'tl', 'manager')
         for lead in self:
@@ -332,8 +341,7 @@ class CrmLead(models.Model):
         if assign_type not in ('team', 'internal') or self.env.su:
             return
         user = self.env.user
-        dmt_team = self.env.ref('mazenet_crm.team_dmt', raise_if_not_found=False)
-        user_is_dmt = bool(dmt_team) and self._mz_user_own_team(user) == dmt_team
+        user_is_dmt = self._mz_user_is_dmt(user)
         tier, _chain = self._mz_user_tier_chain(user)
         if not user_is_dmt and tier not in ('atl', 'tl', 'manager'):
             raise AccessError(_(
@@ -408,7 +416,16 @@ class CrmLead(models.Model):
             # branch just above, where the owner is deliberately excluded even on
             # their OWN team - being locked out is the whole point of RED lock for
             # them specifically.
-            if content_touched:
+            # DMT Reassignment Waiver: mirrors x_is_dmt_user's view-level exemption of
+            # user_id from x_content_readonly_for_me - a DMT team member may reassign
+            # user_id on a locked/transferred lead even though they'd otherwise fail
+            # _mz_can_edit_by_team/_mz_can_edit_owned below. Scoped to a write that
+            # touches ONLY user_id (besides system fields); any other content field in
+            # the same write still goes through the normal gate, so this doesn't become
+            # a backdoor for editing locked/transferred lead content generally.
+            dmt_reassign_only = content_touched == {"user_id"} and self._mz_user_is_dmt(u)
+
+            if content_touched and not dmt_reassign_only:
                 for lead in self:
                     if lead.x_is_locked:
                         if not lead._mz_can_edit_by_team(u):
