@@ -625,8 +625,17 @@ class CrmLead(models.Model):
         (_mz_can_edit_by_team). Either way, the moment team_id moves elsewhere,
         whoever isn't a member of the NEW team loses access - owner included -
         matching how the transfer itself only ever considers Sales Team, nothing
-        else."""
+        else. EXCEPT for DMT: a DMT team member is exempt from this whole
+        Sales-Team-membership gate (same waiver as assignment - see
+        _compute_x_assignable_user_ids) - they can edit a lead regardless of
+        which team it's currently filed under, so they never hit the "transferred
+        to another team" read-only message. RED-lock read-only (_mz_can_edit_by_team,
+        used directly in write() while locked) is untouched by this - DMT still
+        respects RED lock like everyone else."""
         self.ensure_one()
+        dmt_team = self.env.ref('mazenet_crm.team_dmt', raise_if_not_found=False)
+        if dmt_team and self._mz_user_own_team(user) == dmt_team:
+            return True
         if not self.team_id or user not in self.team_id.member_ids:
             return False
         if user == self.user_id:
