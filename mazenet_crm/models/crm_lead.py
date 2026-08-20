@@ -84,8 +84,15 @@ class CrmLead(models.Model):
         (crm.quick_create_opportunity_form, inherited to show team_id)."""
         return self._mz_user_own_team().id
 
-    team_id = fields.Many2one(default=_mz_default_team_id)
+    def _get_team_id_domain(self):
+        return [("id", "not in", self.env.user.crm_team_ids.ids)]
 
+
+    team_id = fields.Many2one(
+        "crm.team",
+        default=_mz_default_team_id,
+        domain=_get_team_id_domain,)
+        
     @api.model
     def _default_x_assign_type(self):
         """Agents can't use 'team' or 'internal' (see x_can_assign_beyond_self), so
@@ -103,7 +110,9 @@ class CrmLead(models.Model):
         help="How user_id gets populated:\n"
              "- Self: always the current user. Available to everyone.\n"
              "- Team: hand-picked from the selected team's 'Create To' users.\n"
-             "- Internal: hand-picked from any member of the selected team.\n"
+             "- Internal: hand-picked from whoever's directly in a group ranked below "
+             "yours in the team's configured privilege/group hierarchy (DMT: any team "
+             "member, no restriction).\n"
              "'Team' and 'Internal' are only offered to Team Leads, ATLs and BU Managers "
              "(mazenet_access_rights) - an Agent has no one to delegate to, so both are "
              "restricted to Self for them."
@@ -123,10 +132,13 @@ class CrmLead(models.Model):
         help="The users user_id may be hand-picked from, when the current user is "
              "allowed to assign beyond Self (see x_can_assign_beyond_self) - otherwise "
              "empty. For 'Team': the selected team's create_lead_id members. For "
-             "'Internal': all members of the selected team. Used as user_id's domain "
-             "in the view; not stored, purely a UI helper. An onchange-returned domain "
-             "isn't reliably honored by the web client for Many2one search, so the "
-             "domain lives in the view via this computed field instead."
+             "'Internal': whoever's directly in a group ranked below the current "
+             "user's own group, per the team's configured privileges "
+             "(_mz_team_subordinate_group_users) - DMT is exempt from both "
+             "restrictions and always gets the full team roster. Used as user_id's "
+             "domain in the view; not stored, purely a UI helper. An onchange-returned "
+             "domain isn't reliably honored by the web client for Many2one search, so "
+             "the domain lives in the view via this computed field instead."
     )
     x_is_dmt_user = fields.Boolean(
         compute='_compute_x_assignable_user_ids',
@@ -137,18 +149,50 @@ class CrmLead(models.Model):
              "assignment pool above. Not stored - reflects whoever has the form open."
     )
 
+    def _mz_team_subordinate_group_users(self, team, user):
+        """Direct members (group.user_ids, NOT the transitively-implied
+        all_user_ids) of every group ranked below `user`'s own group within
+        `team`'s configured privileges (crm.team.privelege_ids) - i.e. only users
+        under the current user in that team's configured hierarchy. Checked
+        privilege by privilege, since sequence only ranks groups WITHIN one
+        privilege (a Corporate team's several sub-team privileges each restart
+        their own numbering). Empty recordset if the team has no privileges
+        configured, or `user` doesn't hold any of their groups."""
+        if not team or not team.privelege_ids:
+            return self.env['res.users']
+        owner_privilege = None
+        owner_group = None
+        for privilege in team.privelege_ids:
+            for group in privilege.group_ids.sorted('sequence', reverse=True):
+                if user in group.user_ids:
+                    owner_privilege = privilege
+                    owner_group = group
+                    break
+            if owner_group:
+                break
+        if not owner_group:
+            return self.env['res.users']
+        lower_groups = owner_privilege.group_ids.filtered(
+            lambda g: g.sequence < owner_group.sequence
+        )
+        return lower_groups.mapped('user_ids')
+
     @api.depends('team_id', 'x_assign_type')
     @api.depends_context('uid')
     def _compute_x_assignable_user_ids(self):
         """DMT is a special case: a DMT team member may assign to ANY of the team's
-        users under both 'Team' and 'Internal' - no create_lead_id narrowing, and no
-        ATL/TL/Manager tier gate either (DMT membership itself is enough - the
-        Agent-restricted-to-Self rule is entirely waived for DMT). Everyone else
-        keeps the normal tier-gated behavior: 'Team' restricted to create_lead_id
-        members, 'Internal' to the full team roster. See _mz_check_assign_type_allowed
-        for the matching server-side backstop - it must waive the tier gate for DMT
-        the same way, or a DMT Agent could pick 'Team'/'Internal' here and then get
-        rejected on save."""
+        users under both 'Team' and 'Internal' - no restriction, and no ATL/TL/
+        Manager tier gate either (DMT membership itself is enough - the
+        Agent-restricted-to-Self rule is entirely waived for DMT). See
+        _mz_check_assign_type_allowed for the matching server-side backstop - it
+        must waive the tier gate for DMT the same way, or a DMT Agent could pick
+        'Team'/'Internal' here and then get rejected on save.
+
+        Everyone else keeps the normal tier-gated behavior: 'Team' restricted to
+        create_lead_id members; 'Internal' restricted to whoever's DIRECTLY in a
+        group ranked below the current user's own group, per the team's
+        configured privileges (_mz_team_subordinate_group_users) - not the whole
+        team roster."""
         user = self.env.user
         dmt_team = self.env.ref('mazenet_crm.team_dmt', raise_if_not_found=False)
         user_is_dmt = bool(dmt_team) and self._mz_user_own_team(user) == dmt_team
@@ -164,7 +208,7 @@ class CrmLead(models.Model):
             elif lead.x_assign_type == 'team':
                 lead.x_assignable_user_ids = lead.team_id.create_lead_id
             else:
-                lead.x_assignable_user_ids = lead.team_id.member_ids
+                lead.x_assignable_user_ids = self._mz_team_subordinate_group_users(lead.team_id, user)
 
     @api.onchange('x_assign_type', 'team_id')
     def assign_salesperson(self):
@@ -180,6 +224,9 @@ class CrmLead(models.Model):
             return
         if self.x_assign_type == 'team':
             self.user_id = self.team_id.create_lead_id and self.team_id.create_lead_id[0] or False
+        if self.x_assign_type == 'internal':
+            self.team_id = user.crm_team_ids[0]
+            return
         if not self.x_can_assign_beyond_self:
             self.x_assign_type = 'self'
             self.user_id = user
@@ -324,10 +371,11 @@ class CrmLead(models.Model):
         onchange bounces an Agent back to 'self' and clears user_id if it falls outside
         x_assignable_user_ids - but all of that is UI-only, so a direct RPC/API write
         could still set either. Raises the same way the UI would have refused, instead
-        of silently accepting it. Mirrors _compute_x_assignable_user_ids' DMT waiver:
-        a DMT team member skips the tier gate entirely and gets the full team roster
-        as their pool for both 'team' and 'internal' - keep the two in sync, or a DMT
-        Agent could pick 'Team'/'Internal' in the UI and then get rejected on save."""
+        of silently accepting it. Mirrors _compute_x_assignable_user_ids' DMT waiver
+        (a DMT team member skips the tier gate entirely and gets the full team
+        roster as their pool for both 'team' and 'internal') and its 'internal'
+        pool for everyone else (_mz_team_subordinate_group_users) - keep all three
+        in sync, or a UI selection could get rejected on save."""
         assign_type = vals.get('x_assign_type')
         if assign_type not in ('team', 'internal') or self.env.su:
             return
@@ -351,8 +399,10 @@ class CrmLead(models.Model):
             team = self.env['crm.team'].browse(team_id) if team_id else self.env['crm.team']
             if user_is_dmt:
                 pool_ids = team.member_ids.ids
+            elif assign_type == 'team':
+                pool_ids = team.create_lead_id.ids
             else:
-                pool_ids = (team.create_lead_id if assign_type == 'team' else team.member_ids).ids
+                pool_ids = self._mz_team_subordinate_group_users(team, user).ids
             if vals['user_id'] not in pool_ids:
                 raise AccessError(_(
                     "The selected salesperson isn't in the allowed assignment pool for "
