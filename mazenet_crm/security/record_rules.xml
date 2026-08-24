@@ -30,6 +30,32 @@
             <field name="perm_create" eval="True"/>
             <field name="perm_unlink" eval="False"/>
         </record>
+        <!-- dmt: base tier (team-wide write waiver, DMT only) - unlike every other
+             team's base tier, DMT base-tier members (crm_lead.py: _mz_can_edit_owned's
+             DMT bypass, and write()'s dmt_reassign_only waiver) are meant to be able to
+             reassign user_id on ANY DMT-team lead regardless of who owns it - even
+             RED-locked or transferred ones, content edits aside. Without this rule that
+             intent is unreachable: ir.rule write-domain checks happen inside
+             super().write(), independent of and after crm_lead.py's own Python checks,
+             so a base-tier DMT member writing a peer's lead was rejected by the ORM
+             before the Python waiver logic ever got a say - confirmed via odoo shell on
+             staging 2026-08-24 (rule_crm_lead_dmt_base_edit below only covers leads they
+             already own). Granting write here (paired with rule_crm_lead_dmt_base's
+             existing read/create) lets the ORM through; crm_lead.py's write() is still
+             what actually narrows this down to user_id-only reassignment for a locked/
+             transferred lead, and still fully gates real content edits (RED-lock,
+             Manager-content-lock, etc.) - this rule only removes the ORM-level blocker,
+             it doesn't grant unrestricted content write on its own. -->
+        <record id="rule_crm_lead_dmt_base_write" model="ir.rule">
+            <field name="name">Mazenet CRM Lead: dmt (Team Write - Reassignment Waiver)</field>
+            <field name="model_id" ref="crm.model_crm_lead"/>
+            <field name="domain_force" eval="[('team_id', '=', ref('team_dmt'))]"/>
+            <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_dmt_agent')), (4, ref('mazenet_access_rights.group_mzr_dmt_tl_direct_agent')), (4, ref('mazenet_access_rights.group_mzr_dmt_manager_direct_agent'))]"/>
+            <field name="perm_read" eval="False"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="False"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
         <!-- dmt: base tier (edit own lead only) -->
         <record id="rule_crm_lead_dmt_base_edit" model="ir.rule">
             <field name="name">Mazenet CRM Lead: dmt (Edit Own Lead Only)</field>
