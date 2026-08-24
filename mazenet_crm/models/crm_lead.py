@@ -445,13 +445,21 @@ class CrmLead(models.Model):
             content_touched = set(vals.keys()) - SYSTEM_FIELDS
 
             # RED Lock Enforcement: a locked lead is read-only until released via
-            # action_release_lock() - EXCEPT for the CURRENT team_id's ATL/TL/Manager
-            # (_mz_can_edit_by_team), who can keep working it (including reassigning it
-            # to a different team via team_id) as long as it's still on their team. The
-            # moment such a reassignment lands, they stop qualifying for the NEW
-            # team_id and lose that access too, same as anyone else not on it. Only
-            # bookkeeping/system fields (chatter, activities, and the lock fields
-            # themselves - so the release action can clear them) are exempt regardless.
+            # action_release_lock() - EXCEPT for whoever is authorized to RELEASE it
+            # (can_user_release_lock: the owner's head group - one tier above the
+            # owner's own tier - or CTO/Admin; a Manager-tier owner self-releases).
+            # Deliberately NOT _mz_can_edit_by_team here: that check only asks "is this
+            # user ATL/TL/Manager on the CURRENT team_id", which doesn't exclude the
+            # locked owner themselves if they happen to hold ATL/TL/Manager tier, and
+            # doesn't require them to be the owner's specific superior either - either
+            # gap would let the very person the lock is meant to freeze (or an unrelated
+            # peer ATL/TL) keep editing. Using can_user_release_lock keeps "who can edit
+            # while locked" and "who can release the lock" the same person, which is the
+            # actual intent (e.g. an ATL who missed a meeting gets RED-locked and can no
+            # longer edit their own lead even though they're ATL-tier; only their TL can
+            # edit/release it). Only bookkeeping/system fields (chatter, activities, and
+            # the lock fields themselves - so the release action can clear them) are
+            # exempt regardless.
             #
             # Team-Transfer Enforcement: the SAME team_id-scoping applies even when the
             # lead isn't locked - stock CRM's own "Sales: All Documents" ir.rule
@@ -478,7 +486,7 @@ class CrmLead(models.Model):
             if content_touched and not dmt_reassign_only:
                 for lead in self:
                     if lead.x_is_locked:
-                        if not lead._mz_can_edit_by_team(u):
+                        if not lead.can_user_release_lock(u):
                             raise AccessError(_(
                                 "Lead '%s' is RED-locked and read-only. Use 'Release RED Lock' "
                                 "before it can be edited again."
@@ -618,11 +626,14 @@ class CrmLead(models.Model):
         Manager) stops being a member of the NEW team_id and loses this access, same
         as everyone else not on that new team.
 
-        Used two ways in write() - while RED-locked, this is the ONLY non-CTO/Admin
-        path to edit at all (the owner is deliberately excluded there too, being
-        locked out is the point); once unlocked, _mz_can_edit_owned uses this for any
-        NON-owner (a TL/ATL/Manager working a lead they don't personally own), OR'd
-        with a separate, tier-agnostic membership check for the owner themselves."""
+        Used by _mz_can_edit_owned for the UNLOCKED case only, for any NON-owner (a
+        TL/ATL/Manager working a lead they don't personally own), OR'd with a
+        separate, tier-agnostic membership check for the owner themselves. NOT used
+        for the RED-locked case in write() - that's can_user_release_lock, which is
+        keyed off the OWNER's specific head group (one tier above them) rather than
+        "any ATL/TL/Manager on the team", so it excludes the locked owner even if
+        they hold ATL/TL/Manager tier themselves, and excludes unrelated peers at
+        that tier too."""
         self.ensure_one()
         if not self.team_id or user not in self.team_id.member_ids:
             return False
