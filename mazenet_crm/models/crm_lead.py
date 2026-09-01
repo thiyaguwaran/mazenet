@@ -1,8 +1,18 @@
 # -*- coding: utf-8 -*-
+import re
 from datetime import timedelta
 
 from odoo import models, fields, api, _
-from odoo.exceptions import AccessError
+from odoo.exceptions import AccessError, UserError, ValidationError
+
+MZ_PHONE_RE = re.compile(r'^\d{10}$')
+MZ_EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+
+# Build-notes format validation ("Format validation only: valid 10-digit number" /
+# "valid email syntax... No dummy-number/dummy-email detection") is the same rule
+# repeated verbatim across all 5 M2 pipeline sheets - scoped to just those BUs so
+# other teams (Corporate/LMS/TNH/Hunter...) aren't newly constrained by this build.
+MZ_FORMAT_VALIDATED_BU_CATEGORIES = {'dmt', 'tally', 'tech', 'swdev', 'mis'}
 
 # Grace period between an activity's real due moment (x_next_activity_datetime) and the
 # RED lock actually triggering - e.g. a 10:00 AM activity locks at 10:15, not the instant
@@ -36,6 +46,78 @@ MZR_MANAGER_GROUPS = [
     "mazenet_access_rights.group_mzr_corporate_manager",
     "mazenet_access_rights.group_tally_manager",
 ]
+
+# M3: mandatory-field-on-stage-change gate (Mazenet_CRM_M2_Build_Tasks.xlsx's per-stage
+# "Mandatory" column). Keyed by crm.team.x_bu_category, one ordered list per BU of
+# (stage xmlid, [mandatory field names]) in sequence order - moving a lead FORWARD past
+# a stage requires that stage's own fields to already be filled. Only BUs with an entry
+# here are gated; teams not yet listed are unaffected.
+#
+# Two things deliberately excluded from every BU's list below, not missed:
+# - "Lost reason" (Won/Lost stage): mandatory only when marking a lead LOST, which is a
+#   parallel action (archive + lost_reason/lost_feedback) handled by stock CRM's own Lost
+#   wizard, not a forward stage-to-stage move this gate models.
+# - Each BU's terminal "Project State" stage's own a/b/c mandatory fields: there is no
+#   further stage to advance INTO past it, so "enforce on stage change" has no move left
+#   to gate against - these stay reference-only, same as every stage's Mandatory column
+#   is explicitly scoped to be until M3 actually implements a trigger for them.
+MZ_STAGE_GATE_RULES = {
+    'dmt': [
+        ('stage_dmt_new', ['name', 'phone', 'email_from', 'x_organic_inorganic', 'source_id']),
+        ('stage_dmt_contacted', [
+            'x_company_or_individual', 'x_contact_purpose', 'x_product_service',
+            'x_employee_count', 'x_company_turnover',
+        ]),
+        ('stage_dmt_qualified', ['x_target_team_id', 'x_transfer_notes']),
+        ('stage_dmt_transferred', []),
+    ],
+    'tally': [
+        # Email is "progressive" here (not mandatory at Stage 1, mandatory from Stage 2
+        # onward) - so it's checked leaving Stage 2, not Stage 1.
+        ('stage_tally_new', ['name', 'phone', 'source_id']),
+        ('stage_tally_contacted', ['x_tally_category', 'email_from']),
+        ('stage_tally_demo', ['x_requirements_attachment', 'x_product_service', 'x_feasibility', 'x_timeline']),
+        ('stage_tally_proposal', ['x_quote_date', 'x_quote_document']),
+        ('stage_tally_negotiation', []),
+        ('stage_tally_won', []),
+        ('stage_tally_lost', []),
+    ],
+    'tech': [
+        ('stage_tech_new', ['name', 'phone', 'email_from', 'source_id']),
+        ('stage_tech_2', ['x_customer_status', 'x_customer_need']),
+        ('stage_tech_3', [
+            'x_requirements_attachment', 'x_product_service', 'x_feasibility_identified', 'x_timeline',
+        ]),
+        ('stage_tech_4', [
+            'x_quote_shared_checkbox', 'x_customer_goods_finalised', 'x_quote_date', 'x_quote_document',
+        ]),
+        ('stage_tech_5', []),
+        ('stage_tech_6', []),
+        ('stage_tech_won', []),
+    ],
+    'swdev': [
+        ('stage_swdev_new', ['name', 'phone', 'email_from', 'source_id']),
+        ('stage_swdev_2', [
+            'x_branch_count', 'x_sw_employee_count', 'x_nature_of_business',
+            'x_established_year', 'x_meeting_attendees',
+        ]),
+        ('stage_swdev_3', ['x_demo_completed', 'x_system_study_attachment', 'x_feasibility', 'x_timeline']),
+        ('stage_swdev_4', ['x_quote_date', 'x_quote_document']),
+        ('stage_swdev_5', []),
+        ('stage_swdev_won', []),
+    ],
+    'mis': [
+        ('stage_mis_new', ['name', 'phone', 'email_from', 'source_id']),
+        ('stage_mis_2', [
+            'x_requirements_attachment', 'x_product_service', 'x_target_audience',
+            'x_mis_timelines_estimate', 'x_deliverables',
+        ]),
+        ('stage_mis_3', ['x_demo_completed', 'x_system_study_attachment', 'x_feasibility', 'x_timeline']),
+        ('stage_mis_4', ['x_quote_document']),
+        ('stage_mis_5', []),
+        ('stage_mis_won', []),
+    ],
+}
 
 class CrmLead(models.Model):
     _inherit = "crm.lead"
@@ -158,6 +240,28 @@ class CrmLead(models.Model):
              "x_content_readonly_for_me gate for DMT, on top of the unrestricted "
              "assignment pool above. Not stored - reflects whoever has the form open."
     )
+
+    x_can_create_partner = fields.Boolean(
+        compute='_compute_x_can_create_partner',
+        string="Can Create Partner",
+        help="Whether the CURRENT user (viewing/editing this lead right now) may create "
+             "a new res.partner from this form - Technology's own restriction (M2 sheet: "
+             "'Agents may only SELECT from the existing partner and customer list; "
+             "creating one is restricted to Team Leads and Managers'). True for every "
+             "other BU (no such rule there) and for Technology TL/Manager tier; False "
+             "for a Technology Agent/ATL. Not stored - reflects whoever has the form "
+             "open, same pattern as x_is_dmt_user."
+    )
+
+    @api.depends('team_id')
+    @api.depends_context('uid')
+    def _compute_x_can_create_partner(self):
+        tier, _chain = self._mz_user_tier_chain(self.env.user)
+        for lead in self:
+            if lead.team_id.x_bu_category != 'tech':
+                lead.x_can_create_partner = True
+            else:
+                lead.x_can_create_partner = tier in ('tl', 'manager')
 
     def _mz_team_subordinate_group_users(self, team, user):
         """Direct members (group.user_ids, NOT the transitively-implied
@@ -374,6 +478,136 @@ class CrmLead(models.Model):
             and u.partner_id in next_activity.calendar_event_id.partner_ids
         )
 
+    # ------------------------------------------------------------------
+    # M2 pipeline fields (Mazenet_CRM_M2_Build_Tasks.xlsx)
+    # Shared across two or more of the 5 BU pipelines - same concept, one
+    # field, gated per-team in the view via x_team_bu_category.
+    # ------------------------------------------------------------------
+    x_team_bu_category = fields.Selection(
+        related='team_id.x_bu_category', string="Team BU Category",
+        help="Plain (non-dotted) mirror of team_id.x_bu_category for use in the view's "
+             "invisible attrs - a dotted 'team_id.x_bu_category' expression isn't reliably "
+             "fetched by the web client since x_bu_category otherwise never appears "
+             "anywhere in this view's own field spec, which left every Pipeline Fields "
+             "group permanently invisible."
+    )
+    x_product_service = fields.Char(string="Product / Service")
+    x_feasibility = fields.Char(string="Feasibility")
+    x_timeline = fields.Char(string="Timeline")
+    x_requirements_attachment = fields.Binary(string="Requirements Attachment", attachment=True)
+    x_requirements_attachment_filename = fields.Char(string="Requirements Attachment Filename")
+    x_quote_date = fields.Date(string="Quote Date")
+    x_quote_document = fields.Binary(string="Quote Document", attachment=True)
+    x_quote_document_filename = fields.Char(string="Quote Document Filename")
+    x_company_turnover = fields.Monetary(string="Company Turnover", currency_field='company_currency')
+    x_project_start_date = fields.Date(string="Project Start Date")
+    x_project_start_attachment = fields.Binary(string="Project Start Attachment", attachment=True)
+    x_project_start_attachment_filename = fields.Char(string="Project Start Attachment Filename")
+    x_project_completed_date = fields.Date(string="Project Completed Date")
+    x_project_completed_attachment = fields.Binary(string="Project Completed Attachment", attachment=True)
+    x_project_completed_attachment_filename = fields.Char(string="Project Completed Attachment Filename")
+    x_workorder_completion_date = fields.Date(
+        string="Workorder Completion Date",
+        help="MANUAL entry only - do not build an auto-fetch or any integration with the "
+             "Work Order app."
+    )
+    x_deviation_days = fields.Integer(
+        string="Deviation Days", compute="_compute_x_deviation_days", store=True,
+        help="Auto-calculated from Project Completed Date vs Workorder Completion Date."
+    )
+    x_demo_completed = fields.Boolean(string="Demo / POC Completed")
+    x_system_study_attachment = fields.Binary(string="System Study (PDF)", attachment=True)
+    x_system_study_attachment_filename = fields.Char(string="System Study Filename")
+
+    @api.depends('x_project_completed_date', 'x_workorder_completion_date')
+    def _compute_x_deviation_days(self):
+        for lead in self:
+            if lead.x_project_completed_date and lead.x_workorder_completion_date:
+                lead.x_deviation_days = (
+                    lead.x_workorder_completion_date - lead.x_project_completed_date
+                ).days
+            else:
+                lead.x_deviation_days = 0
+
+    @api.constrains('phone', 'email_from')
+    def _mz_check_contact_format(self):
+        """Build-notes: 'Format validation only... Show a placeholder hint. No
+        dummy-number/dummy-email detection.' - just syntax, not a mandatory-field or
+        real-number/real-address check. Scoped to the 5 M2 BUs
+        (MZ_FORMAT_VALIDATED_BU_CATEGORIES); empty values are fine here (mandatory-ness
+        is the stage gate's job, see MZ_STAGE_GATE_RULES) - this only fires once
+        something has actually been typed in."""
+        for lead in self:
+            if lead.team_id.x_bu_category not in MZ_FORMAT_VALIDATED_BU_CATEGORIES:
+                continue
+            if lead.phone:
+                cleaned = re.sub(r'[\s\-().]', '', lead.phone)
+                if not MZ_PHONE_RE.fullmatch(cleaned):
+                    raise ValidationError(_(
+                        "'%(lead)s': Contact Number must be a valid 10-digit number "
+                        "(got '%(value)s')."
+                    ) % {'lead': lead.name, 'value': lead.phone})
+            if lead.email_from and not MZ_EMAIL_RE.fullmatch(lead.email_from.strip()):
+                raise ValidationError(_(
+                    "'%(lead)s': Email must be a valid email address (got '%(value)s')."
+                ) % {'lead': lead.name, 'value': lead.email_from})
+
+    # -- DMT only --
+    x_organic_inorganic = fields.Selection(
+        [('organic', 'Organic'), ('inorganic', 'In-Organic')],
+        string="Organic / In-Organic", help="DMT only. Do not use on any other BU."
+    )
+    x_company_or_individual = fields.Char(string="Company / Individual")
+    x_contact_purpose = fields.Char(string="Contact Purpose")
+    x_employee_count = fields.Integer(string="Employee Count")
+    x_target_team_id = fields.Many2one(
+        'crm.team', string="Target Business Unit",
+        help="The BU this DMT lead is being transferred to."
+    )
+    x_transfer_notes = fields.Text(string="Transfer Notes / Reason")
+
+    # -- Tally only --
+    x_tally_category = fields.Selection(
+        [
+            ('tdl', 'TDL'),
+            ('tally_licence', 'Tally Licence'),
+            ('tally_cloud', 'Tally Cloud (Mazenet / AWS / Oracle)'),
+            ('tally_amc', 'Tally AMC (Online / Direct)'),
+            ('maze_chit', 'Maze Chit'),
+            ('mobile_app', 'Mobile App'),
+            ('renewal', 'Renewal'),
+            ('software_development', 'Software Development'),
+            ('not_tally_or_chit', 'Not Tally or Chit Related'),
+        ],
+        string="Lead Category"
+    )
+    x_company_intro_done = fields.Boolean(string="Company Intro")
+
+    # -- Technology only --
+    x_customer_status = fields.Char(string="Customer Status")
+    x_customer_need = fields.Char(string="Customer Need")
+    x_feasibility_identified = fields.Boolean(string="Feasibility Evaluation Identified")
+    x_bom_attachment = fields.Binary(string="BOM Received", attachment=True)
+    x_bom_attachment_filename = fields.Char(string="BOM Filename")
+    x_boq_attachment = fields.Binary(string="BOQ Received", attachment=True)
+    x_boq_attachment_filename = fields.Char(string="BOQ Filename")
+    x_quote_shared_checkbox = fields.Boolean(string="Shared with Customer")
+    x_customer_goods_finalised = fields.Boolean(string="Customer Goods Finalised")
+
+    # -- Software Dev only --
+    x_branch_count = fields.Char(string="No. of Branches")
+    x_sw_employee_count = fields.Char(string="No. of Employees")
+    x_nature_of_business = fields.Char(string="Nature of Business")
+    x_established_year = fields.Char(string="Established Year")
+    x_founder = fields.Char(string="Founder")
+    x_ceo = fields.Char(string="CEO")
+    x_meeting_attendees = fields.Char(string="Client Details (Meeting Attendees)")
+
+    # -- MIS only --
+    x_target_audience = fields.Char(string="Target Audience")
+    x_mis_timelines_estimate = fields.Integer(string="Timelines (Estimate)")
+    x_deliverables = fields.Char(string="Deliverables")
+
     def _mz_check_assign_type_allowed(self, vals):
         """Server-side backstop for x_assign_type in ('team', 'internal'): the view
         only offers those to ATL/TL/Manager tier (x_can_assign_beyond_self), and the
@@ -416,6 +650,78 @@ class CrmLead(models.Model):
                     "The selected salesperson isn't in the allowed assignment pool for "
                     "this team under '%s' assignment. Pick from the assignable list."
                 ) % assign_type)
+
+    @api.model
+    def _mz_stage_gate_rules_resolved(self, bu_category):
+        """[(stage record, [mandatory field names]), ...] in sequence order for a BU,
+        resolved from MZ_STAGE_GATE_RULES's xmlids. Empty list for a BU with no rules
+        configured yet, or an xmlid that doesn't (or doesn't yet) resolve."""
+        rules = MZ_STAGE_GATE_RULES.get(bu_category)
+        if not rules:
+            return []
+        resolved = []
+        for xmlid, field_names in rules:
+            stage = self.env.ref(f'mazenet_crm.{xmlid}', raise_if_not_found=False)
+            if stage:
+                resolved.append((stage, field_names))
+        return resolved
+
+    def _mz_missing_mandatory_fields(self, field_names, vals):
+        """Names of fields in `field_names` that are still empty, considering `vals`
+        (what's being written in this same call) over the record's current stored value.
+        Special-cased for 'source_id': when the (about-to-be-set) source requires a
+        companion reference text (utm.source.x_requires_reference_text - Referral/Ads/
+        GeM Bid style sources), 'referred' must be filled too even though it isn't its
+        own entry in MZ_STAGE_GATE_RULES (it's conditional on the source, not always
+        mandatory)."""
+        self.ensure_one()
+        missing = []
+        for fname in field_names:
+            value = vals[fname] if fname in vals else self[fname]
+            if not value:
+                missing.append(fname)
+        if 'source_id' in field_names:
+            source_id = vals['source_id'] if 'source_id' in vals else self.source_id.id
+            if source_id and self.env['utm.source'].browse(source_id).x_requires_reference_text:
+                referred = vals['referred'] if 'referred' in vals else self.referred
+                if not referred:
+                    missing.append('referred')
+        return missing
+
+    def _mz_stage_gate_check(self, new_stage, vals):
+        """Raise UserError if moving to `new_stage` skips past a stage (in this lead's
+        BU) whose own mandatory fields (MZ_STAGE_GATE_RULES) aren't filled yet - "Build
+        the fields in M2, enforce the Mandatory column on stage change in M3" from the
+        pipeline sheets. Only a FORWARD move (to a later stage) is gated; moving
+        backward never is. Jumping straight past several stages checks every stage in
+        between, not just the one immediately before `new_stage`."""
+        self.ensure_one()
+        team = self.team_id
+        if not team or not new_stage:
+            return
+        resolved = self._mz_stage_gate_rules_resolved(team.x_bu_category)
+        if not resolved:
+            return
+        stage_ids = [s.id for s, _fields in resolved]
+        if new_stage.id not in stage_ids:
+            return
+        new_index = stage_ids.index(new_stage.id)
+        current_stage = self.stage_id
+        current_index = stage_ids.index(current_stage.id) if current_stage.id in stage_ids else -1
+        if new_index <= current_index:
+            return
+
+        problems = []
+        for stage, field_names in resolved[max(current_index, 0):new_index]:
+            missing = self._mz_missing_mandatory_fields(field_names, vals)
+            if missing:
+                labels = ', '.join(self._fields[f].string for f in missing)
+                problems.append(f"{stage.name}: {labels}")
+        if problems:
+            raise UserError(_(
+                "'%(lead)s' can't move to '%(target)s' yet - required fields are still "
+                "empty:\n%(details)s"
+            ) % {'lead': self.name, 'target': new_stage.name, 'details': '\n'.join(problems)})
 
     @api.model_create_multi
     def create(self, vals_list):
@@ -506,6 +812,15 @@ class CrmLead(models.Model):
                         touched_content = content_touched
                         if touched_content - REASSIGN_FIELDS:
                             raise AccessError(_("Managers view and reassign; content edits go through the Team Lead."))
+
+        # M3 stage-mandatory-field gate: enforced regardless of role (CTO/Admin included -
+        # this is a data-completeness rule, not an authority one), skipped only for raw
+        # su/system writes (migrations, demo-data seeding) so those aren't forced to
+        # pre-fill every mandatory field for stages they're placing records into directly.
+        if 'stage_id' in vals and not self.env.su:
+            new_stage = self.env['crm.stage'].browse(vals['stage_id'])
+            for lead in self:
+                lead._mz_stage_gate_check(new_stage, vals)
 
         return super(CrmLead, self).write(vals)
 

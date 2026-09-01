@@ -1,64 +1,70 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <data noupdate="1">
-        <!-- 1. DMT Stages (4 stages) -->
+        <!-- 1. DMT Stages (4 stages) - Mazenet_CRM_M2_Build_Tasks.xlsx: "New Lead/Source ->
+             Lead Validation -> Transfer to BU -> Follow-up's. NO Won/Lost stage in DMT." -->
         <record id="stage_dmt_new" model="crm.stage">
-            <field name="name">New Inquiry</field>
+            <field name="name">New Lead / Source</field>
             <field name="sequence">1</field>
             <field name="team_ids" eval="[(4, ref('team_dmt'))]"/>
         </record>
         <record id="stage_dmt_contacted" model="crm.stage">
-            <field name="name">Contacted</field>
+            <field name="name">Lead Validation</field>
             <field name="sequence">2</field>
             <field name="team_ids" eval="[(4, ref('team_dmt'))]"/>
         </record>
         <record id="stage_dmt_qualified" model="crm.stage">
-            <field name="name">Qualified for Transfer</field>
+            <field name="name">Transfer to BU</field>
             <field name="sequence">3</field>
             <field name="team_ids" eval="[(4, ref('team_dmt'))]"/>
         </record>
         <record id="stage_dmt_transferred" model="crm.stage">
-            <field name="name">Transferred</field>
+            <field name="name">Follow-up's</field>
             <field name="sequence">4</field>
-            <field name="is_won">True</field>
+            <field name="is_won">False</field>
             <field name="team_ids" eval="[(4, ref('team_dmt'))]"/>
         </record>
 
-        <!-- 2. Tally Stages (7 stages) -->
+        <!-- 2. Tally Stages (7 stages) - Mazenet_CRM_M2_Build_Tasks.xlsx: "New Lead ->
+             Lead Validation -> Requirements -> Quote Shared -> Follow-up's -> Won/Lost ->
+             Project State. ONE stage set shared by the TDL and Sales groups." Lost is NOT
+             its own stage (handled via active=False + lost_reason on the Won/Lost stage) -
+             the old "Closed Lost" record is repurposed into Project State instead. -->
         <record id="stage_tally_new" model="crm.stage">
             <field name="name">New Lead</field>
             <field name="sequence">1</field>
             <field name="team_ids" eval="[(4, ref('team_tally')), (4, ref('team_tally'))]"/>
         </record>
         <record id="stage_tally_contacted" model="crm.stage">
-            <field name="name">Contact Made</field>
+            <field name="name">Lead Validation</field>
             <field name="sequence">2</field>
             <field name="team_ids" eval="[(4, ref('team_tally')), (4, ref('team_tally'))]"/>
         </record>
         <record id="stage_tally_demo" model="crm.stage">
-            <field name="name">Demo Scheduled</field>
+            <field name="name">Requirements</field>
             <field name="sequence">3</field>
             <field name="team_ids" eval="[(4, ref('team_tally')), (4, ref('team_tally'))]"/>
         </record>
         <record id="stage_tally_proposal" model="crm.stage">
-            <field name="name">Proposal Sent</field>
+            <field name="name">Quote Shared</field>
             <field name="sequence">4</field>
             <field name="team_ids" eval="[(4, ref('team_tally')), (4, ref('team_tally'))]"/>
         </record>
         <record id="stage_tally_negotiation" model="crm.stage">
-            <field name="name">Negotiation</field>
+            <field name="name">Follow-up's</field>
             <field name="sequence">5</field>
             <field name="team_ids" eval="[(4, ref('team_tally')), (4, ref('team_tally'))]"/>
         </record>
         <record id="stage_tally_won" model="crm.stage">
-            <field name="name">Order Won</field>
+            <field name="name">Won / Lost</field>
             <field name="sequence">6</field>
             <field name="is_won">True</field>
             <field name="team_ids" eval="[(4, ref('team_tally')), (4, ref('team_tally'))]"/>
         </record>
         <record id="stage_tally_lost" model="crm.stage">
-            <field name="name">Closed Lost</field>
+            <field name="name">Project State</field>
             <field name="sequence">7</field>
+            <field name="is_won">False</field>
             <field name="team_ids" eval="[(4, ref('team_tally')), (4, ref('team_tally'))]"/>
         </record>
 
@@ -189,107 +195,117 @@
             <field name="team_ids" eval="[(4, ref('team_corporate'))]"/>
         </record>
 
-        <!-- 6. Technology Stages (7 stages) -->
+        <!-- 6. Technology Stages (7 stages) - Mazenet_CRM_M2_Build_Tasks.xlsx: "New Lead ->
+             Lead Validation -> Requirement Understanding -> Quote -> Follow-up's ->
+             Won/Lost -> Project State." is_won moves off the old last stage (renamed to
+             Project State) onto the actual Won/Lost stage. -->
         <record id="stage_tech_new" model="crm.stage">
-            <field name="name">Lead Inflow</field>
+            <field name="name">New Lead</field>
             <field name="sequence">1</field>
             <field name="team_ids" eval="[(4, ref('team_technology'))]"/>
         </record>
         <record id="stage_tech_2" model="crm.stage">
-            <field name="name">Stage 2 (Placeholder)</field>
+            <field name="name">Lead Validation</field>
             <field name="sequence">2</field>
             <field name="team_ids" eval="[(4, ref('team_technology'))]"/>
         </record>
         <record id="stage_tech_3" model="crm.stage">
-            <field name="name">Stage 3 (Placeholder)</field>
+            <field name="name">Requirement Understanding</field>
             <field name="sequence">3</field>
             <field name="team_ids" eval="[(4, ref('team_technology'))]"/>
         </record>
         <record id="stage_tech_4" model="crm.stage">
-            <field name="name">Stage 4 (Placeholder)</field>
+            <field name="name">Quote</field>
             <field name="sequence">4</field>
             <field name="team_ids" eval="[(4, ref('team_technology'))]"/>
         </record>
         <record id="stage_tech_5" model="crm.stage">
-            <field name="name">Stage 5 (Placeholder)</field>
+            <field name="name">Follow-up's</field>
             <field name="sequence">5</field>
             <field name="team_ids" eval="[(4, ref('team_technology'))]"/>
         </record>
         <record id="stage_tech_6" model="crm.stage">
-            <field name="name">Stage 6 (Placeholder)</field>
+            <field name="name">Won / Lost</field>
             <field name="sequence">6</field>
-            <field name="team_ids" eval="[(4, ref('team_technology'))]"/>
-        </record>
-        <record id="stage_tech_won" model="crm.stage">
-            <field name="name">Project Awarded</field>
-            <field name="sequence">7</field>
             <field name="is_won">True</field>
             <field name="team_ids" eval="[(4, ref('team_technology'))]"/>
         </record>
+        <record id="stage_tech_won" model="crm.stage">
+            <field name="name">Project State</field>
+            <field name="sequence">7</field>
+            <field name="is_won">False</field>
+            <field name="team_ids" eval="[(4, ref('team_technology'))]"/>
+        </record>
 
-        <!-- 7. Software Dev Stages (6 stages) -->
+        <!-- 7. Software Dev Stages (6 stages) - Mazenet_CRM_M2_Build_Tasks.xlsx: "New Lead ->
+             Lead Validation -> Demo -> Quote -> Won/Lost -> Project State. NO Follow-up's
+             stage - the colour timer and RED lock do NOT apply in this BU." -->
         <record id="stage_swdev_new" model="crm.stage">
-            <field name="name">New Requirement</field>
+            <field name="name">New Lead</field>
             <field name="sequence">1</field>
             <field name="team_ids" eval="[(4, ref('team_software'))]"/>
         </record>
         <record id="stage_swdev_2" model="crm.stage">
-            <field name="name">Stage 2 (Placeholder)</field>
+            <field name="name">Lead Validation</field>
             <field name="sequence">2</field>
             <field name="team_ids" eval="[(4, ref('team_software'))]"/>
         </record>
         <record id="stage_swdev_3" model="crm.stage">
-            <field name="name">Stage 3 (Placeholder)</field>
+            <field name="name">Demo</field>
             <field name="sequence">3</field>
             <field name="team_ids" eval="[(4, ref('team_software'))]"/>
         </record>
         <record id="stage_swdev_4" model="crm.stage">
-            <field name="name">Stage 4 (Placeholder)</field>
+            <field name="name">Quote</field>
             <field name="sequence">4</field>
             <field name="team_ids" eval="[(4, ref('team_software'))]"/>
         </record>
         <record id="stage_swdev_5" model="crm.stage">
-            <field name="name">Stage 5 (Placeholder)</field>
+            <field name="name">Won / Lost</field>
             <field name="sequence">5</field>
-            <field name="team_ids" eval="[(4, ref('team_software'))]"/>
-        </record>
-        <record id="stage_swdev_won" model="crm.stage">
-            <field name="name">Delivered</field>
-            <field name="sequence">6</field>
             <field name="is_won">True</field>
             <field name="team_ids" eval="[(4, ref('team_software'))]"/>
         </record>
+        <record id="stage_swdev_won" model="crm.stage">
+            <field name="name">Project State</field>
+            <field name="sequence">6</field>
+            <field name="is_won">False</field>
+            <field name="team_ids" eval="[(4, ref('team_software'))]"/>
+        </record>
 
-        <!-- 8. MIS Stages (6 stages) -->
+        <!-- 8. MIS Stages (6 stages) - Mazenet_CRM_M2_Build_Tasks.xlsx: "New Lead ->
+             Lead Validation -> Demo -> Quote -> Won/Lost -> Project State. NO Follow-up's
+             stage - the colour timer and RED lock do NOT apply in this BU." -->
         <record id="stage_mis_new" model="crm.stage">
-            <field name="name">New Request</field>
+            <field name="name">New Lead</field>
             <field name="sequence">1</field>
             <field name="team_ids" eval="[(4, ref('team_mis'))]"/>
         </record>
         <record id="stage_mis_2" model="crm.stage">
-            <field name="name">Stage 2 (Placeholder)</field>
+            <field name="name">Lead Validation</field>
             <field name="sequence">2</field>
             <field name="team_ids" eval="[(4, ref('team_mis'))]"/>
         </record>
         <record id="stage_mis_3" model="crm.stage">
-            <field name="name">Stage 3 (Placeholder)</field>
+            <field name="name">Demo</field>
             <field name="sequence">3</field>
             <field name="team_ids" eval="[(4, ref('team_mis'))]"/>
         </record>
         <record id="stage_mis_4" model="crm.stage">
-            <field name="name">Stage 4 (Placeholder)</field>
+            <field name="name">Quote</field>
             <field name="sequence">4</field>
             <field name="team_ids" eval="[(4, ref('team_mis'))]"/>
         </record>
         <record id="stage_mis_5" model="crm.stage">
-            <field name="name">Stage 5 (Placeholder)</field>
+            <field name="name">Won / Lost</field>
             <field name="sequence">5</field>
+            <field name="is_won">True</field>
             <field name="team_ids" eval="[(4, ref('team_mis'))]"/>
         </record>
         <record id="stage_mis_won" model="crm.stage">
-            <field name="name">Completed</field>
+            <field name="name">Project State</field>
             <field name="sequence">6</field>
-            <field name="is_won">True</field>
+            <field name="is_won">False</field>
             <field name="team_ids" eval="[(4, ref('team_mis'))]"/>
         </record>
     </data>

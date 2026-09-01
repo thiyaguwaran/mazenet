@@ -59,6 +59,271 @@
                         <b>TRANSFERRED</b> - this lead has moved to another Sales Team and is read-only for you.
                     </div>
                 </xpath>
+
+                <!-- Source options are per-BU (utm_source.py's team_ids), scoped to team_id -->
+                <xpath expr="//page[@name='extra']//field[@name='source_id']" position="attributes">
+                    <attribute name="domain">[('team_ids', 'in', team_id)]</attribute>
+                </xpath>
+                <xpath expr="//page[@name='lead']//field[@name='source_id']" position="attributes">
+                    <attribute name="domain">[('team_ids', 'in', team_id)]</attribute>
+                </xpath>
+
+                <!-- Build notes: "Format validation only... Show a placeholder hint" -
+                     placeholders on both the Lead-type and Opportunity-type variants of
+                     phone/email_from (crm_lead_view_form renders a different group for
+                     each, per the `type` field). Actual format enforcement is the
+                     _mz_check_contact_format constraint in crm_lead.py. -->
+                <xpath expr="//field[@name='phone'][@id='phone_group_lead_info']" position="attributes">
+                    <attribute name="placeholder">e.g. 9876543210</attribute>
+                </xpath>
+                <xpath expr="//field[@name='email_from'][@id='email_from_group_lead_info']" position="attributes">
+                    <attribute name="placeholder">e.g. name@example.com</attribute>
+                </xpath>
+                <xpath expr="//group[@name='opportunity_partner']//field[@name='phone']" position="attributes">
+                    <attribute name="placeholder">e.g. 9876543210</attribute>
+                </xpath>
+                <xpath expr="//group[@name='opportunity_partner']//field[@name='email_from']" position="attributes">
+                    <attribute name="placeholder">e.g. name@example.com</attribute>
+                </xpath>
+
+                <!-- M2 pipeline fields (Mazenet_CRM_M2_Build_Tasks.xlsx). Each group is
+                     gated to the BU(s) it applies to via x_team_bu_category, since all
+                     5 pipelines share this one crm.lead form. -->
+                <xpath expr="//page[@name='extra']" position="after">
+                    <page name="mz_pipeline" string="Pipeline Fields">
+                        <field name="x_team_bu_category" invisible="1"/>
+                        <div invisible="x_team_bu_category != 'dmt'">
+                            <group string="Stage 1 - New Lead / Source">
+                                <field name="x_organic_inorganic"/>
+                                <field name="source_id" domain="[('team_ids', 'in', team_id)]"/>
+                                <field name="referred" string="Source Reference (Referral / Ads)"/>
+                            </group>
+                            <group string="Stage 2 - Lead Validation">
+                                <field name="x_company_or_individual"/>
+                                <field name="x_contact_purpose"/>
+                                <field name="x_product_service"/>
+                                <field name="x_employee_count"/>
+                                <field name="x_company_turnover"/>
+                                <field name="priority" widget="priority" string="Lead Fit"/>
+                            </group>
+                            <group string="Stage 3 - Transfer to BU">
+                                <field name="x_target_team_id"/>
+                                <field name="x_transfer_notes"/>
+                            </group>
+                            <group string="Stage 4 - Follow-up's">
+                                <div class="text-muted" colspan="2">
+                                    Follow-up activities live in the Activities/Chatter area below -
+                                    colour timer and RED lock are already wired to them.
+                                </div>
+                            </group>
+                        </div>
+                        <div invisible="x_team_bu_category != 'tally'">
+                            <group string="Stage 1 - New Lead">
+                                <field name="source_id" domain="[('team_ids', 'in', team_id)]"/>
+                                <field name="referred" string="Source Reference (Referral)"/>
+                            </group>
+                            <group string="Stage 2 - Lead Validation">
+                                <field name="x_tally_category"/>
+                            </group>
+                            <group string="Stage 3 - Requirements">
+                                <field name="x_company_intro_done"/>
+                                <field name="x_product_service"/>
+                                <field name="x_feasibility"/>
+                                <field name="x_timeline"/>
+                                <field name="x_requirements_attachment" filename="x_requirements_attachment_filename"/>
+                                <field name="x_requirements_attachment_filename" invisible="1"/>
+                            </group>
+                            <group string="Stage 4 - Quote Shared">
+                                <field name="x_quote_date"/>
+                                <field name="x_quote_document" filename="x_quote_document_filename"/>
+                                <field name="x_quote_document_filename" invisible="1"/>
+                            </group>
+                            <group string="Stage 5 - Follow-up's">
+                                <div class="text-muted" colspan="2">
+                                    Follow-up activities live in the Activities/Chatter area below -
+                                    colour timer and RED lock are already wired to them.
+                                </div>
+                            </group>
+                            <group string="Stage 6 - Won / Lost">
+                                <div class="text-muted" colspan="2">
+                                    Won is this stage's is_won flag. Lost is recorded via the standard
+                                    Odoo "Mark Lost" wizard (Lost Reason + Closing Note), not a separate stage.
+                                </div>
+                            </group>
+                            <group string="Stage 7 - Project State">
+                                <field name="x_project_start_date"/>
+                                <field name="x_project_start_attachment" filename="x_project_start_attachment_filename"/>
+                                <field name="x_project_start_attachment_filename" invisible="1"/>
+                                <field name="x_project_completed_date"/>
+                                <field name="x_project_completed_attachment" filename="x_project_completed_attachment_filename"/>
+                                <field name="x_project_completed_attachment_filename" invisible="1"/>
+                                <field name="x_workorder_completion_date"/>
+                                <field name="x_deviation_days"/>
+                            </group>
+                        </div>
+
+                        <div invisible="x_team_bu_category != 'tech'">
+                            <group string="Stage 1 - New Lead / Source">
+                                <field name="source_id" domain="[('team_ids', 'in', team_id)]"/>
+                                <field name="referred" string="Source Reference (Referral / GeM Bid)"/>
+                                <field name="x_can_create_partner" invisible="1"/>
+                            </group>
+                            <group string="Stage 2 - Lead Validation">
+                                <field name="x_customer_status"/>
+                                <field name="x_customer_need"/>
+                            </group>
+                            <group string="Stage 3 - Requirement Understanding">
+                                <field name="x_product_service"/>
+                                <field name="x_feasibility_identified"/>
+                                <field name="x_timeline"/>
+                                <field name="x_requirements_attachment" filename="x_requirements_attachment_filename"/>
+                                <field name="x_requirements_attachment_filename" invisible="1"/>
+                            </group>
+                            <group string="Stage 4 - Quote">
+                                <field name="x_bom_attachment" filename="x_bom_attachment_filename"/>
+                                <field name="x_bom_attachment_filename" invisible="1"/>
+                                <field name="x_boq_attachment" filename="x_boq_attachment_filename"/>
+                                <field name="x_boq_attachment_filename" invisible="1"/>
+                                <field name="x_quote_shared_checkbox"/>
+                                <field name="x_customer_goods_finalised"/>
+                                <field name="x_quote_date"/>
+                                <field name="x_quote_document" filename="x_quote_document_filename"/>
+                                <field name="x_quote_document_filename" invisible="1"/>
+                            </group>
+                            <group string="Stage 5 - Follow-up's">
+                                <div class="text-muted" colspan="2">
+                                    Follow-up activities live in the Activities/Chatter area below -
+                                    colour timer and RED lock are already wired to them.
+                                </div>
+                            </group>
+                            <group string="Stage 6 - Won / Lost">
+                                <div class="text-muted" colspan="2">
+                                    Won is this stage's is_won flag. Lost is recorded via the standard
+                                    Odoo "Mark Lost" wizard (Lost Reason + Closing Note), not a separate stage.
+                                </div>
+                            </group>
+                            <group string="Stage 7 - Project State">
+                                <field name="x_project_start_date"/>
+                                <field name="x_project_start_attachment" filename="x_project_start_attachment_filename"/>
+                                <field name="x_project_start_attachment_filename" invisible="1"/>
+                                <field name="x_project_completed_date"/>
+                                <field name="x_project_completed_attachment" filename="x_project_completed_attachment_filename"/>
+                                <field name="x_project_completed_attachment_filename" invisible="1"/>
+                                <field name="x_workorder_completion_date"/>
+                                <field name="x_deviation_days"/>
+                            </group>
+                        </div>
+
+                        <div invisible="x_team_bu_category != 'swdev'">
+                            <group string="Stage 1 - New Lead / Source">
+                                <field name="source_id" domain="[('team_ids', 'in', team_id)]"/>
+                                <field name="referred" string="Source Reference (Referral)"/>
+                            </group>
+                            <group string="Stage 2 - Lead Validation">
+                                <field name="expected_revenue" string="Order Value"/>
+                                <field name="x_branch_count"/>
+                                <field name="x_sw_employee_count"/>
+                                <field name="x_nature_of_business"/>
+                                <field name="x_established_year"/>
+                                <field name="x_founder"/>
+                                <field name="x_ceo"/>
+                                <field name="x_company_turnover"/>
+                                <field name="website"/>
+                                <field name="x_meeting_attendees"/>
+                            </group>
+                            <group string="Stage 3 - Demo">
+                                <field name="x_demo_completed"/>
+                                <field name="x_system_study_attachment" filename="x_system_study_attachment_filename"/>
+                                <field name="x_system_study_attachment_filename" invisible="1"/>
+                                <field name="x_feasibility"/>
+                                <field name="x_timeline"/>
+                            </group>
+                            <group string="Stage 4 - Quote">
+                                <field name="x_quote_date"/>
+                                <field name="x_quote_document" filename="x_quote_document_filename"/>
+                                <field name="x_quote_document_filename" invisible="1"/>
+                            </group>
+                            <group string="Stage 5 - Won / Lost">
+                                <div class="text-muted" colspan="2">
+                                    Won is this stage's is_won flag. Lost is recorded via the standard
+                                    Odoo "Mark Lost" wizard (Lost Reason + Closing Note), not a separate stage.
+                                    No Follow-up's stage in this BU - colour timer/RED lock don't apply.
+                                </div>
+                            </group>
+                            <group string="Stage 6 - Project State">
+                                <field name="x_project_start_date"/>
+                                <field name="x_project_start_attachment" filename="x_project_start_attachment_filename"/>
+                                <field name="x_project_start_attachment_filename" invisible="1"/>
+                                <field name="x_project_completed_date"/>
+                                <field name="x_project_completed_attachment" filename="x_project_completed_attachment_filename"/>
+                                <field name="x_project_completed_attachment_filename" invisible="1"/>
+                                <field name="x_workorder_completion_date"/>
+                                <field name="x_deviation_days"/>
+                            </group>
+                        </div>
+
+                        <div invisible="x_team_bu_category != 'mis'">
+                            <group string="Stage 1 - New Lead / Source">
+                                <field name="source_id" domain="[('team_ids', 'in', team_id)]"/>
+                                <field name="referred" string="Source Reference (Referral)"/>
+                            </group>
+                            <group string="Stage 2 - Lead Validation">
+                                <field name="x_product_service"/>
+                                <field name="x_target_audience"/>
+                                <field name="x_mis_timelines_estimate"/>
+                                <field name="x_deliverables"/>
+                                <field name="x_requirements_attachment" filename="x_requirements_attachment_filename"
+                                       string="Client Expectations Attachment"/>
+                                <field name="x_requirements_attachment_filename" invisible="1"/>
+                            </group>
+                            <group string="Stage 3 - Demo">
+                                <field name="x_demo_completed"/>
+                                <field name="x_system_study_attachment" filename="x_system_study_attachment_filename"/>
+                                <field name="x_system_study_attachment_filename" invisible="1"/>
+                                <field name="x_feasibility"/>
+                                <field name="x_timeline"/>
+                            </group>
+                            <group string="Stage 4 - Quote">
+                                <field name="x_quote_document" filename="x_quote_document_filename"/>
+                                <field name="x_quote_document_filename" invisible="1"/>
+                            </group>
+                            <group string="Stage 5 - Won / Lost">
+                                <div class="text-muted" colspan="2">
+                                    Won is this stage's is_won flag. Lost is recorded via the standard
+                                    Odoo "Mark Lost" wizard (Lost Reason + Closing Note), not a separate stage.
+                                    No Follow-up's stage in this BU - colour timer/RED lock don't apply.
+                                </div>
+                            </group>
+                            <group string="Stage 6 - Project State">
+                                <field name="x_project_start_date"/>
+                                <field name="x_project_start_attachment" filename="x_project_start_attachment_filename"/>
+                                <field name="x_project_start_attachment_filename" invisible="1"/>
+                                <field name="x_project_completed_date"/>
+                                <field name="x_project_completed_attachment" filename="x_project_completed_attachment_filename"/>
+                                <field name="x_project_completed_attachment_filename" invisible="1"/>
+                                <field name="x_workorder_completion_date"/>
+                                <field name="x_deviation_days"/>
+                            </group>
+                        </div>
+                    </page>
+                </xpath>
+
+                <!-- Technology-only: partner/customer creation restricted to TL/Manager -
+                     Agents (and ATLs) may only SELECT from the existing list. Two field tags
+                     over the same partner_id, toggled by x_can_create_partner, since a
+                     Many2one's no_create/no_create_edit widget options are static per tag,
+                     not expression-evaluable. -->
+                <xpath expr="//field[@name='partner_id'][1]" position="before">
+                    <field name="x_can_create_partner" invisible="1"/>
+                </xpath>
+                <xpath expr="//field[@name='partner_id']" position="attributes">
+                    <attribute name="invisible" add="x_team_bu_category == 'tech' and not x_can_create_partner" separator="or"/>
+                </xpath>
+                <xpath expr="//field[@name='partner_id'][1]" position="after">
+                    <field name="partner_id" widget="res_partner_many2one"
+                           options="{'no_create': True, 'no_create_edit': True}"
+                           invisible="not (x_team_bu_category == 'tech' and not x_can_create_partner)"/>
+                </xpath>
             </field>
         </record>
 
