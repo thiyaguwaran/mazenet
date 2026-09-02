@@ -76,8 +76,8 @@ MZ_STAGE_GATE_RULES = {
         # onward) - so it's checked leaving Stage 2, not Stage 1.
         ('stage_tally_new', ['name', 'phone', 'source_id']),
         ('stage_tally_contacted', ['x_tally_category', 'email_from']),
-        ('stage_tally_demo', ['x_requirements_attachment', 'x_product_service', 'x_feasibility', 'x_timeline']),
-        ('stage_tally_proposal', ['x_quote_date', 'x_quote_document']),
+        ('stage_tally_demo', ['x_requirements_attachment_ids', 'x_product_service', 'x_feasibility', 'x_timeline']),
+        ('stage_tally_proposal', ['x_quote_date', 'x_quote_document_ids']),
         ('stage_tally_negotiation', []),
         ('stage_tally_won', []),
         ('stage_tally_lost', []),
@@ -86,10 +86,11 @@ MZ_STAGE_GATE_RULES = {
         ('stage_tech_new', ['name', 'phone', 'email_from', 'source_id']),
         ('stage_tech_2', ['x_customer_status', 'x_customer_need']),
         ('stage_tech_3', [
-            'x_requirements_attachment', 'x_product_service', 'x_feasibility_identified', 'x_timeline',
+            'x_requirements_attachment_ids', 'x_product_service', 'x_feasibility_identified', 'x_timeline',
         ]),
         ('stage_tech_4', [
-            'x_quote_shared_checkbox', 'x_customer_goods_finalised', 'x_quote_date', 'x_quote_document',
+            'x_bom_attachment_ids', 'x_boq_attachment_ids',
+            'x_quote_shared_checkbox', 'x_customer_goods_finalised', 'x_quote_date', 'x_quote_document_ids',
         ]),
         ('stage_tech_5', []),
         ('stage_tech_6', []),
@@ -101,19 +102,19 @@ MZ_STAGE_GATE_RULES = {
             'x_branch_count', 'x_sw_employee_count', 'x_nature_of_business',
             'x_established_year', 'x_meeting_attendees',
         ]),
-        ('stage_swdev_3', ['x_demo_completed', 'x_system_study_attachment', 'x_feasibility', 'x_timeline']),
-        ('stage_swdev_4', ['x_quote_date', 'x_quote_document']),
+        ('stage_swdev_3', ['x_demo_completed', 'x_system_study_attachment_ids', 'x_feasibility', 'x_timeline']),
+        ('stage_swdev_4', ['x_quote_date', 'x_quote_document_ids']),
         ('stage_swdev_5', []),
         ('stage_swdev_won', []),
     ],
     'mis': [
         ('stage_mis_new', ['name', 'phone', 'email_from', 'source_id']),
         ('stage_mis_2', [
-            'x_requirements_attachment', 'x_product_service', 'x_target_audience',
+            'x_requirements_attachment_ids', 'x_product_service', 'x_target_audience',
             'x_mis_timelines_estimate', 'x_deliverables',
         ]),
-        ('stage_mis_3', ['x_demo_completed', 'x_system_study_attachment', 'x_feasibility', 'x_timeline']),
-        ('stage_mis_4', ['x_quote_document']),
+        ('stage_mis_3', ['x_demo_completed', 'x_system_study_attachment_ids', 'x_feasibility', 'x_timeline']),
+        ('stage_mis_4', ['x_quote_document_ids']),
         ('stage_mis_5', []),
         ('stage_mis_won', []),
     ],
@@ -491,21 +492,49 @@ class CrmLead(models.Model):
              "anywhere in this view's own field spec, which left every Pipeline Fields "
              "group permanently invisible."
     )
+    x_mz_stage_key = fields.Char(
+        string="Stage Key (technical)", compute="_compute_x_mz_stage_key",
+        help="The lead's current stage_id resolved to its stable xmlid (e.g. "
+             "'stage_dmt_new') instead of its raw database id - local/staging/any other "
+             "environment assign different ids to the same stage record, so the view's "
+             "required= conditions (MZ_STAGE_GATE_RULES, one per stage) key off this "
+             "instead of stage_id.id directly. False for leads outside the 5 M2 teams."
+    )
+    x_source_requires_reference = fields.Boolean(
+        related='source_id.x_requires_reference_text', string="Source Requires Reference",
+        help="Plain mirror of source_id.x_requires_reference_text for the view's required= "
+             "conditions on 'referred' - same dotted-attribute-fetch reasoning as "
+             "x_team_bu_category above."
+    )
+
+    @api.depends('stage_id')
+    def _compute_x_mz_stage_key(self):
+        stage_ids = self.mapped('stage_id').ids
+        imd = self.env['ir.model.data'].sudo().search([
+            ('model', '=', 'crm.stage'), ('res_id', 'in', stage_ids), ('module', '=', 'mazenet_crm'),
+        ])
+        key_by_stage_id = {d.res_id: d.name for d in imd}
+        for lead in self:
+            lead.x_mz_stage_key = key_by_stage_id.get(lead.stage_id.id, False)
     x_product_service = fields.Char(string="Product / Service")
     x_feasibility = fields.Char(string="Feasibility")
     x_timeline = fields.Char(string="Timeline")
-    x_requirements_attachment = fields.Binary(string="Requirements Attachment", attachment=True)
-    x_requirements_attachment_filename = fields.Char(string="Requirements Attachment Filename")
+    x_requirements_attachment_ids = fields.Many2many(
+        'ir.attachment', 'mazenet_crm_lead_requirements_attachment_rel',
+        'lead_id', 'attachment_id', string="Requirements Attachment(s)")
     x_quote_date = fields.Date(string="Quote Date")
-    x_quote_document = fields.Binary(string="Quote Document", attachment=True)
-    x_quote_document_filename = fields.Char(string="Quote Document Filename")
+    x_quote_document_ids = fields.Many2many(
+        'ir.attachment', 'mazenet_crm_lead_quote_document_rel',
+        'lead_id', 'attachment_id', string="Quote Document(s)")
     x_company_turnover = fields.Monetary(string="Company Turnover", currency_field='company_currency')
     x_project_start_date = fields.Date(string="Project Start Date")
-    x_project_start_attachment = fields.Binary(string="Project Start Attachment", attachment=True)
-    x_project_start_attachment_filename = fields.Char(string="Project Start Attachment Filename")
+    x_project_start_attachment_ids = fields.Many2many(
+        'ir.attachment', 'mazenet_crm_lead_project_start_attachment_rel',
+        'lead_id', 'attachment_id', string="Project Start Attachment(s)")
     x_project_completed_date = fields.Date(string="Project Completed Date")
-    x_project_completed_attachment = fields.Binary(string="Project Completed Attachment", attachment=True)
-    x_project_completed_attachment_filename = fields.Char(string="Project Completed Attachment Filename")
+    x_project_completed_attachment_ids = fields.Many2many(
+        'ir.attachment', 'mazenet_crm_lead_project_completed_attachment_rel',
+        'lead_id', 'attachment_id', string="Project Completed Attachment(s)")
     x_workorder_completion_date = fields.Date(
         string="Workorder Completion Date",
         help="MANUAL entry only - do not build an auto-fetch or any integration with the "
@@ -516,8 +545,9 @@ class CrmLead(models.Model):
         help="Auto-calculated from Project Completed Date vs Workorder Completion Date."
     )
     x_demo_completed = fields.Boolean(string="Demo / POC Completed")
-    x_system_study_attachment = fields.Binary(string="System Study (PDF)", attachment=True)
-    x_system_study_attachment_filename = fields.Char(string="System Study Filename")
+    x_system_study_attachment_ids = fields.Many2many(
+        'ir.attachment', 'mazenet_crm_lead_system_study_attachment_rel',
+        'lead_id', 'attachment_id', string="System Study (PDF)")
 
     @api.depends('x_project_completed_date', 'x_workorder_completion_date')
     def _compute_x_deviation_days(self):
@@ -587,10 +617,12 @@ class CrmLead(models.Model):
     x_customer_status = fields.Char(string="Customer Status")
     x_customer_need = fields.Char(string="Customer Need")
     x_feasibility_identified = fields.Boolean(string="Feasibility Evaluation Identified")
-    x_bom_attachment = fields.Binary(string="BOM Received", attachment=True)
-    x_bom_attachment_filename = fields.Char(string="BOM Filename")
-    x_boq_attachment = fields.Binary(string="BOQ Received", attachment=True)
-    x_boq_attachment_filename = fields.Char(string="BOQ Filename")
+    x_bom_attachment_ids = fields.Many2many(
+        'ir.attachment', 'mazenet_crm_lead_bom_attachment_rel',
+        'lead_id', 'attachment_id', string="BOM Received")
+    x_boq_attachment_ids = fields.Many2many(
+        'ir.attachment', 'mazenet_crm_lead_boq_attachment_rel',
+        'lead_id', 'attachment_id', string="BOQ Received")
     x_quote_shared_checkbox = fields.Boolean(string="Shared with Customer")
     x_customer_goods_finalised = fields.Boolean(string="Customer Goods Finalised")
 
@@ -666,6 +698,33 @@ class CrmLead(models.Model):
                 resolved.append((stage, field_names))
         return resolved
 
+    def _mz_resolve_gate_value(self, fname, vals):
+        """The would-be value of `fname` after `vals` is applied, for mandatory-ness
+        purposes. Plain fields: the raw vals entry (or current value if untouched).
+        Many2many (the multi-file attachment fields): raw (6,0,ids)/(4,id)/... write
+        commands aren't truthy/falsy in a way that reflects the resulting record set
+        (e.g. a bare (6,0,[]) command is itself a non-empty list even though it clears
+        the field), so replay the commands against the current ids instead."""
+        if fname not in vals:
+            return self[fname]
+        field = self._fields[fname]
+        if field.type != 'many2many':
+            return vals[fname]
+        ids = set(self[fname].ids)
+        for command in vals[fname]:
+            op = command[0]
+            if op == 6:
+                ids = set(command[2])
+            elif op == 5:
+                ids = set()
+            elif op == 4:
+                ids.add(command[1])
+            elif op in (2, 3):
+                ids.discard(command[1])
+            elif op == 0:
+                ids.add(-1)  # new record being created inline - treat as filled
+        return ids
+
     def _mz_missing_mandatory_fields(self, field_names, vals):
         """Names of fields in `field_names` that are still empty, considering `vals`
         (what's being written in this same call) over the record's current stored value.
@@ -677,7 +736,7 @@ class CrmLead(models.Model):
         self.ensure_one()
         missing = []
         for fname in field_names:
-            value = vals[fname] if fname in vals else self[fname]
+            value = self._mz_resolve_gate_value(fname, vals)
             if not value:
                 missing.append(fname)
         if 'source_id' in field_names:
