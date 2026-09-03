@@ -61,9 +61,19 @@ MZR_MANAGER_GROUPS = [
 #   further stage to advance INTO past it, so "enforce on stage change" has no move left
 #   to gate against - these stay reference-only, same as every stage's Mandatory column
 #   is explicitly scoped to be until M3 actually implements a trigger for them.
+# Deliberate deviation from the sheet: business wants phone/email as an either-or
+# pair on every BU's first stage (fill one, the other stops being required) - NOT
+# what the sheet's own "Any one source mandatory" annotation means (that's about the
+# Source field's own option list, already satisfied since source_id is a single
+# field), and NOT the sheet's "Progressive" wording for Tally's email either (which
+# would have made it a plain separate Stage-2 requirement instead).
+MZ_EITHER_OR_MANDATORY_FIELDS = {
+    'phone_or_email': ('phone', 'email_from'),
+}
+
 MZ_STAGE_GATE_RULES = {
     'dmt': [
-        ('stage_dmt_new', ['name', 'phone', 'email_from', 'x_organic_inorganic', 'source_id']),
+        ('stage_dmt_new', ['name', 'phone_or_email', 'x_organic_inorganic', 'source_id']),
         ('stage_dmt_contacted', [
             'x_company_or_individual', 'x_contact_purpose', 'x_product_service',
             'x_employee_count', 'x_company_turnover',
@@ -72,10 +82,12 @@ MZ_STAGE_GATE_RULES = {
         ('stage_dmt_transferred', []),
     ],
     'tally': [
-        # Email is "progressive" here (not mandatory at Stage 1, mandatory from Stage 2
-        # onward) - so it's checked leaving Stage 2, not Stage 1.
-        ('stage_tally_new', ['name', 'phone', 'source_id']),
-        ('stage_tally_contacted', ['x_tally_category', 'email_from']),
+        # Phone/email either-or at Stage 1, same as every other BU (deliberate
+        # deviation from the sheet's "Progressive" wording for email - see
+        # MZ_EITHER_OR_MANDATORY_FIELDS). email_from is NOT a separate entry at
+        # Stage 2 anymore - phone_or_email above already covers it.
+        ('stage_tally_new', ['name', 'phone_or_email', 'source_id']),
+        ('stage_tally_contacted', ['x_tally_category']),
         ('stage_tally_demo', ['x_requirements_attachment_ids', 'x_product_service', 'x_feasibility', 'x_timeline']),
         ('stage_tally_proposal', ['x_quote_date', 'x_quote_document_ids']),
         ('stage_tally_negotiation', []),
@@ -83,7 +95,7 @@ MZ_STAGE_GATE_RULES = {
         ('stage_tally_lost', []),
     ],
     'tech': [
-        ('stage_tech_new', ['name', 'phone', 'email_from', 'source_id']),
+        ('stage_tech_new', ['name', 'phone_or_email', 'source_id']),
         ('stage_tech_2', ['x_customer_status', 'x_customer_need']),
         ('stage_tech_3', [
             'x_requirements_attachment_ids', 'x_product_service', 'x_feasibility_identified', 'x_timeline',
@@ -97,7 +109,7 @@ MZ_STAGE_GATE_RULES = {
         ('stage_tech_won', []),
     ],
     'swdev': [
-        ('stage_swdev_new', ['name', 'phone', 'email_from', 'source_id']),
+        ('stage_swdev_new', ['name', 'phone_or_email', 'source_id']),
         ('stage_swdev_2', [
             'x_branch_count', 'x_sw_employee_count', 'x_nature_of_business',
             'x_established_year', 'x_meeting_attendees',
@@ -108,7 +120,7 @@ MZ_STAGE_GATE_RULES = {
         ('stage_swdev_won', []),
     ],
     'mis': [
-        ('stage_mis_new', ['name', 'phone', 'email_from', 'source_id']),
+        ('stage_mis_new', ['name', 'phone_or_email', 'source_id']),
         ('stage_mis_2', [
             'x_requirements_attachment_ids', 'x_product_service', 'x_target_audience',
             'x_mis_timelines_estimate', 'x_deliverables',
@@ -492,30 +504,6 @@ class CrmLead(models.Model):
              "anywhere in this view's own field spec, which left every Pipeline Fields "
              "group permanently invisible."
     )
-    x_mz_stage_key = fields.Char(
-        string="Stage Key (technical)", compute="_compute_x_mz_stage_key",
-        help="The lead's current stage_id resolved to its stable xmlid (e.g. "
-             "'stage_dmt_new') instead of its raw database id - local/staging/any other "
-             "environment assign different ids to the same stage record, so the view's "
-             "required= conditions (MZ_STAGE_GATE_RULES, one per stage) key off this "
-             "instead of stage_id.id directly. False for leads outside the 5 M2 teams."
-    )
-    x_source_requires_reference = fields.Boolean(
-        related='source_id.x_requires_reference_text', string="Source Requires Reference",
-        help="Plain mirror of source_id.x_requires_reference_text for the view's required= "
-             "conditions on 'referred' - same dotted-attribute-fetch reasoning as "
-             "x_team_bu_category above."
-    )
-
-    @api.depends('stage_id')
-    def _compute_x_mz_stage_key(self):
-        stage_ids = self.mapped('stage_id').ids
-        imd = self.env['ir.model.data'].sudo().search([
-            ('model', '=', 'crm.stage'), ('res_id', 'in', stage_ids), ('module', '=', 'mazenet_crm'),
-        ])
-        key_by_stage_id = {d.res_id: d.name for d in imd}
-        for lead in self:
-            lead.x_mz_stage_key = key_by_stage_id.get(lead.stage_id.id, False)
     x_product_service = fields.Char(string="Product / Service")
     x_feasibility = fields.Char(string="Feasibility")
     x_timeline = fields.Char(string="Timeline")
@@ -611,7 +599,7 @@ class CrmLead(models.Model):
         ],
         string="Lead Category"
     )
-    x_company_intro_done = fields.Boolean(string="Company Intro")
+    x_company_intro_done = fields.Text(string="Company Intro")
 
     # -- Technology only --
     x_customer_status = fields.Char(string="Customer Status")
@@ -732,10 +720,17 @@ class CrmLead(models.Model):
         companion reference text (utm.source.x_requires_reference_text - Referral/Ads/
         GeM Bid style sources), 'referred' must be filled too even though it isn't its
         own entry in MZ_STAGE_GATE_RULES (it's conditional on the source, not always
-        mandatory)."""
+        mandatory). Also special-cased for MZ_EITHER_OR_MANDATORY_FIELDS pseudo-names
+        (e.g. 'phone_or_email'): satisfied if ANY of the alternative fields is filled,
+        not each one individually."""
         self.ensure_one()
         missing = []
         for fname in field_names:
+            if fname in MZ_EITHER_OR_MANDATORY_FIELDS:
+                alt_fields = MZ_EITHER_OR_MANDATORY_FIELDS[fname]
+                if not any(self._mz_resolve_gate_value(f, vals) for f in alt_fields):
+                    missing.append(fname)
+                continue
             value = self._mz_resolve_gate_value(fname, vals)
             if not value:
                 missing.append(fname)
@@ -746,6 +741,14 @@ class CrmLead(models.Model):
                 if not referred:
                     missing.append('referred')
         return missing
+
+    def _mz_gate_field_label(self, fname):
+        """Human-readable label for a mandatory-field name in a stage-gate error
+        message - handles MZ_EITHER_OR_MANDATORY_FIELDS pseudo-names (e.g.
+        'phone_or_email' -> 'Phone / Email') as well as real field names."""
+        if fname in MZ_EITHER_OR_MANDATORY_FIELDS:
+            return ' / '.join(self._fields[f].string for f in MZ_EITHER_OR_MANDATORY_FIELDS[fname])
+        return self._fields[fname].string
 
     def _mz_stage_gate_check(self, new_stage, vals):
         """Raise UserError if moving to `new_stage` skips past a stage (in this lead's
@@ -774,7 +777,7 @@ class CrmLead(models.Model):
         for stage, field_names in resolved[max(current_index, 0):new_index]:
             missing = self._mz_missing_mandatory_fields(field_names, vals)
             if missing:
-                labels = ', '.join(self._fields[f].string for f in missing)
+                labels = ', '.join(self._mz_gate_field_label(f) for f in missing)
                 problems.append(f"{stage.name}: {labels}")
         if problems:
             raise UserError(_(

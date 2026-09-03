@@ -73,21 +73,25 @@
                      phone/email_from (crm_lead_view_form renders a different group for
                      each, per the `type` field). Actual format enforcement is the
                      _mz_check_contact_format constraint in crm_lead.py. -->
+                <!-- Phone/email are an either-or pair on every BU's first stage
+                     (deliberate deviation from the sheet - business wants "fill one,
+                     the other becomes optional" - see MZ_EITHER_OR_MANDATORY_FIELDS
+                     in crm_lead.py; Tally's sheet-wording "Progressive" email is
+                     deliberately overridden the same way). No view-level `required=`
+                     here on purpose - see the note above the M2 pipeline fields group
+                     below: enforcement is the backend stage gate only, on a real
+                     stage-move attempt, not on every save. -->
                 <xpath expr="//field[@name='phone'][@id='phone_group_lead_info']" position="attributes">
                     <attribute name="placeholder">e.g. 9876543210</attribute>
-                    <attribute name="required">x_mz_stage_key in ('stage_dmt_new', 'stage_tally_new', 'stage_tech_new', 'stage_swdev_new', 'stage_mis_new')</attribute>
                 </xpath>
                 <xpath expr="//field[@name='email_from'][@id='email_from_group_lead_info']" position="attributes">
                     <attribute name="placeholder">e.g. name@example.com</attribute>
-                    <attribute name="required">x_mz_stage_key in ('stage_dmt_new', 'stage_tech_new', 'stage_swdev_new', 'stage_mis_new', 'stage_tally_contacted')</attribute>
                 </xpath>
                 <xpath expr="//group[@name='opportunity_partner']//field[@name='phone']" position="attributes">
                     <attribute name="placeholder">e.g. 9876543210</attribute>
-                    <attribute name="required">x_mz_stage_key in ('stage_dmt_new', 'stage_tally_new', 'stage_tech_new', 'stage_swdev_new', 'stage_mis_new')</attribute>
                 </xpath>
                 <xpath expr="//group[@name='opportunity_partner']//field[@name='email_from']" position="attributes">
                     <attribute name="placeholder">e.g. name@example.com</attribute>
-                    <attribute name="required">x_mz_stage_key in ('stage_dmt_new', 'stage_tech_new', 'stage_swdev_new', 'stage_mis_new', 'stage_tally_contacted')</attribute>
                 </xpath>
 
                 <!-- M2 pipeline fields (Mazenet_CRM_M2_Build_Tasks.xlsx). Each group is
@@ -96,25 +100,23 @@
                 <xpath expr="//page[@name='extra']" position="after">
                     <page name="mz_pipeline" string="Pipeline Fields">
                         <field name="x_team_bu_category" invisible="1"/>
-                        <field name="x_mz_stage_key" invisible="1"/>
-                        <field name="x_source_requires_reference" invisible="1"/>
                         <div invisible="x_team_bu_category != 'dmt'">
                             <group string="Stage 1 - New Lead / Source">
-                                <field name="x_organic_inorganic" required="x_mz_stage_key == 'stage_dmt_new'"/>
-                                <field name="source_id" domain="[('team_ids', 'in', team_id)]" required="x_mz_stage_key == 'stage_dmt_new'"/>
-                                <field name="referred" string="Source Reference (Referral / Ads)" required="x_mz_stage_key == 'stage_dmt_new' and x_source_requires_reference"/>
+                                <field name="x_organic_inorganic"/>
+                                <field name="source_id" domain="[('team_ids', 'in', team_id)]"/>
+                                <field name="referred" string="Source Reference (Referral / Ads)"/>
                             </group>
                             <group string="Stage 2 - Lead Validation">
-                                <field name="x_company_or_individual" required="x_mz_stage_key == 'stage_dmt_contacted'"/>
-                                <field name="x_contact_purpose" required="x_mz_stage_key == 'stage_dmt_contacted'"/>
-                                <field name="x_product_service" required="x_mz_stage_key == 'stage_dmt_contacted'"/>
-                                <field name="x_employee_count" required="x_mz_stage_key == 'stage_dmt_contacted'"/>
-                                <field name="x_company_turnover" required="x_mz_stage_key == 'stage_dmt_contacted'"/>
+                                <field name="x_company_or_individual"/>
+                                <field name="x_contact_purpose"/>
+                                <field name="x_product_service"/>
+                                <field name="x_employee_count"/>
+                                <field name="x_company_turnover"/>
                                 <field name="priority" widget="priority" string="Lead Fit"/>
                             </group>
                             <group string="Stage 3 - Transfer to BU">
-                                <field name="x_target_team_id" required="x_mz_stage_key == 'stage_dmt_qualified'"/>
-                                <field name="x_transfer_notes" required="x_mz_stage_key == 'stage_dmt_qualified'"/>
+                                <field name="x_target_team_id"/>
+                                <field name="x_transfer_notes"/>
                             </group>
                             <group string="Stage 4 - Follow-up's">
                                 <div class="text-muted" colspan="2">
@@ -125,22 +127,22 @@
                         </div>
                         <div invisible="x_team_bu_category != 'tally'">
                             <group string="Stage 1 - New Lead">
-                                <field name="source_id" domain="[('team_ids', 'in', team_id)]" required="x_mz_stage_key == 'stage_tally_new'"/>
-                                <field name="referred" string="Source Reference (Referral)" required="x_mz_stage_key == 'stage_tally_new' and x_source_requires_reference"/>
+                                <field name="source_id" domain="[('team_ids', 'in', team_id)]"/>
+                                <field name="referred" string="Source Reference (Referral)"/>
                             </group>
                             <group string="Stage 2 - Lead Validation">
-                                <field name="x_tally_category" required="x_mz_stage_key == 'stage_tally_contacted'"/>
+                                <field name="x_tally_category"/>
                             </group>
                             <group string="Stage 3 - Requirements">
                                 <field name="x_company_intro_done"/>
-                                <field name="x_product_service" required="x_mz_stage_key == 'stage_tally_demo'"/>
-                                <field name="x_feasibility" required="x_mz_stage_key == 'stage_tally_demo'"/>
-                                <field name="x_timeline" required="x_mz_stage_key == 'stage_tally_demo'"/>
-                                <field name="x_requirements_attachment_ids" widget="many2many_binary" required="x_mz_stage_key == 'stage_tally_demo'"/>
+                                <field name="x_product_service"/>
+                                <field name="x_feasibility"/>
+                                <field name="x_timeline"/>
+                                <field name="x_requirements_attachment_ids" widget="many2many_binary"/>
                             </group>
                             <group string="Stage 4 - Quote Shared">
-                                <field name="x_quote_date" required="x_mz_stage_key == 'stage_tally_proposal'"/>
-                                <field name="x_quote_document_ids" widget="many2many_binary" required="x_mz_stage_key == 'stage_tally_proposal'"/>
+                                <field name="x_quote_date"/>
+                                <field name="x_quote_document_ids" widget="many2many_binary"/>
                             </group>
                             <group string="Stage 5 - Follow-up's">
                                 <div class="text-muted" colspan="2">
@@ -166,27 +168,27 @@
 
                         <div invisible="x_team_bu_category != 'tech'">
                             <group string="Stage 1 - New Lead / Source">
-                                <field name="source_id" domain="[('team_ids', 'in', team_id)]" required="x_mz_stage_key == 'stage_tech_new'"/>
-                                <field name="referred" string="Source Reference (Referral / GeM Bid)" required="x_mz_stage_key == 'stage_tech_new' and x_source_requires_reference"/>
+                                <field name="source_id" domain="[('team_ids', 'in', team_id)]"/>
+                                <field name="referred" string="Source Reference (Referral / GeM Bid)"/>
                                 <field name="x_can_create_partner" invisible="1"/>
                             </group>
                             <group string="Stage 2 - Lead Validation">
-                                <field name="x_customer_status" required="x_mz_stage_key == 'stage_tech_2'"/>
-                                <field name="x_customer_need" required="x_mz_stage_key == 'stage_tech_2'"/>
+                                <field name="x_customer_status"/>
+                                <field name="x_customer_need"/>
                             </group>
                             <group string="Stage 3 - Requirement Understanding">
-                                <field name="x_product_service" required="x_mz_stage_key == 'stage_tech_3'"/>
+                                <field name="x_product_service"/>
                                 <field name="x_feasibility_identified"/>
-                                <field name="x_timeline" required="x_mz_stage_key == 'stage_tech_3'"/>
-                                <field name="x_requirements_attachment_ids" widget="many2many_binary" required="x_mz_stage_key == 'stage_tech_3'"/>
+                                <field name="x_timeline"/>
+                                <field name="x_requirements_attachment_ids" widget="many2many_binary"/>
                             </group>
                             <group string="Stage 4 - Quote">
-                                <field name="x_bom_attachment_ids" widget="many2many_binary" required="x_mz_stage_key == 'stage_tech_4'"/>
-                                <field name="x_boq_attachment_ids" widget="many2many_binary" required="x_mz_stage_key == 'stage_tech_4'"/>
+                                <field name="x_bom_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_boq_attachment_ids" widget="many2many_binary"/>
                                 <field name="x_quote_shared_checkbox"/>
                                 <field name="x_customer_goods_finalised"/>
-                                <field name="x_quote_date" required="x_mz_stage_key == 'stage_tech_4'"/>
-                                <field name="x_quote_document_ids" widget="many2many_binary" required="x_mz_stage_key == 'stage_tech_4'"/>
+                                <field name="x_quote_date"/>
+                                <field name="x_quote_document_ids" widget="many2many_binary"/>
                             </group>
                             <group string="Stage 5 - Follow-up's">
                                 <div class="text-muted" colspan="2">
@@ -212,30 +214,30 @@
 
                         <div invisible="x_team_bu_category != 'swdev'">
                             <group string="Stage 1 - New Lead / Source">
-                                <field name="source_id" domain="[('team_ids', 'in', team_id)]" required="x_mz_stage_key == 'stage_swdev_new'"/>
-                                <field name="referred" string="Source Reference (Referral)" required="x_mz_stage_key == 'stage_swdev_new' and x_source_requires_reference"/>
+                                <field name="source_id" domain="[('team_ids', 'in', team_id)]"/>
+                                <field name="referred" string="Source Reference (Referral)"/>
                             </group>
                             <group string="Stage 2 - Lead Validation">
                                 <field name="expected_revenue" string="Order Value"/>
-                                <field name="x_branch_count" required="x_mz_stage_key == 'stage_swdev_2'"/>
-                                <field name="x_sw_employee_count" required="x_mz_stage_key == 'stage_swdev_2'"/>
-                                <field name="x_nature_of_business" required="x_mz_stage_key == 'stage_swdev_2'"/>
-                                <field name="x_established_year" required="x_mz_stage_key == 'stage_swdev_2'"/>
+                                <field name="x_branch_count"/>
+                                <field name="x_sw_employee_count"/>
+                                <field name="x_nature_of_business"/>
+                                <field name="x_established_year"/>
                                 <field name="x_founder"/>
                                 <field name="x_ceo"/>
                                 <field name="x_company_turnover"/>
                                 <field name="website"/>
-                                <field name="x_meeting_attendees" required="x_mz_stage_key == 'stage_swdev_2'"/>
+                                <field name="x_meeting_attendees"/>
                             </group>
                             <group string="Stage 3 - Demo">
                                 <field name="x_demo_completed"/>
-                                <field name="x_system_study_attachment_ids" widget="many2many_binary" required="x_mz_stage_key == 'stage_swdev_3'"/>
-                                <field name="x_feasibility" required="x_mz_stage_key == 'stage_swdev_3'"/>
-                                <field name="x_timeline" required="x_mz_stage_key == 'stage_swdev_3'"/>
+                                <field name="x_system_study_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_feasibility"/>
+                                <field name="x_timeline"/>
                             </group>
                             <group string="Stage 4 - Quote">
-                                <field name="x_quote_date" required="x_mz_stage_key == 'stage_swdev_4'"/>
-                                <field name="x_quote_document_ids" widget="many2many_binary" required="x_mz_stage_key == 'stage_swdev_4'"/>
+                                <field name="x_quote_date"/>
+                                <field name="x_quote_document_ids" widget="many2many_binary"/>
                             </group>
                             <group string="Stage 5 - Won / Lost">
                                 <div class="text-muted" colspan="2">
@@ -256,24 +258,24 @@
 
                         <div invisible="x_team_bu_category != 'mis'">
                             <group string="Stage 1 - New Lead / Source">
-                                <field name="source_id" domain="[('team_ids', 'in', team_id)]" required="x_mz_stage_key == 'stage_mis_new'"/>
-                                <field name="referred" string="Source Reference (Referral)" required="x_mz_stage_key == 'stage_mis_new' and x_source_requires_reference"/>
+                                <field name="source_id" domain="[('team_ids', 'in', team_id)]"/>
+                                <field name="referred" string="Source Reference (Referral)"/>
                             </group>
                             <group string="Stage 2 - Lead Validation">
-                                <field name="x_product_service" required="x_mz_stage_key == 'stage_mis_2'"/>
-                                <field name="x_target_audience" required="x_mz_stage_key == 'stage_mis_2'"/>
-                                <field name="x_mis_timelines_estimate" required="x_mz_stage_key == 'stage_mis_2'"/>
-                                <field name="x_deliverables" required="x_mz_stage_key == 'stage_mis_2'"/>
-                                <field name="x_requirements_attachment_ids" widget="many2many_binary" string="Client Expectations Attachment" required="x_mz_stage_key == 'stage_mis_2'"/>
+                                <field name="x_product_service"/>
+                                <field name="x_target_audience"/>
+                                <field name="x_mis_timelines_estimate"/>
+                                <field name="x_deliverables"/>
+                                <field name="x_requirements_attachment_ids" widget="many2many_binary" string="Client Expectations Attachment"/>
                             </group>
                             <group string="Stage 3 - Demo">
                                 <field name="x_demo_completed"/>
-                                <field name="x_system_study_attachment_ids" widget="many2many_binary" required="x_mz_stage_key == 'stage_mis_3'"/>
-                                <field name="x_feasibility" required="x_mz_stage_key == 'stage_mis_3'"/>
-                                <field name="x_timeline" required="x_mz_stage_key == 'stage_mis_3'"/>
+                                <field name="x_system_study_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_feasibility"/>
+                                <field name="x_timeline"/>
                             </group>
                             <group string="Stage 4 - Quote">
-                                <field name="x_quote_document_ids" widget="many2many_binary" required="x_mz_stage_key == 'stage_mis_4'"/>
+                                <field name="x_quote_document_ids" widget="many2many_binary"/>
                             </group>
                             <group string="Stage 5 - Won / Lost">
                                 <div class="text-muted" colspan="2">
