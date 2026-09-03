@@ -1,114 +1,541 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <data noupdate="0">
-        <!-- Agent Rule: Own team leads (VIEW + CREATE only).
-             perm_write is intentionally False here: because group_mz_tl/manager/admin all
-             imply group_mz_agent, a write-permitting rule on this group would OR onto every
-             higher role and silently grant team-wide edit rights (bypassing branch/own-lead
-             restrictions). Edit rights are granted exclusively by the *_edit rules below. -->
-        <record id="rule_crm_lead_agent" model="ir.rule">
-            <field name="name">Mazenet CRM Lead: Agent (Own Team Leads - View/Create)</field>
+
+        <!-- ================================================================
+             Per-team rules, generated against mazenet_access_rights' isolated
+             per-team group chains (Agent/TL-Direct/Manager-Direct -> ATL -> TL
+             -> BU Manager). Two tiers per team:
+             - "base" tier (plain Agent + *-Direct Agent groups): view/create
+               across the team, write own leads only.
+             - "tl" tier (Team Lead group, which implies ATL + TL-Direct-Agent):
+               full team-wide view/create/write. BU Manager and CTO/Admin
+               automatically inherit this via implied_ids (Manager implies TL,
+               CTO/Admin implies every Manager) - no separate manager-tier rule
+               is needed per team.
+
+             domain_force uses eval="..." (not plain text) wherever it needs
+             ref() - ref() only resolves at XML-load time via eval, not in
+             domain_force's own runtime-eval context (which only has `user`).
+        ================================================================= -->
+
+        <!-- dmt: base tier (view/create team-wide) -->
+        <record id="rule_crm_lead_dmt_base" model="ir.rule">
+            <field name="name">Mazenet CRM Lead: dmt (Team View/Create)</field>
             <field name="model_id" ref="crm.model_crm_lead"/>
-            <field name="domain_force">[('team_id', 'in', user.crm_team_ids.ids)]</field>
-            <field name="groups" eval="[(4, ref('group_mz_agent'))]"/>
+            <field name="domain_force" eval="[('team_id', '=', ref('team_dmt'))]"/>
+            <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_dmt_agent')), (4, ref('mazenet_access_rights.group_mzr_dmt_tl_direct_agent')), (4, ref('mazenet_access_rights.group_mzr_dmt_manager_direct_agent'))]"/>
             <field name="perm_read" eval="True"/>
             <field name="perm_write" eval="False"/>
             <field name="perm_create" eval="True"/>
             <field name="perm_unlink" eval="False"/>
         </record>
-
-        <!-- Agent Rule: Edit OWN leads only -->
-        <record id="rule_crm_lead_agent_edit" model="ir.rule">
-            <field name="name">Mazenet CRM Lead: Agent (Edit Own Lead Only)</field>
+        <!-- dmt: base tier (team-wide write waiver, DMT only) - unlike every other
+             team's base tier, DMT base-tier members (crm_lead.py: _mz_can_edit_owned's
+             DMT bypass, and write()'s dmt_reassign_only waiver) are meant to be able to
+             reassign user_id on ANY DMT-team lead regardless of who owns it - even
+             RED-locked or transferred ones, content edits aside. Without this rule that
+             intent is unreachable: ir.rule write-domain checks happen inside
+             super().write(), independent of and after crm_lead.py's own Python checks,
+             so a base-tier DMT member writing a peer's lead was rejected by the ORM
+             before the Python waiver logic ever got a say - confirmed via odoo shell on
+             staging 2026-08-24 (rule_crm_lead_dmt_base_edit below only covers leads they
+             already own). Granting write here (paired with rule_crm_lead_dmt_base's
+             existing read/create) lets the ORM through; crm_lead.py's write() is still
+             what actually narrows this down to user_id-only reassignment for a locked/
+             transferred lead, and still fully gates real content edits (RED-lock,
+             Manager-content-lock, etc.) - this rule only removes the ORM-level blocker,
+             it doesn't grant unrestricted content write on its own. -->
+        <record id="rule_crm_lead_dmt_base_write" model="ir.rule">
+            <field name="name">Mazenet CRM Lead: dmt (Team Write - Reassignment Waiver)</field>
+            <field name="model_id" ref="crm.model_crm_lead"/>
+            <field name="domain_force" eval="[('team_id', '=', ref('team_dmt'))]"/>
+            <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_dmt_agent')), (4, ref('mazenet_access_rights.group_mzr_dmt_tl_direct_agent')), (4, ref('mazenet_access_rights.group_mzr_dmt_manager_direct_agent'))]"/>
+            <field name="perm_read" eval="False"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="False"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+        <!-- dmt: base tier (edit own lead only) -->
+        <record id="rule_crm_lead_dmt_base_edit" model="ir.rule">
+            <field name="name">Mazenet CRM Lead: dmt (Edit Own Lead Only)</field>
             <field name="model_id" ref="crm.model_crm_lead"/>
             <field name="domain_force">[('user_id', '=', user.id)]</field>
-            <field name="groups" eval="[(4, ref('group_mz_agent'))]"/>
+            <field name="groups" eval="[
+            (4, ref('mazenet_access_rights.group_mzr_dmt_agent')),
+             (4, ref('mazenet_access_rights.group_mzr_dmt_tl_direct_agent')), 
+             (4, ref('mazenet_access_rights.group_mzr_dmt_manager_direct_agent'))]"/>
             <field name="perm_read" eval="False"/>
             <field name="perm_write" eval="True"/>
             <field name="perm_create" eval="False"/>
             <field name="perm_unlink" eval="False"/>
         </record>
-
-        <!-- TL / ATL Rule: Branch Visibility (Self + Transitive Subordinates) - VIEW/CREATE only.
-             Team-wide READ (e.g. Tally's "one team, full mutual visibility") still applies via
-             the inherited Agent view rule above (OR-combined for perm_read/perm_create). -->
-        <record id="rule_crm_lead_tl" model="ir.rule">
-            <field name="name">Mazenet CRM Lead: TL/ATL (Branch Visibility - View/Create)</field>
+        <!-- dmt: Team Lead tier (full team view/create/write - Manager & CTO/Admin inherit via implied_ids) -->
+        <record id="rule_crm_lead_dmt_tl" model="ir.rule">
+            <field name="name">Mazenet CRM Lead: dmt (Team Lead - Full Team)</field>
             <field name="model_id" ref="crm.model_crm_lead"/>
-            <field name="domain_force">['|', ('user_id', '=', user.id), ('user_id', 'in', user.mz_branch_user_ids.ids)]</field>
-            <field name="groups" eval="[(4, ref('group_mz_tl'))]"/>
+            <field name="domain_force" eval="[('team_id', '=', ref('team_dmt'))]"/>
+            <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_dmt_tl'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+
+        <!-- technology: base tier (view/create team-wide) -->
+        <record id="rule_crm_lead_technology_base" model="ir.rule">
+            <field name="name">Mazenet CRM Lead: technology (Team View/Create)</field>
+            <field name="model_id" ref="crm.model_crm_lead"/>
+            <field name="domain_force" eval="[('team_id', '=', ref('team_technology'))]"/>
+            <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_technology_agent')), (4, ref('mazenet_access_rights.group_mzr_technology_tl_direct_agent')), (4, ref('mazenet_access_rights.group_mzr_technology_manager_direct_agent'))]"/>
             <field name="perm_read" eval="True"/>
             <field name="perm_write" eval="False"/>
             <field name="perm_create" eval="True"/>
             <field name="perm_unlink" eval="False"/>
         </record>
-
-        <!-- TL / ATL Rule: Edit restricted to own BRANCH (self + transitive subordinates) only.
-             This is what actually enforces checklist item 3: TL sees the whole team (Tally) but
-             cannot edit leads outside their own branch. -->
-        <record id="rule_crm_lead_tl_edit" model="ir.rule">
-            <field name="name">Mazenet CRM Lead: TL/ATL (Edit Own Branch Only)</field>
+        <!-- technology: base tier (edit own lead only) -->
+        <record id="rule_crm_lead_technology_base_edit" model="ir.rule">
+            <field name="name">Mazenet CRM Lead: technology (Edit Own Lead Only)</field>
             <field name="model_id" ref="crm.model_crm_lead"/>
-            <field name="domain_force">['|', ('user_id', '=', user.id), ('user_id', 'in', user.mz_branch_user_ids.ids)]</field>
-            <field name="groups" eval="[(4, ref('group_mz_tl'))]"/>
+            <field name="domain_force">[('user_id', '=', user.id)]</field>
+            <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_technology_agent')), (4, ref('mazenet_access_rights.group_mzr_technology_tl_direct_agent')), (4, ref('mazenet_access_rights.group_mzr_technology_manager_direct_agent'))]"/>
             <field name="perm_read" eval="False"/>
             <field name="perm_write" eval="True"/>
             <field name="perm_create" eval="False"/>
             <field name="perm_unlink" eval="False"/>
         </record>
-
-        <!-- BU Manager Rule: Managed Teams Leads -->
-        <record id="rule_crm_lead_manager" model="ir.rule">
-            <field name="name">Mazenet CRM Lead: BU Manager (Managed Teams)</field>
+        <!-- technology: Team Lead tier (full team view/create/write - Manager & CTO/Admin inherit via implied_ids) -->
+        <record id="rule_crm_lead_technology_tl" model="ir.rule">
+            <field name="name">Mazenet CRM Lead: technology (Team Lead - Full Team)</field>
             <field name="model_id" ref="crm.model_crm_lead"/>
-            <field name="domain_force">['|', ('user_id', '=', user.id), ('team_id', 'in', user.crm_team_ids.ids)]</field>
-            <field name="groups" eval="[(4, ref('group_mz_manager'))]"/>
+            <field name="domain_force" eval="[('team_id', '=', ref('team_technology'))]"/>
+            <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_technology_tl'))]"/>
             <field name="perm_read" eval="True"/>
             <field name="perm_write" eval="True"/>
             <field name="perm_create" eval="True"/>
             <field name="perm_unlink" eval="False"/>
         </record>
 
-        <!-- MD Global Read Rule -->
-        <record id="rule_crm_lead_md" model="ir.rule">
+        <!-- software: base tier (view/create team-wide) -->
+        <record id="rule_crm_lead_software_base" model="ir.rule">
+            <field name="name">Mazenet CRM Lead: software (Team View/Create)</field>
+            <field name="model_id" ref="crm.model_crm_lead"/>
+            <field name="domain_force" eval="[('team_id', '=', ref('team_software'))]"/>
+            <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_software_agent')), (4, ref('mazenet_access_rights.group_mzr_software_tl_direct_agent')), (4, ref('mazenet_access_rights.group_mzr_software_manager_direct_agent'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="False"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+        <!-- software: base tier (edit own lead only) -->
+        <record id="rule_crm_lead_software_base_edit" model="ir.rule">
+            <field name="name">Mazenet CRM Lead: software (Edit Own Lead Only)</field>
+            <field name="model_id" ref="crm.model_crm_lead"/>
+            <field name="domain_force">[('user_id', '=', user.id)]</field>
+            <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_software_agent')), (4, ref('mazenet_access_rights.group_mzr_software_tl_direct_agent')), (4, ref('mazenet_access_rights.group_mzr_software_manager_direct_agent'))]"/>
+            <field name="perm_read" eval="False"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="False"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+        <!-- software: Team Lead tier (full team view/create/write - Manager & CTO/Admin inherit via implied_ids) -->
+        <record id="rule_crm_lead_software_tl" model="ir.rule">
+            <field name="name">Mazenet CRM Lead: software (Team Lead - Full Team)</field>
+            <field name="model_id" ref="crm.model_crm_lead"/>
+            <field name="domain_force" eval="[('team_id', '=', ref('team_software'))]"/>
+            <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_software_tl'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+
+        <!-- mis: base tier (view/create team-wide) -->
+        <record id="rule_crm_lead_mis_base" model="ir.rule">
+            <field name="name">Mazenet CRM Lead: mis (Team View/Create)</field>
+            <field name="model_id" ref="crm.model_crm_lead"/>
+            <field name="domain_force" eval="[('team_id', '=', ref('team_mis'))]"/>
+            <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_mis_agent')), (4, ref('mazenet_access_rights.group_mzr_mis_tl_direct_agent')), (4, ref('mazenet_access_rights.group_mzr_mis_manager_direct_agent'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="False"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+        <!-- mis: base tier (edit own lead only) -->
+        <record id="rule_crm_lead_mis_base_edit" model="ir.rule">
+            <field name="name">Mazenet CRM Lead: mis (Edit Own Lead Only)</field>
+            <field name="model_id" ref="crm.model_crm_lead"/>
+            <field name="domain_force">[('user_id', '=', user.id)]</field>
+            <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_mis_agent')), (4, ref('mazenet_access_rights.group_mzr_mis_tl_direct_agent')), (4, ref('mazenet_access_rights.group_mzr_mis_manager_direct_agent'))]"/>
+            <field name="perm_read" eval="False"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="False"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+        <!-- mis: Team Lead tier (full team view/create/write - Manager & CTO/Admin inherit via implied_ids) -->
+        <record id="rule_crm_lead_mis_tl" model="ir.rule">
+            <field name="name">Mazenet CRM Lead: mis (Team Lead - Full Team)</field>
+            <field name="model_id" ref="crm.model_crm_lead"/>
+            <field name="domain_force" eval="[('team_id', '=', ref('team_mis'))]"/>
+            <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_mis_tl'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+
+        <!-- hunter: base tier (view/create team-wide) -->
+        <record id="rule_crm_lead_hunter_base" model="ir.rule">
+            <field name="name">Mazenet CRM Lead: hunter (Team View/Create)</field>
+            <field name="model_id" ref="crm.model_crm_lead"/>
+            <field name="domain_force" eval="[('team_id', '=', ref('team_corporate'))]"/>
+            <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_hunter_agent')), (4, ref('mazenet_access_rights.group_mzr_hunter_tl_direct_agent'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="False"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+        <!-- hunter: base tier (edit own lead only) -->
+        <record id="rule_crm_lead_hunter_base_edit" model="ir.rule">
+            <field name="name">Mazenet CRM Lead: hunter (Edit Own Lead Only)</field>
+            <field name="model_id" ref="crm.model_crm_lead"/>
+            <field name="domain_force">[('user_id', '=', user.id)]</field>
+            <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_hunter_agent')), (4, ref('mazenet_access_rights.group_mzr_hunter_tl_direct_agent'))]"/>
+            <field name="perm_read" eval="False"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="False"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+        <!-- hunter: Team Lead tier (full team view/create/write - Manager & CTO/Admin inherit via implied_ids) -->
+        <record id="rule_crm_lead_hunter_tl" model="ir.rule">
+            <field name="name">Mazenet CRM Lead: hunter (Team Lead - Full Team)</field>
+            <field name="model_id" ref="crm.model_crm_lead"/>
+            <field name="domain_force" eval="[('team_id', '=', ref('team_corporate'))]"/>
+            <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_hunter_tl'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+
+        <!-- account_manager: base tier (view/create team-wide) -->
+        <record id="rule_crm_lead_account_manager_base" model="ir.rule">
+            <field name="name">Mazenet CRM Lead: account_manager (Team View/Create)</field>
+            <field name="model_id" ref="crm.model_crm_lead"/>
+            <field name="domain_force" eval="[('team_id', '=', ref('team_corporate'))]"/>
+            <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_account_manager_agent')), (4, ref('mazenet_access_rights.group_mzr_account_manager_tl_direct_agent'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="False"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+        <!-- account_manager: base tier (edit own lead only) -->
+        <record id="rule_crm_lead_account_manager_base_edit" model="ir.rule">
+            <field name="name">Mazenet CRM Lead: account_manager (Edit Own Lead Only)</field>
+            <field name="model_id" ref="crm.model_crm_lead"/>
+            <field name="domain_force">[('user_id', '=', user.id)]</field>
+            <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_account_manager_agent')), (4, ref('mazenet_access_rights.group_mzr_account_manager_tl_direct_agent'))]"/>
+            <field name="perm_read" eval="False"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="False"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+        <!-- account_manager: Team Lead tier (full team view/create/write - Manager & CTO/Admin inherit via implied_ids) -->
+        <record id="rule_crm_lead_account_manager_tl" model="ir.rule">
+            <field name="name">Mazenet CRM Lead: account_manager (Team Lead - Full Team)</field>
+            <field name="model_id" ref="crm.model_crm_lead"/>
+            <field name="domain_force" eval="[('team_id', '=', ref('team_corporate'))]"/>
+            <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_account_manager_tl'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+
+        <!-- corporate_training: base tier (view/create team-wide) -->
+        <record id="rule_crm_lead_corporate_training_base" model="ir.rule">
+            <field name="name">Mazenet CRM Lead: corporate_training (Team View/Create)</field>
+            <field name="model_id" ref="crm.model_crm_lead"/>
+            <field name="domain_force" eval="[('team_id', '=', ref('team_corporate'))]"/>
+            <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_corporate_training_agent')), (4, ref('mazenet_access_rights.group_mzr_corporate_training_tl_direct_agent'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="False"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+        <!-- corporate_training: base tier (edit own lead only) -->
+        <record id="rule_crm_lead_corporate_training_base_edit" model="ir.rule">
+            <field name="name">Mazenet CRM Lead: corporate_training (Edit Own Lead Only)</field>
+            <field name="model_id" ref="crm.model_crm_lead"/>
+            <field name="domain_force">[('user_id', '=', user.id)]</field>
+            <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_corporate_training_agent')), (4, ref('mazenet_access_rights.group_mzr_corporate_training_tl_direct_agent'))]"/>
+            <field name="perm_read" eval="False"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="False"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+        <!-- corporate_training: Team Lead tier (full team view/create/write - Manager & CTO/Admin inherit via implied_ids) -->
+        <record id="rule_crm_lead_corporate_training_tl" model="ir.rule">
+            <field name="name">Mazenet CRM Lead: corporate_training (Team Lead - Full Team)</field>
+            <field name="model_id" ref="crm.model_crm_lead"/>
+            <field name="domain_force" eval="[('team_id', '=', ref('team_corporate'))]"/>
+            <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_corporate_training_tl'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+
+        <!-- lms: base tier (view/create team-wide) -->
+        <record id="rule_crm_lead_lms_base" model="ir.rule">
+            <field name="name">Mazenet CRM Lead: lms (Team View/Create)</field>
+            <field name="model_id" ref="crm.model_crm_lead"/>
+            <field name="domain_force" eval="[('team_id', '=', ref('team_corporate'))]"/>
+            <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_lms_agent')), (4, ref('mazenet_access_rights.group_mzr_lms_tl_direct_agent'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="False"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+        <!-- lms: base tier (edit own lead only) -->
+        <record id="rule_crm_lead_lms_base_edit" model="ir.rule">
+            <field name="name">Mazenet CRM Lead: lms (Edit Own Lead Only)</field>
+            <field name="model_id" ref="crm.model_crm_lead"/>
+            <field name="domain_force">[('user_id', '=', user.id)]</field>
+            <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_lms_agent')), (4, ref('mazenet_access_rights.group_mzr_lms_tl_direct_agent'))]"/>
+            <field name="perm_read" eval="False"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="False"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+        <!-- lms: Team Lead tier (full team view/create/write - Manager & CTO/Admin inherit via implied_ids) -->
+        <record id="rule_crm_lead_lms_tl" model="ir.rule">
+            <field name="name">Mazenet CRM Lead: lms (Team Lead - Full Team)</field>
+            <field name="model_id" ref="crm.model_crm_lead"/>
+            <field name="domain_force" eval="[('team_id', '=', ref('team_corporate'))]"/>
+            <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_lms_tl'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+
+        <!-- tnh: base tier (view/create team-wide) -->
+        <record id="rule_crm_lead_tnh_base" model="ir.rule">
+            <field name="name">Mazenet CRM Lead: tnh (Team View/Create)</field>
+            <field name="model_id" ref="crm.model_crm_lead"/>
+            <field name="domain_force" eval="[('team_id', '=', ref('team_corporate'))]"/>
+            <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_tnh_agent')), (4, ref('mazenet_access_rights.group_mzr_tnh_tl_direct_agent'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="False"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+        <!-- tnh: base tier (edit own lead only) -->
+        <record id="rule_crm_lead_tnh_base_edit" model="ir.rule">
+            <field name="name">Mazenet CRM Lead: tnh (Edit Own Lead Only)</field>
+            <field name="model_id" ref="crm.model_crm_lead"/>
+            <field name="domain_force">[('user_id', '=', user.id)]</field>
+            <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_tnh_agent')), (4, ref('mazenet_access_rights.group_mzr_tnh_tl_direct_agent'))]"/>
+            <field name="perm_read" eval="False"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="False"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+        <!-- tnh: Team Lead tier (full team view/create/write - Manager & CTO/Admin inherit via implied_ids) -->
+        <record id="rule_crm_lead_tnh_tl" model="ir.rule">
+            <field name="name">Mazenet CRM Lead: tnh (Team Lead - Full Team)</field>
+            <field name="model_id" ref="crm.model_crm_lead"/>
+            <field name="domain_force" eval="[('team_id', '=', ref('team_corporate'))]"/>
+            <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_tnh_tl'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+
+        <!-- Corporate BU manager-direct agents: Hunter/Account Manager/Corporate -->
+        <!-- Training/LMS/TNH were consolidated into the single team_corporate    -->
+        <!-- crm.team (mazenet_access_rights' groups stay isolated per sub-team;  -->
+        <!-- only crm.team-level lead visibility was collapsed) - this is now the -->
+        <!-- same team_corporate every other Corporate rule below already uses.   -->
+        <record id="rule_crm_lead_corporate_manager_direct_base" model="ir.rule">
+            <field name="name">Mazenet CRM Lead: Corporate Manager-Direct (Team View/Create)</field>
+            <field name="model_id" ref="crm.model_crm_lead"/>
+            <field name="domain_force" eval="[('team_id', '=', ref('team_corporate'))]"/>
+            <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_corporate_manager_direct_agent'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="False"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+        <record id="rule_crm_lead_corporate_manager_direct_edit" model="ir.rule">
+            <field name="name">Mazenet CRM Lead: Corporate Manager-Direct (Edit Own Lead Only)</field>
+            <field name="model_id" ref="crm.model_crm_lead"/>
+            <field name="domain_force">[('user_id', '=', user.id)]</field>
+            <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_corporate_manager_direct_agent'))]"/>
+            <field name="perm_read" eval="False"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="False"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+
+        <!-- Tally: two isolated branches (Development, Sales), each with its own -->
+        <!-- base + Team Lead tier, sharing one Tally BU Manager (group_tally_manager -->
+        <!-- implies both branches' TL groups, so it inherits both automatically). -->
+        <record id="rule_crm_lead_tally_dev_base" model="ir.rule">
+            <field name="name">Mazenet CRM Lead: tally_dev (Team View/Create)</field>
+            <field name="model_id" ref="crm.model_crm_lead"/>
+            <field name="domain_force" eval="[('team_id', '=', ref('team_tally'))]"/>
+            <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_tally_atl_agents_dev')), (4, ref('mazenet_access_rights.group_mzr_tally_dev_direct_agent'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="False"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+        <record id="rule_crm_lead_tally_dev_base_edit" model="ir.rule">
+            <field name="name">Mazenet CRM Lead: tally_dev (Edit Own Lead Only)</field>
+            <field name="model_id" ref="crm.model_crm_lead"/>
+            <field name="domain_force">[('user_id', '=', user.id)]</field>
+            <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_tally_atl_agents_dev')), (4, ref('mazenet_access_rights.group_mzr_tally_dev_direct_agent'))]"/>
+            <field name="perm_read" eval="False"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="False"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+        <record id="rule_crm_lead_tally_dev_tl" model="ir.rule">
+            <field name="name">Mazenet CRM Lead: tally_dev (Team Lead - Full Branch)</field>
+            <field name="model_id" ref="crm.model_crm_lead"/>
+            <field name="domain_force" eval="[('team_id', '=', ref('team_tally'))]"/>
+            <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_tally_tl_development'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+
+        <record id="rule_crm_lead_tally_sales_base" model="ir.rule">
+            <field name="name">Mazenet CRM Lead: tally_sales (Team View/Create)</field>
+            <field name="model_id" ref="crm.model_crm_lead"/>
+            <field name="domain_force" eval="[('team_id', '=', ref('team_tally'))]"/>
+            <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_tally_atl_agents_sales')), (4, ref('mazenet_access_rights.group_mzr_tally_sales_direct_agent'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="False"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+        <record id="rule_crm_lead_tally_sales_base_edit" model="ir.rule">
+            <field name="name">Mazenet CRM Lead: tally_sales (Edit Own Lead Only)</field>
+            <field name="model_id" ref="crm.model_crm_lead"/>
+            <field name="domain_force">[('user_id', '=', user.id)]</field>
+            <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_tally_atl_agents_sales')), (4, ref('mazenet_access_rights.group_mzr_tally_sales_direct_agent'))]"/>
+            <field name="perm_read" eval="False"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="False"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+        <record id="rule_crm_lead_tally_sales_tl" model="ir.rule">
+            <field name="name">Mazenet CRM Lead: tally_sales (Team Lead - Full Branch)</field>
+            <field name="model_id" ref="crm.model_crm_lead"/>
+            <field name="domain_force" eval="[('team_id', '=', ref('team_tally'))]"/>
+            <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_tally_tl_sales'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+
+        <record id="rule_crm_lead_tally_manager_direct_base" model="ir.rule">
+            <field name="name">Mazenet CRM Lead: Tally Manager-Direct (Both Branches View/Create)</field>
+            <field name="model_id" ref="crm.model_crm_lead"/>
+            <field name="domain_force" eval="[('team_id', '=', ref('team_tally'))]"/>
+            <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_tally_manager_direct_agent'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="False"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+        <record id="rule_crm_lead_tally_manager_direct_edit" model="ir.rule">
+            <field name="name">Mazenet CRM Lead: Tally Manager-Direct (Edit Own Lead Only)</field>
+            <field name="model_id" ref="crm.model_crm_lead"/>
+            <field name="domain_force">[('user_id', '=', user.id)]</field>
+            <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_tally_manager_direct_agent'))]"/>
+            <field name="perm_read" eval="False"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="False"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+
+        <!-- Global: MD read-only across every team (mirrors the org chart's dashed, -->
+        <!-- non-reporting relationship - explicitly NOT part of any write chain).    -->
+        <record id="rule_crm_lead_mzr_md" model="ir.rule">
             <field name="name">Mazenet CRM Lead: MD Global Read-Only</field>
             <field name="model_id" ref="crm.model_crm_lead"/>
             <field name="domain_force">[(1, '=', 1)]</field>
-            <field name="groups" eval="[(4, ref('group_mz_md'))]"/>
+            <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_md'))]"/>
             <field name="perm_read" eval="True"/>
             <field name="perm_write" eval="False"/>
             <field name="perm_create" eval="False"/>
             <field name="perm_unlink" eval="False"/>
         </record>
 
-        <!-- DMT Tracking Read-Only Rule: only visible to users who are themselves DMT team
-             members (Section 4: "read-only rule for DMT members ... in ANY BU"), not every
-             agent company-wide. `ref()` isn't available in the ir.rule eval context (only
-             `user`/`company_id(s)` are), so DMT membership is resolved via the x_bu_category
-             field on crm.team instead of env.ref or a fragile team-name string match. -->
-        <record id="rule_crm_lead_dmt_tracking" model="ir.rule">
-            <field name="name">Mazenet CRM Lead: DMT Tracking Read-Only (DMT Members Only)</field>
+        <!-- MD carve-out: may create/edit leads assigned to themselves only - the
+             crm_lead.py create()/write() overrides enforce "own only" on top of
+             this (this rule alone can't stop MD reassigning an OWNED lead to
+             someone else mid-write, since the domain is only checked against the
+             final record). perm_read=False - read is already covered globally by
+             rule_crm_lead_mzr_md above; this rule exists purely for write/create. -->
+        <record id="rule_crm_lead_mzr_md_own" model="ir.rule">
+            <field name="name">Mazenet CRM Lead: MD Own Leads (Create/Edit)</field>
             <field name="model_id" ref="crm.model_crm_lead"/>
-            <field name="domain_force">[('x_originating_team_id.x_bu_category', '=', 'dmt')] if 'dmt' in user.crm_team_ids.mapped('x_bu_category') else [(0, '=', 1)]</field>
-            <field name="groups" eval="[(4, ref('group_mz_agent'))]"/>
-            <field name="perm_read" eval="True"/>
-            <field name="perm_write" eval="False"/>
-            <field name="perm_create" eval="False"/>
+            <field name="domain_force">[('user_id', '=', user.id)]</field>
+            <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_md'))]"/>
+            <field name="perm_read" eval="False"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="True"/>
             <field name="perm_unlink" eval="False"/>
         </record>
 
-        <!-- Admin / CTO Global Access Rule. perm_unlink is False: Section 4 mandates
-             "No delete for anyone" - even CTO/Admin removes leads only via the Archive
-             Wizard (active=False), never a hard delete. -->
-        <record id="rule_crm_lead_admin" model="ir.rule">
-            <field name="name">Mazenet CRM Lead: CTO Admin Global</field>
+        <!-- Global: CTO/Admin already inherits every team via implied_ids (through -->
+        <!-- each team's BU Manager -> Team Lead chain), but this explicit global    -->
+        <!-- rule is kept as a safety net so a new team added to teams.xml is never  -->
+        <!-- accidentally invisible to CTO/Admin before its own rules are written.   -->
+        <record id="rule_crm_lead_mzr_cto_admin" model="ir.rule">
+            <field name="name">Mazenet CRM Lead: CTO/Admin Global</field>
             <field name="model_id" ref="crm.model_crm_lead"/>
             <field name="domain_force">[(1, '=', 1)]</field>
-            <field name="groups" eval="[(4, ref('group_mz_admin'))]"/>
+            <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_cto_admin'))]"/>
             <field name="perm_read" eval="True"/>
             <field name="perm_write" eval="True"/>
             <field name="perm_create" eval="True"/>
             <field name="perm_unlink" eval="False"/>
         </record>
+
+        <!-- Disable core CRM's "Personal Leads" rule (crm module -
+             crm_security.xml): domain [('user_id','=',user.id) OR
+             ('user_id','=',False)] has NO team_id condition at all. Every
+             mazenet role group implies sales_team.group_sale_salesman (for
+             base CRM menu/action access), which brings this rule along -
+             it gets OR'd against our team-scoped rules above, so an agent
+             ends up seeing (a) any UNASSIGNED lead in ANY other team, and
+             (b) any lead in another team that happens to carry their own
+             user_id (e.g. after a cross-team reassignment). Root-caused via
+             odoo shell 2026-09-03: a MIS agent could see an unassigned DMT
+             lead purely through this rule, with My Pipeline off. Our own
+             per-team rules above already fully cover read/write visibility
+             for every tier, so this core rule is redundant as well as
+             leaky - confirmed only Odoo's own sample "demo" user relies on
+             it independent of the mazenet role hierarchy. -->
+        <!-- A plain <record> override is silently ignored here: this xmlid was
+             originally loaded with noupdate="1" by the crm module itself, and
+             Odoo's loader skips updating any existing record whose STORED
+             noupdate flag is True during a module upgrade, regardless of our
+             own file's noupdate wrapping (odoo/orm/models.py _load_records:
+             `if not (update and d_noupdate): to_update.append(data)`).
+             A <function> call bypasses that entirely by invoking write()
+             directly at data-load time. -->
+        <function model="ir.rule" name="write"
+                   eval="[[ref('crm.crm_rule_personal_lead')], {'active': False}]"/>
+
     </data>
 </odoo>

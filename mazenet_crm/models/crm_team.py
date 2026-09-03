@@ -13,3 +13,15 @@ class CrmTeam(models.Model):
         ('swdev', 'Software Dev'),
         ('mis', 'MIS'),
     ], string="BU Category", default='corp')
+
+    create_lead_id = fields.Many2many('res.users',
+        'mazenet_crm_team_create_lead_users_rel', 'team_id', 'user_id',
+        string='Create To', domain="[('id', 'in', member_ids)]")
+
+    privelege_ids = fields.Many2many(
+        'res.groups.privilege', 'mazenet_crm_team_privilege_rel', 
+        'team_id', 'privilege_id',
+        string='Privileges')
+
+
+

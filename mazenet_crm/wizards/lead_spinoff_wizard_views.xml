@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <record id="view_mz_lead_spinoff_wizard_form" model="ir.ui.view">
+            <field name="name">mz.lead.spinoff.wizard.form</field>
+            <field name="model">mz.lead.spinoff.wizard</field>
+            <field name="arch" type="xml">
+                <form string="Create New Lead">
+                    <field name="source_lead_id" invisible="1"/>
+                    <group>
+                        <field name="name"/>
+                        <field name="partner_id"/>
+                        <field name="partner_name"/>
+                        <field name="contact_name"/>
+                        <field name="email_from"/>
+                        <field name="phone"/>
+                    </group>
+                    <group string="Route To">
+                        <field name="team_id"/>
+                        <field name="user_id"/>
+                    </group>
+                    <group>
+                        <field name="description" nolabel="1" placeholder="What are they asking for this time?"/>
+                    </group>
+                    <footer>
+                        <button name="action_create_lead" string="Create" type="object" class="btn-primary"/>
+                        <button string="Cancel" class="btn-secondary" special="cancel"/>
+                    </footer>
+                </form>
+            </field>
+        </record>
+
+        <record id="action_mz_lead_spinoff_wizard" model="ir.actions.act_window">
+            <field name="name">Create New Lead</field>
+            <field name="res_model">mz.lead.spinoff.wizard</field>
+            <field name="view_mode">form</field>
+            <field name="target">new</field>
+        </record>
+    </data>
+</odoo>

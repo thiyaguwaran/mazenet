@@ -7,72 +7,336 @@
             <field name="model">crm.lead</field>
             <field name="inherit_id" ref="crm.crm_lead_view_form"/>
             <field name="arch" type="xml">
-                <xpath expr="//field[@name='team_id']" position="after">
-                    <field name="x_originating_team_id" options="{'no_create': True}"/>
-                </xpath>
-
-                <!-- Release button lives in the header (buttons stay clickable even though
-                     the sheet below is made readonly while locked) -->
+                <!-- Release button lives in the header, next to the (now hidden-while-locked)
+                     stage statusbar and Won/Lost/Convert buttons - see below. -->
                 <xpath expr="//header" position="inside">
                     <button name="action_release_lock" string="Release RED Lock" type="object"
                             class="btn-danger" invisible="not x_is_locked"
                             confirm="Release the RED lock on this lead? It will become editable again."/>
+                    <!-- Spin-off: same customer, a new/different requirement, routed to
+                         another team - opens mz.lead.spinoff.wizard pre-filled with this
+                         lead's customer/contact info. Only makes sense on a saved lead. -->
+                    <button name="%(action_mz_lead_spinoff_wizard)d" string="Create New Lead"
+                            type="action" class="btn-secondary" invisible="not id"/>
                 </xpath>
 
-                <!-- Whole sheet becomes read-only while x_is_locked is True. Server-side
-                     write() enforcement (crm_lead.py) is the real guard; this is the UX
-                     mirror of it so users see it as read-only rather than hitting a save
-                     error. Buttons are unaffected by the sheet's readonly modifier. -->
+                <xpath expr="//div[@name='button_box']" position="inside">
+                    <button name="action_view_spinoff_leads" type="object"
+                            class="oe_stat_button" icon="fa-random"
+                            invisible="not x_spinoff_lead_ids">
+                        <field name="x_spinoff_lead_ids" widget="statinfo" string="Spin-off Leads"/>
+                    </button>
+                </xpath>
+                <xpath expr="//field[@name='user_id'][1]" position="before">
+                    <field name="x_related_lead_id" invisible="not x_related_lead_id"/>
+                </xpath>
+
                 <xpath expr="//sheet" position="attributes">
-                    <attribute name="readonly">x_is_locked</attribute>
+                    <attribute name="readonly">x_content_readonly_for_me</attribute>
+                </xpath>
+                <xpath expr="//field[@name='user_id']" position="attributes">
+                    <attribute name="readonly">(x_content_readonly_for_me and not x_is_dmt_user) or x_assign_type == 'self'</attribute>
+                    <attribute name="domain">[('id', 'in', x_assignable_user_ids)]</attribute>
+                </xpath>
+                <xpath expr="//field[@name='user_id']" position="before">
+                    <!-- Only DMT team members, MD and CTO/Admin may touch this radio at
+                         all (_mz_user_can_use_assign_radio) - everyone else is forced to
+                         Self and can't even click through to Team/Internal. -->
+                    <field name="x_assign_type" widget="radio" options="{'horizontal': true}"
+                           readonly="not x_can_use_assign_radio"/>
+                    <!-- Mirrors user_id's own DMT exemption below: without it, the sheet's
+                         readonly="x_content_readonly_for_me" leaks through and team_id stays
+                         locked even after picking Team/Internal in the radio. -->
+                    <field name="team_id"
+                           readonly="(x_content_readonly_for_me and not x_is_dmt_user) or x_assign_type == 'self'"
+                           required="x_assign_type != 'self'"/>
+                    <field name="x_can_use_assign_radio" invisible="1"/>
+                    <field name="x_can_assign_beyond_self" invisible="1"/>
+                    <field name="x_assignable_user_ids" invisible="1"/>
+                    <field name="x_is_dmt_user" invisible="1"/>
+                </xpath>
+
+                <xpath expr="//field[@name='stage_id']" position="attributes">
+                    <attribute name="readonly">won_status == 'lost' or not active or x_content_readonly_for_me</attribute>
+                </xpath>
+                <xpath expr="//button[@name='action_set_won_rainbowman']" position="attributes">
+                    <attribute name="invisible" add="x_content_readonly_for_me" separator="or"/>
+                </xpath>
+                <xpath expr="//button[@name='%(crm.action_crm_lead2opportunity_partner)d']" position="attributes">
+                    <attribute name="invisible" add="x_content_readonly_for_me" separator="or"/>
+                </xpath>
+                <xpath expr="//button[@name='action_restore']" position="attributes">
+                    <attribute name="invisible" add="x_content_readonly_for_me" separator="or"/>
+                </xpath>
+                <xpath expr="//button[@name='%(crm.crm_lead_lost_action)d']" position="attributes">
+                    <attribute name="invisible" add="x_content_readonly_for_me" separator="or"/>
                 </xpath>
 
                 <xpath expr="//field[@name='won_status']" position="before">
                     <field name="x_is_locked" invisible="1"/>
+                    <field name="x_content_readonly_for_me" invisible="1"/>
+                    <field name="x_team_transfer_readonly" invisible="1"/>
                     <div class="alert alert-danger mb-0" role="alert" invisible="not x_is_locked">
                         <i class="fa fa-lock me-1" title="RED Lock"/>
                         <b>RED LOCKED</b> - this lead is overdue and read-only until released.
                     </div>
+                    <div class="alert alert-secondary mb-0" role="alert" invisible="not x_team_transfer_readonly">
+                        <i class="fa fa-arrow-right-arrow-left me-1" title="Transferred"/>
+                        <b>TRANSFERRED</b> - this lead has moved to another Sales Team and is read-only for you.
+                    </div>
                 </xpath>
-            </field>
-        </record>
 
-        <!-- Lead List View Inheritance -->
-        <record id="view_crm_lead_list_inherit_mz" model="ir.ui.view">
-            <field name="name">crm.lead.list.inherit.mz</field>
-            <field name="model">crm.lead</field>
-            <field name="inherit_id" ref="crm.crm_case_tree_view_oppor"/>
-            <field name="arch" type="xml">
-                <xpath expr="//field[@name='team_id']" position="after">
-                    <field name="x_originating_team_id" optional="hide"/>
+                <!-- Source options are per-BU (utm_source.py's team_ids), scoped to team_id -->
+                <xpath expr="//page[@name='extra']//field[@name='source_id']" position="attributes">
+                    <attribute name="domain">[('team_ids', 'in', team_id)]</attribute>
                 </xpath>
-            </field>
-        </record>
+                <xpath expr="//page[@name='lead']//field[@name='source_id']" position="attributes">
+                    <attribute name="domain">[('team_ids', 'in', team_id)]</attribute>
+                </xpath>
 
-        <!-- Pipeline (Opportunities) Search View: "Agent" filter -->
-        <record id="view_crm_case_opportunities_filter_inherit_mz" model="ir.ui.view">
-            <field name="name">crm.lead.search.opportunity.inherit.mz</field>
-            <field name="model">crm.lead</field>
-            <field name="inherit_id" ref="crm.view_crm_case_opportunities_filter"/>
-            <field name="arch" type="xml">
-                <xpath expr="//filter[@name='unassigned']" position="after">
-                    <filter string="Agent" name="filter_owner_agent" domain="[('x_owner_role', '=', 'agent')]"
-                            help="Leads owned by a pure Agent (not TL/ATL/Manager)"/>
-                    <filter string="ATL" name="filter_owner_atl" domain="[('x_owner_role', '=', 'atl')]"
-                            help="Leads owned by an ATL"/>
-                    <filter string="TL" name="filter_owner_tl" domain="[('x_owner_role', '=', 'tl')]"
-                            help="Leads owned by a TL"/>
-                    <filter string="BU Manager" name="filter_owner_manager" domain="[('x_owner_role', '=', 'manager')]"
-                            help="Leads owned by a BU Manager"/>
-                    <filter string="MD" name="filter_owner_md" domain="[('x_owner_role', '=', 'md')]"
-                            help="Leads owned by MD (should normally be none - MD is read-only)"/>
-                    <filter string="CTO / Admin" name="filter_owner_admin" domain="[('x_owner_role', '=', 'admin')]"
-                            help="Leads owned by CTO/Admin"/>
+                <!-- Build notes: "Format validation only... Show a placeholder hint" -
+                     placeholders on both the Lead-type and Opportunity-type variants of
+                     phone/email_from (crm_lead_view_form renders a different group for
+                     each, per the `type` field). Actual format enforcement is the
+                     _mz_check_contact_format constraint in crm_lead.py. -->
+                <!-- Phone/email are an either-or pair on every BU's first stage
+                     (deliberate deviation from the sheet - business wants "fill one,
+                     the other becomes optional" - see MZ_EITHER_OR_MANDATORY_FIELDS
+                     in crm_lead.py; Tally's sheet-wording "Progressive" email is
+                     deliberately overridden the same way). No view-level `required=`
+                     here on purpose - see the note above the M2 pipeline fields group
+                     below: enforcement is the backend stage gate only, on a real
+                     stage-move attempt, not on every save. -->
+                <xpath expr="//field[@name='phone'][@id='phone_group_lead_info']" position="attributes">
+                    <attribute name="placeholder">e.g. 9876543210</attribute>
                 </xpath>
-                <xpath expr="//filter[@name='salesperson']" position="after">
-                    <filter string="Role" name="group_by_owner_role" context="{'group_by':'x_owner_role'}"/>
-                    <filter string="Supervisor" name="group_by_owner_supervisor" context="{'group_by':'x_owner_supervisor_id'}"
-                            help="Who the salesperson reports to - combine with Salesperson/Role to see the full branch: Manager > TL > ATL > Agent"/>
+                <xpath expr="//field[@name='email_from'][@id='email_from_group_lead_info']" position="attributes">
+                    <attribute name="placeholder">e.g. name@example.com</attribute>
+                </xpath>
+                <xpath expr="//group[@name='opportunity_partner']//field[@name='phone']" position="attributes">
+                    <attribute name="placeholder">e.g. 9876543210</attribute>
+                </xpath>
+                <xpath expr="//group[@name='opportunity_partner']//field[@name='email_from']" position="attributes">
+                    <attribute name="placeholder">e.g. name@example.com</attribute>
+                </xpath>
+
+                <!-- M2 pipeline fields (Mazenet_CRM_M2_Build_Tasks.xlsx). Each group is
+                     gated to the BU(s) it applies to via x_team_bu_category, since all
+                     5 pipelines share this one crm.lead form. -->
+                <xpath expr="//page[@name='extra']" position="after">
+                    <page name="mz_pipeline" string="Pipeline Fields">
+                        <field name="x_team_bu_category" invisible="1"/>
+                        <div invisible="x_team_bu_category != 'dmt'">
+                            <group string="Stage 1 - New Lead / Source">
+                                <field name="x_organic_inorganic"/>
+                                <field name="source_id" domain="[('team_ids', 'in', team_id)]"/>
+                                <field name="referred" string="Source Reference (Referral / Ads)"/>
+                            </group>
+                            <group string="Stage 2 - Lead Validation">
+                                <field name="x_company_or_individual"/>
+                                <field name="x_contact_purpose"/>
+                                <field name="x_product_service"/>
+                                <field name="x_employee_count"/>
+                                <field name="x_company_turnover"/>
+                                <field name="priority" widget="priority" string="Lead Fit"/>
+                            </group>
+                            <group string="Stage 3 - Transfer to BU">
+                                <field name="x_target_team_id"/>
+                                <field name="x_transfer_notes"/>
+                            </group>
+                            <group string="Stage 4 - Follow-up's">
+                                <div class="text-muted" colspan="2">
+                                    Follow-up activities live in the Activities/Chatter area below -
+                                    colour timer and RED lock are already wired to them.
+                                </div>
+                            </group>
+                        </div>
+                        <div invisible="x_team_bu_category != 'tally'">
+                            <group string="Stage 1 - New Lead">
+                                <field name="source_id" domain="[('team_ids', 'in', team_id)]"/>
+                                <field name="referred" string="Source Reference (Referral)"/>
+                            </group>
+                            <group string="Stage 2 - Lead Validation">
+                                <field name="x_tally_category"/>
+                            </group>
+                            <group string="Stage 3 - Requirements">
+                                <field name="x_company_intro_done"/>
+                                <field name="x_product_service"/>
+                                <field name="x_feasibility"/>
+                                <field name="x_timeline"/>
+                                <field name="x_requirements_attachment_ids" widget="many2many_binary"/>
+                            </group>
+                            <group string="Stage 4 - Quote Shared">
+                                <field name="x_quote_date"/>
+                                <field name="x_quote_document_ids" widget="many2many_binary"/>
+                            </group>
+                            <group string="Stage 5 - Follow-up's">
+                                <div class="text-muted" colspan="2">
+                                    Follow-up activities live in the Activities/Chatter area below -
+                                    colour timer and RED lock are already wired to them.
+                                </div>
+                            </group>
+                            <group string="Stage 6 - Won / Lost">
+                                <div class="text-muted" colspan="2">
+                                    Won is this stage's is_won flag. Lost is recorded via the standard
+                                    Odoo "Mark Lost" wizard (Lost Reason + Closing Note), not a separate stage.
+                                </div>
+                            </group>
+                            <group string="Stage 7 - Project State">
+                                <field name="x_project_start_date"/>
+                                <field name="x_project_start_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_project_completed_date"/>
+                                <field name="x_project_completed_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_workorder_completion_date"/>
+                                <field name="x_deviation_days"/>
+                            </group>
+                        </div>
+
+                        <div invisible="x_team_bu_category != 'tech'">
+                            <group string="Stage 1 - New Lead / Source">
+                                <field name="source_id" domain="[('team_ids', 'in', team_id)]"/>
+                                <field name="referred" string="Source Reference (Referral / GeM Bid)"/>
+                                <field name="x_can_create_partner" invisible="1"/>
+                            </group>
+                            <group string="Stage 2 - Lead Validation">
+                                <field name="x_customer_status"/>
+                                <field name="x_customer_need"/>
+                            </group>
+                            <group string="Stage 3 - Requirement Understanding">
+                                <field name="x_product_service"/>
+                                <field name="x_feasibility_identified"/>
+                                <field name="x_timeline"/>
+                                <field name="x_requirements_attachment_ids" widget="many2many_binary"/>
+                            </group>
+                            <group string="Stage 4 - Quote">
+                                <field name="x_bom_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_boq_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_quote_shared_checkbox"/>
+                                <field name="x_customer_goods_finalised"/>
+                                <field name="x_quote_date"/>
+                                <field name="x_quote_document_ids" widget="many2many_binary"/>
+                            </group>
+                            <group string="Stage 5 - Follow-up's">
+                                <div class="text-muted" colspan="2">
+                                    Follow-up activities live in the Activities/Chatter area below -
+                                    colour timer and RED lock are already wired to them.
+                                </div>
+                            </group>
+                            <group string="Stage 6 - Won / Lost">
+                                <div class="text-muted" colspan="2">
+                                    Won is this stage's is_won flag. Lost is recorded via the standard
+                                    Odoo "Mark Lost" wizard (Lost Reason + Closing Note), not a separate stage.
+                                </div>
+                            </group>
+                            <group string="Stage 7 - Project State">
+                                <field name="x_project_start_date"/>
+                                <field name="x_project_start_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_project_completed_date"/>
+                                <field name="x_project_completed_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_workorder_completion_date"/>
+                                <field name="x_deviation_days"/>
+                            </group>
+                        </div>
+
+                        <div invisible="x_team_bu_category != 'swdev'">
+                            <group string="Stage 1 - New Lead / Source">
+                                <field name="source_id" domain="[('team_ids', 'in', team_id)]"/>
+                                <field name="referred" string="Source Reference (Referral)"/>
+                            </group>
+                            <group string="Stage 2 - Lead Validation">
+                                <field name="expected_revenue" string="Order Value"/>
+                                <field name="x_branch_count"/>
+                                <field name="x_sw_employee_count"/>
+                                <field name="x_nature_of_business"/>
+                                <field name="x_established_year"/>
+                                <field name="x_founder"/>
+                                <field name="x_ceo"/>
+                                <field name="x_company_turnover"/>
+                                <field name="website"/>
+                                <field name="x_meeting_attendees"/>
+                            </group>
+                            <group string="Stage 3 - Demo">
+                                <field name="x_demo_completed"/>
+                                <field name="x_system_study_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_feasibility"/>
+                                <field name="x_timeline"/>
+                            </group>
+                            <group string="Stage 4 - Quote">
+                                <field name="x_quote_date"/>
+                                <field name="x_quote_document_ids" widget="many2many_binary"/>
+                            </group>
+                            <group string="Stage 5 - Won / Lost">
+                                <div class="text-muted" colspan="2">
+                                    Won is this stage's is_won flag. Lost is recorded via the standard
+                                    Odoo "Mark Lost" wizard (Lost Reason + Closing Note), not a separate stage.
+                                    No Follow-up's stage in this BU - colour timer/RED lock don't apply.
+                                </div>
+                            </group>
+                            <group string="Stage 6 - Project State">
+                                <field name="x_project_start_date"/>
+                                <field name="x_project_start_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_project_completed_date"/>
+                                <field name="x_project_completed_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_workorder_completion_date"/>
+                                <field name="x_deviation_days"/>
+                            </group>
+                        </div>
+
+                        <div invisible="x_team_bu_category != 'mis'">
+                            <group string="Stage 1 - New Lead / Source">
+                                <field name="source_id" domain="[('team_ids', 'in', team_id)]"/>
+                                <field name="referred" string="Source Reference (Referral)"/>
+                            </group>
+                            <group string="Stage 2 - Lead Validation">
+                                <field name="x_product_service"/>
+                                <field name="x_target_audience"/>
+                                <field name="x_mis_timelines_estimate"/>
+                                <field name="x_deliverables"/>
+                                <field name="x_requirements_attachment_ids" widget="many2many_binary" string="Client Expectations Attachment"/>
+                            </group>
+                            <group string="Stage 3 - Demo">
+                                <field name="x_demo_completed"/>
+                                <field name="x_system_study_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_feasibility"/>
+                                <field name="x_timeline"/>
+                            </group>
+                            <group string="Stage 4 - Quote">
+                                <field name="x_quote_document_ids" widget="many2many_binary"/>
+                            </group>
+                            <group string="Stage 5 - Won / Lost">
+                                <div class="text-muted" colspan="2">
+                                    Won is this stage's is_won flag. Lost is recorded via the standard
+                                    Odoo "Mark Lost" wizard (Lost Reason + Closing Note), not a separate stage.
+                                    No Follow-up's stage in this BU - colour timer/RED lock don't apply.
+                                </div>
+                            </group>
+                            <group string="Stage 6 - Project State">
+                                <field name="x_project_start_date"/>
+                                <field name="x_project_start_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_project_completed_date"/>
+                                <field name="x_project_completed_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_workorder_completion_date"/>
+                                <field name="x_deviation_days"/>
+                            </group>
+                        </div>
+                    </page>
+                </xpath>
+
+                <!-- Technology-only: partner/customer creation restricted to TL/Manager -
+                     Agents (and ATLs) may only SELECT from the existing list. Two field tags
+                     over the same partner_id, toggled by x_can_create_partner, since a
+                     Many2one's no_create/no_create_edit widget options are static per tag,
+                     not expression-evaluable. -->
+                <xpath expr="//field[@name='partner_id'][1]" position="before">
+                    <field name="x_can_create_partner" invisible="1"/>
+                </xpath>
+                <xpath expr="//field[@name='partner_id']" position="attributes">
+                    <attribute name="invisible" add="x_team_bu_category == 'tech' and not x_can_create_partner" separator="or"/>
+                </xpath>
+                <xpath expr="//field[@name='partner_id'][1]" position="after">
+                    <field name="partner_id" widget="res_partner_many2one"
+                           options="{'no_create': True, 'no_create_edit': True}"
+                           invisible="not (x_team_bu_category == 'tech' and not x_can_create_partner)"/>
                 </xpath>
             </field>
         </record>
@@ -86,6 +350,8 @@
                 <xpath expr="//kanban" position="inside">
                     <field name="x_is_locked"/>
                     <field name="activity_state"/>
+                    <field name="x_activity_warning"/>
+                    <field name="x_team_transfer_readonly"/>
                 </xpath>
                 <xpath expr="//t[@t-name='card']/*[1]" position="before">
                     <!-- Small corner ribbon + a subtle tint/border (via kanban_red.css, keyed off
@@ -94,6 +360,67 @@
                          read as too aggressive for a simple overdue/locked indicator. -->
                     <widget name="web_ribbon" id="mz_red_lock_ribbon" title="Overdue" bg_color="text-bg-danger" invisible="not x_is_locked and activity_state != 'overdue'"/>
                     <span t-if="record.x_is_locked.raw_value or record.activity_state.raw_value == 'overdue'" class="mz-red-locked-card d-none"/>
+                    <!-- Pre-lock warnings (see crm_lead.py x_activity_warning): purple in the
+                         30-min window before the next activity, orange in the 10-min window -
+                         already scoped server-side to just the owner/attendees, so no extra
+                         invisible condition needed here beyond the field's own value. -->
+                    <span t-if="record.x_activity_warning.raw_value == 'purple'" class="mz-activity-purple-card d-none"/>
+                    <span t-if="record.x_activity_warning.raw_value == 'orange'" class="mz-activity-orange-card d-none"/>
+                    <!-- Read-only because Sales Team moved off whoever's browsing (not a
+                         RED lock - that already gets the red treatment above) - grey tint,
+                         same marker-span pattern, see kanban_red.css. -->
+                    <span t-if="record.x_team_transfer_readonly.raw_value" class="mz-team-transferred-card d-none"/>
+                </xpath>
+            </field>
+        </record>
+
+        <!-- Pipeline (Opportunities) Search View: stock crm.view_crm_case_opportunities_filter
+             has "Lost" (which already implies active=False) but no standalone "Archived"
+             filter like the Leads search view does - add it so archived opportunities
+             (e.g. via the CTO mandatory-reason archive wizard) can be found directly. -->
+        <record id="view_crm_case_opportunities_filter_inherit_mz" model="ir.ui.view">
+            <field name="name">crm.lead.search.opportunity.inherit.mz</field>
+            <field name="model">crm.lead</field>
+            <field name="inherit_id" ref="crm.view_crm_case_opportunities_filter"/>
+            <field name="arch" type="xml">
+                <filter name="filter_won_status_lost" position="after">
+                    <filter string="Archived" name="inactive" domain="[('active', '=', False)]"/>
+                </filter>
+                <!-- Sales Team removed from Group By - team selection now happens via the
+                     search panel sidebar below instead of grouping. -->
+                <filter name="saleschannel" position="replace"/>
+                <!-- Sales Team search panel: native single-select sidebar (category) with a
+                     built-in "All" entry, so clicking a team shows only that team's records
+                     and "All" resets - no custom widget/JS needed. CTO/Admin and MD are the
+                     only roles with cross-team visibility to begin with, so this is the only
+                     place a "pick any team" control makes sense - everyone else only ever
+                     sees their own team's leads regardless. -->
+                <search position="inside">
+                    <searchpanel groups="mazenet_access_rights.group_mzr_cto_admin,mazenet_access_rights.group_mzr_md">
+                        <field name="team_id" string="Sales Team" icon="fa-users" enable_counters="1"/>
+                    </searchpanel>
+                </search>
+            </field>
+        </record>
+
+        <!-- Kanban Quick-Create Form: show Sales Team, defaulted to the creating user's
+             own team (crm_lead.py _mz_default_team_id) - stock CRM ships this field but
+             keeps it invisible="1". Since write() now requires being a member of a
+             lead's CURRENT team_id to touch it at all, whatever team_id a lead gets
+             created with has to be right from the start; surfacing the field here lets
+             the creator see/confirm/correct it (e.g. TL/ATL/Manager assigning straight
+             to a different team) instead of it being an invisible, silent default. -->
+        <record id="view_crm_lead_quick_create_inherit_mz" model="ir.ui.view">
+            <field name="name">crm.lead.form.quick_create.inherit.mz</field>
+            <field name="model">crm.lead</field>
+            <field name="inherit_id" ref="crm.quick_create_opportunity_form"/>
+            <field name="arch" type="xml">
+                <xpath expr="//field[@name='team_id']" position="replace">
+                    <div class="d-flex align-items-center" colspan="2">
+                        <i class="fa fa-users" title="Sales Team"/>
+                        <field name="team_id" nolabel="1" class="o_field_highlight w-100 mb-0"
+                               options="{'no_create': True}"/>
+                    </div>
                 </xpath>
             </field>
         </record>

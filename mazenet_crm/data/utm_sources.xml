@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <!-- Per-BU Lead Source options (Mazenet_CRM_M2_Build_Tasks.xlsx, Stage 1 of every
+             pipeline sheet). crm.lead's stock source_id (utm.source) is reused instead of a
+             hardcoded Selection field - team_ids (mazenet_crm/models/utm_source.py) scopes
+             which sources show up per team_id in the lead form's source_id domain. Shared
+             across teams wherever the sheets literally repeat the same source concept. -->
+
+        <!-- Shared across all 5 BUs -->
+        <record id="utm_source_mz_email" model="utm.source">
+            <field name="name">Email</field>
+            <field name="team_ids" eval="[(6, 0, [
+                ref('team_dmt'), ref('team_tally'), ref('team_technology'),
+                ref('team_software'), ref('team_mis')])]"/>
+        </record>
+        <record id="utm_source_mz_existing_client" model="utm.source">
+            <field name="name">Existing Client</field>
+            <field name="team_ids" eval="[(6, 0, [
+                ref('team_dmt'), ref('team_tally'), ref('team_technology'),
+                ref('team_software'), ref('team_mis')])]"/>
+        </record>
+
+        <!-- Shared across Tally, Technology, Software Dev, MIS -->
+        <record id="utm_source_mz_call" model="utm.source">
+            <field name="name">Call</field>
+            <field name="team_ids" eval="[(6, 0, [
+                ref('team_tally'), ref('team_software'), ref('team_mis')])]"/>
+        </record>
+        <record id="utm_source_mz_direct_sales" model="utm.source">
+            <field name="name">Direct Sales</field>
+            <field name="team_ids" eval="[(6, 0, [
+                ref('team_tally'), ref('team_technology'), ref('team_software'), ref('team_mis')])]"/>
+        </record>
+        <record id="utm_source_mz_partner_referral" model="utm.source">
+            <field name="name">Partner Referral</field>
+            <field name="team_ids" eval="[(6, 0, [
+                ref('team_tally'), ref('team_technology'), ref('team_software'), ref('team_mis')])]"/>
+            <field name="x_requires_reference_text">True</field>
+        </record>
+        <record id="utm_source_mz_customer_referral" model="utm.source">
+            <field name="name">Customer Referral</field>
+            <field name="team_ids" eval="[(6, 0, [
+                ref('team_tally'), ref('team_technology'), ref('team_software'), ref('team_mis')])]"/>
+            <field name="x_requires_reference_text">True</field>
+        </record>
+        <record id="utm_source_mz_other_referral" model="utm.source">
+            <field name="name">Other Referral</field>
+            <field name="team_ids" eval="[(6, 0, [
+                ref('team_tally'), ref('team_technology'), ref('team_software'), ref('team_mis')])]"/>
+        </record>
+        <record id="utm_source_mz_transferred_other_bu" model="utm.source">
+            <field name="name">Transferred from Other BU</field>
+            <field name="team_ids" eval="[(6, 0, [
+                ref('team_tally'), ref('team_technology'), ref('team_software'), ref('team_mis')])]"/>
+        </record>
+
+        <!-- DMT only -->
+        <record id="utm_source_mz_inbound_calls" model="utm.source">
+            <field name="name">Inbound Calls</field>
+            <field name="team_ids" eval="[(6, 0, [ref('team_dmt')])]"/>
+        </record>
+        <record id="utm_source_mz_outbound_calls" model="utm.source">
+            <field name="name">Outbound Calls</field>
+            <field name="team_ids" eval="[(6, 0, [ref('team_dmt')])]"/>
+        </record>
+        <record id="utm_source_mz_chat" model="utm.source">
+            <field name="name">Chat</field>
+            <field name="team_ids" eval="[(6, 0, [ref('team_dmt')])]"/>
+        </record>
+        <record id="utm_source_mz_referral_partner_customer" model="utm.source">
+            <field name="name">Referral (Partner / Customer)</field>
+            <field name="team_ids" eval="[(6, 0, [ref('team_dmt')])]"/>
+            <field name="x_requires_reference_text">True</field>
+        </record>
+        <!-- Named distinctly from stock utm's own 'LinkedIn'/'Facebook' marketing-source
+             records: those are noupdate=True from the utm module itself, so writing
+             team_ids onto them here would be silently skipped on every future -u (see
+             feedback_demo_data_noupdate memory) - a separate record is the reliable option. -->
+        <record id="utm_source_mz_linkedin" model="utm.source">
+            <field name="name">LinkedIn (DMT)</field>
+            <field name="team_ids" eval="[(6, 0, [ref('team_dmt')])]"/>
+        </record>
+        <record id="utm_source_mz_facebook" model="utm.source">
+            <field name="name">Facebook (DMT)</field>
+            <field name="team_ids" eval="[(6, 0, [ref('team_dmt')])]"/>
+        </record>
+        <record id="utm_source_mz_ads" model="utm.source">
+            <field name="name">Ads</field>
+            <field name="team_ids" eval="[(6, 0, [ref('team_dmt')])]"/>
+            <field name="x_requires_reference_text">True</field>
+        </record>
+        <record id="utm_source_mz_whatsapp" model="utm.source">
+            <field name="name">WhatsApp</field>
+            <field name="team_ids" eval="[(6, 0, [ref('team_dmt')])]"/>
+        </record>
+
+        <!-- Technology only: Call is sub-sourced instead of plain, plus GeM Bid -->
+        <record id="utm_source_mz_call_justdial" model="utm.source">
+            <field name="name">Call - Justdial</field>
+            <field name="team_ids" eval="[(6, 0, [ref('team_technology')])]"/>
+        </record>
+        <record id="utm_source_mz_call_indiamart" model="utm.source">
+            <field name="name">Call - IndiaMart</field>
+            <field name="team_ids" eval="[(6, 0, [ref('team_technology')])]"/>
+        </record>
+        <record id="utm_source_mz_call_partner" model="utm.source">
+            <field name="name">Call - Partner</field>
+            <field name="team_ids" eval="[(6, 0, [ref('team_technology')])]"/>
+        </record>
+        <record id="utm_source_mz_call_customer" model="utm.source">
+            <field name="name">Call - Customer</field>
+            <field name="team_ids" eval="[(6, 0, [ref('team_technology')])]"/>
+        </record>
+        <record id="utm_source_mz_gem_bid" model="utm.source">
+            <field name="name">GeM Bid</field>
+            <field name="team_ids" eval="[(6, 0, [ref('team_technology')])]"/>
+            <field name="x_requires_reference_text">True</field>
+        </record>
+    </data>
+</odoo>

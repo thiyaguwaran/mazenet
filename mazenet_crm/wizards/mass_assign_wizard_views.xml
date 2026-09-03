@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <record id="view_mz_mass_assign_wizard_form" model="ir.ui.view">
+            <field name="name">mz.mass.assign.wizard.form</field>
+            <field name="model">mz.mass.assign.wizard</field>
+            <field name="arch" type="xml">
+                <form string="Mass Assign Leads">
+                    <group>
+                        <field name="lead_ids" widget="many2many_tags" readonly="1"/>
+                        <field name="x_assign_type" widget="radio" options="{'horizontal': true}"/>
+                        <field name="user_id"/>
+                    </group>
+                    <footer>
+                        <button name="action_apply" string="Assign" type="object" class="btn-primary"/>
+                        <button string="Cancel" class="btn-secondary" special="cancel"/>
+                    </footer>
+                </form>
+            </field>
+        </record>
+
+        <record id="action_mz_mass_assign_wizard" model="ir.actions.act_window">
+            <field name="name">Mass Assign</field>
+            <field name="res_model">mz.mass.assign.wizard</field>
+            <field name="view_mode">form</field>
+            <field name="target">new</field>
+            <field name="binding_model_id" ref="crm.model_crm_lead"/>
+            <field name="binding_view_types">list</field>
+        </record>
+    </data>
+</odoo>
