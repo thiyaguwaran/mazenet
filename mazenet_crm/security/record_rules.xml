@@ -479,6 +479,23 @@
             <field name="perm_unlink" eval="False"/>
         </record>
 
+        <!-- MD carve-out: may create/edit leads assigned to themselves only - the
+             crm_lead.py create()/write() overrides enforce "own only" on top of
+             this (this rule alone can't stop MD reassigning an OWNED lead to
+             someone else mid-write, since the domain is only checked against the
+             final record). perm_read=False - read is already covered globally by
+             rule_crm_lead_mzr_md above; this rule exists purely for write/create. -->
+        <record id="rule_crm_lead_mzr_md_own" model="ir.rule">
+            <field name="name">Mazenet CRM Lead: MD Own Leads (Create/Edit)</field>
+            <field name="model_id" ref="crm.model_crm_lead"/>
+            <field name="domain_force">[('user_id', '=', user.id)]</field>
+            <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_md'))]"/>
+            <field name="perm_read" eval="False"/>
+            <field name="perm_write" eval="True"/>
+            <field name="perm_create" eval="True"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+
         <!-- Global: CTO/Admin already inherits every team via implied_ids (through -->
         <!-- each team's BU Manager -> Team Lead chain), but this explicit global    -->
         <!-- rule is kept as a safety net so a new team added to teams.xml is never  -->

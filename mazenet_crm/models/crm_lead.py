@@ -177,6 +177,23 @@ class CrmLead(models.Model):
         return bool(dmt_team) and self._mz_user_own_team(user) == dmt_team
 
     @api.model
+    def _mz_user_can_use_assign_radio(self, user=None):
+        """Whether `user` (default: current user) may interact with the Assign Type
+        radio (x_assign_type) at all: DMT team membership (any tier - same waiver
+        as _mz_user_is_dmt), or one of the two global oversight roles, MD or
+        CTO/Admin. Every other team's Agent/ATL/TL/Manager is Self-only now -
+        'Team'/'Internal' delegation used to be a per-team ATL/TL/Manager
+        privilege (see _compute_x_assignable_user_ids's docstring history); it's
+        now restricted to DMT plus the two global roles, and the radio itself is
+        readonly in the view for everyone else so they can't even attempt it."""
+        user = user or self.env.user
+        return (
+            self._mz_user_is_dmt(user)
+            or user.has_group('mazenet_access_rights.group_mzr_cto_admin')
+            or user.has_group('mazenet_access_rights.group_mzr_md')
+        )
+
+    @api.model
     def _mz_default_team_id(self):
         """Default a new lead's Sales Team to the CREATING user's own team
         (_mz_user_own_team) - without this, a new lead's team_id falls back to
@@ -197,7 +214,20 @@ class CrmLead(models.Model):
         "crm.team",
         default=_mz_default_team_id,
         domain=_get_team_id_domain,)
-        
+
+    x_related_lead_id = fields.Many2one(
+        'crm.lead', string="Related Lead", readonly=True, copy=False,
+        help="The lead this one was spun off from via 'Create New Lead' - same "
+             "customer, a different requirement routed to (usually) a different "
+             "Sales Team. Set once at creation by the wizard, never editable "
+             "afterwards."
+    )
+    x_spinoff_lead_ids = fields.One2many(
+        'crm.lead', 'x_related_lead_id', string="Spin-off Leads",
+        help="Leads created FROM this one via 'Create New Lead' - same customer, "
+             "a different requirement routed to another team/salesperson."
+    )
+
     @api.model
     def _default_x_assign_type(self):
         """Agents can't use 'team' or 'internal' (see x_can_assign_beyond_self), so
@@ -222,12 +252,21 @@ class CrmLead(models.Model):
              "(mazenet_access_rights) - an Agent has no one to delegate to, so both are "
              "restricted to Self for them."
     )
+    x_can_use_assign_radio = fields.Boolean(
+        compute='_compute_x_assignable_user_ids',
+        string="Can Use Assign Radio",
+        help="Whether the CURRENT user may interact with the Assign Type radio at "
+             "all - DMT team membership, MD, or CTO/Admin (_mz_user_can_use_assign_radio). "
+             "Everyone else gets it readonly, forced to 'Self'. Not stored - reflects "
+             "whoever has the form open."
+    )
     x_can_assign_beyond_self = fields.Boolean(
         compute='_compute_x_assignable_user_ids',
         string="Can Assign Beyond Self",
         help="Whether the CURRENT user (the one viewing/editing this lead right now) "
-             "holds at least ATL tier in mazenet_access_rights, and so may use the "
-             "'Team' or 'Internal' assign types (Agents are restricted to 'Self'). Not "
+             "may use the 'Team' or 'Internal' assign types: DMT team membership, or "
+             "ATL/TL/Manager tier AND x_can_use_assign_radio (so only CTO/Admin, in "
+             "practice, among non-DMT tiered users - see x_can_use_assign_radio). Not "
              "stored and not a property of the lead itself - it reflects whoever has "
              "the form open."
     )
@@ -322,10 +361,12 @@ class CrmLead(models.Model):
         team roster."""
         user = self.env.user
         user_is_dmt = self._mz_user_is_dmt(user)
+        can_use_radio = self._mz_user_can_use_assign_radio(user)
         tier, _chain = self._mz_user_tier_chain(user)
-        can_beyond_self = user_is_dmt or tier in ('atl', 'tl', 'manager')
+        can_beyond_self = can_use_radio and (user_is_dmt or tier in ('atl', 'tl', 'manager'))
         for lead in self:
             lead.x_is_dmt_user = user_is_dmt
+            lead.x_can_use_assign_radio = can_use_radio
             lead.x_can_assign_beyond_self = can_beyond_self
             if not can_beyond_self:
                 lead.x_assignable_user_ids = False
@@ -358,8 +399,9 @@ class CrmLead(models.Model):
             self.user_id = user
             return {'warning': {
                 'title': _("Assignment restricted"),
-                'message': _("Only Team Leads, ATLs and BU Managers can assign to a team "
-                            "or assign internally. Agents can only assign to themselves."),
+                'message': _("Only DMT team members and CTO/Admin can assign to a team "
+                            "or assign internally. Everyone else can only assign to "
+                            "themselves."),
             }}
         if self.user_id not in self.x_assignable_user_ids:
             self.user_id = False
@@ -519,18 +561,18 @@ class CrmLead(models.Model):
     x_project_start_attachment_ids = fields.Many2many(
         'ir.attachment', 'mazenet_crm_lead_project_start_attachment_rel',
         'lead_id', 'attachment_id', string="Project Start Attachment(s)")
-    x_project_completed_date = fields.Date(string="Project Completed Date")
+    x_project_completed_date = fields.Date(string="Project End Date")
     x_project_completed_attachment_ids = fields.Many2many(
         'ir.attachment', 'mazenet_crm_lead_project_completed_attachment_rel',
         'lead_id', 'attachment_id', string="Project Completed Attachment(s)")
     x_workorder_completion_date = fields.Date(
-        string="Workorder Completion Date",
+        string="Project Actual End Date",
         help="MANUAL entry only - do not build an auto-fetch or any integration with the "
              "Work Order app."
     )
     x_deviation_days = fields.Integer(
         string="Deviation Days", compute="_compute_x_deviation_days", store=True,
-        help="Auto-calculated from Project Completed Date vs Workorder Completion Date."
+        help="Auto-calculated from Project End Date vs Project Actual End Date."
     )
     x_demo_completed = fields.Boolean(string="Demo / POC Completed")
     x_system_study_attachment_ids = fields.Many2many(
@@ -630,25 +672,29 @@ class CrmLead(models.Model):
 
     def _mz_check_assign_type_allowed(self, vals):
         """Server-side backstop for x_assign_type in ('team', 'internal'): the view
-        only offers those to ATL/TL/Manager tier (x_can_assign_beyond_self), and the
-        onchange bounces an Agent back to 'self' and clears user_id if it falls outside
-        x_assignable_user_ids - but all of that is UI-only, so a direct RPC/API write
-        could still set either. Raises the same way the UI would have refused, instead
-        of silently accepting it. Mirrors _compute_x_assignable_user_ids' DMT waiver
-        (a DMT team member skips the tier gate entirely and gets the full team
-        roster as their pool for both 'team' and 'internal') and its 'internal'
-        pool for everyone else (_mz_team_subordinate_group_users) - keep all three
-        in sync, or a UI selection could get rejected on save."""
+        only offers those to whoever passes x_can_use_assign_radio (DMT team
+        membership, MD, or CTO/Admin) AND holds ATL/TL/Manager tier
+        (x_can_assign_beyond_self), and the onchange bounces anyone else back to
+        'self' and clears user_id if it falls outside x_assignable_user_ids - but
+        all of that is UI-only, so a direct RPC/API write could still set either.
+        Raises the same way the UI would have refused, instead of silently
+        accepting it. Mirrors _compute_x_assignable_user_ids' DMT waiver (a DMT
+        team member skips the tier gate entirely and gets the full team roster as
+        their pool for both 'team' and 'internal') and its 'internal' pool for
+        everyone else (_mz_team_subordinate_group_users) - keep all three in
+        sync, or a UI selection could get rejected on save."""
         assign_type = vals.get('x_assign_type')
         if assign_type not in ('team', 'internal') or self.env.su:
             return
         user = self.env.user
         user_is_dmt = self._mz_user_is_dmt(user)
+        can_use_radio = self._mz_user_can_use_assign_radio(user)
         tier, _chain = self._mz_user_tier_chain(user)
-        if not user_is_dmt and tier not in ('atl', 'tl', 'manager'):
+        if not can_use_radio or not (user_is_dmt or tier in ('atl', 'tl', 'manager')):
             raise AccessError(_(
-                "Only Team Leads, ATLs and BU Managers can assign to a team or assign "
-                "internally. Agents can only assign to themselves."))
+                "Only DMT team members and CTO/Admin can assign to a team or assign "
+                "internally. Everyone else - including MD - can only assign to "
+                "themselves."))
 
         if not vals.get('user_id'):
             return
@@ -789,7 +835,14 @@ class CrmLead(models.Model):
     def create(self, vals_list):
         u = self.env.user
         if not self.env.su and u.has_group("mazenet_access_rights.group_mzr_md"):
-            raise AccessError(_("MD role is read-only across all CRM models and cannot create leads."))
+            # MD is otherwise read-only (rule_crm_lead_mzr_md/rule_crm_lead_mzr_md_own)
+            # but may create leads for themselves - vals must resolve user_id to MD's
+            # own id (x_assign_type is Self-only for MD anyway, per
+            # _mz_user_can_use_assign_radio, so this is what the form would produce).
+            for vals in vals_list:
+                if (vals.get('user_id') or u.id) != u.id:
+                    raise AccessError(_(
+                        "MD role can only create leads assigned to themselves."))
         for vals in vals_list:
             self._mz_check_assign_type_allowed(vals)
         return super(CrmLead, self).create(vals_list)
@@ -806,9 +859,17 @@ class CrmLead(models.Model):
                 raise AccessError(_("Leads can only be archived by CTO / Admin via the Archive Lead Wizard."))
 
         if not self.env.su and not is_cto_admin:
-            # MD Read-Only Restriction
+            # MD Restriction: otherwise read-only, except for leads MD created for
+            # themselves (create() enforces the same "own only" rule) - every other
+            # lead stays read-only for MD. _mz_can_edit_owned carries the matching
+            # waiver so the team-membership check below doesn't also block this
+            # (MD isn't a member of any crm.team by design).
             if u.has_group("mazenet_access_rights.group_mzr_md"):
-                raise AccessError(_("MD role is read-only across all CRM models and cannot edit leads."))
+                for lead in self:
+                    if lead.user_id != u:
+                        raise AccessError(_(
+                            "MD role can only edit leads they created themselves; "
+                            "every other lead is read-only."))
 
             content_touched = set(vals.keys()) - SYSTEM_FIELDS
 
@@ -1036,10 +1097,19 @@ class CrmLead(models.Model):
         which team it's currently filed under, so they never hit the "transferred
         to another team" read-only message. RED-lock read-only (_mz_can_edit_by_team,
         used directly in write() while locked) is untouched by this - DMT still
-        respects RED lock like everyone else."""
+        respects RED lock like everyone else.
+
+        MD gets a narrower waiver, scoped to leads they personally own: MD isn't
+        a member of any crm.team at all (by design - global read-only role), so
+        without this they'd fail the team-membership check even on a lead they
+        just created for themselves (write()'s own MD gate already restricts them
+        to owned leads only, so this doesn't widen anything - it just lets that
+        case reach here instead of dead-ending on team membership)."""
         self.ensure_one()
         dmt_team = self.env.ref('mazenet_crm.team_dmt', raise_if_not_found=False)
         if dmt_team and self._mz_user_own_team(user) == dmt_team:
+            return True
+        if user == self.user_id and user.has_group('mazenet_access_rights.group_mzr_md'):
             return True
         if not self.team_id or user not in self.team_id.member_ids:
             return False
@@ -1066,6 +1136,15 @@ class CrmLead(models.Model):
                     subject=_("RED Lock Released"),
                     body=_("Lead '%s' has been released by %s and is editable again.") % (lead.name, self.env.user.name),
                 )
+
+    def action_view_spinoff_leads(self):
+        """Smart-button target: leads created FROM this one via the 'Create New
+        Lead' wizard (x_related_lead_id back-reference)."""
+        self.ensure_one()
+        action = self.env['ir.actions.act_window']._for_xml_id('crm.crm_lead_all_leads')
+        action['domain'] = [('x_related_lead_id', '=', self.id)]
+        action['context'] = {}
+        return action
 
         return True
 

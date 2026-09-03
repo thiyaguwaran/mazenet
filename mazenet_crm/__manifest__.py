@@ -10,6 +10,7 @@ Mazenet CRM - Pipeline Customizations
 - 9 crm.team definitions & 8 pipeline stage sets
 - RED-Lock overdue lead flag with kanban visual styling
 - CTO mandatory-reason lead archive wizard
+- "Create New Lead" spin-off wizard (same customer, new requirement, new team)
 - Activity-driven Pipeline sort order, with same-day tie-breaking by time of day
 - Meeting status tracking on calendar events
 - 52 Placeholder Demo User Accounts
@@ -25,14 +26,15 @@ Mazenet CRM - Pipeline Customizations
         "data/utm_sources.xml",
         "security/ir.model.access.csv",
         "security/record_rules.xml",
+        "wizards/archive_wizard_views.xml",
+        "wizards/lead_spinoff_wizard_views.xml",
+        "wizards/mail_activity_schedule_views.xml",
+        "wizards/mass_assign_wizard_views.xml",
         "views/calendar_event_views.xml",
         "views/crm_lead_views.xml",
         "views/crm_team_views.xml",
         "views/res_company_views.xml",
-        "views/res_users_views.xml",
-        "wizards/archive_wizard_views.xml",
-        "wizards/mail_activity_schedule_views.xml",
-        "wizards/mass_assign_wizard_views.xml"
+        "views/res_users_views.xml"
     ],
     'assets': {
         'web.assets_backend': [

@@ -13,6 +13,22 @@
                     <button name="action_release_lock" string="Release RED Lock" type="object"
                             class="btn-danger" invisible="not x_is_locked"
                             confirm="Release the RED lock on this lead? It will become editable again."/>
+                    <!-- Spin-off: same customer, a new/different requirement, routed to
+                         another team - opens mz.lead.spinoff.wizard pre-filled with this
+                         lead's customer/contact info. Only makes sense on a saved lead. -->
+                    <button name="%(action_mz_lead_spinoff_wizard)d" string="Create New Lead"
+                            type="action" class="btn-secondary" invisible="not id"/>
+                </xpath>
+
+                <xpath expr="//div[@name='button_box']" position="inside">
+                    <button name="action_view_spinoff_leads" type="object"
+                            class="oe_stat_button" icon="fa-random"
+                            invisible="not x_spinoff_lead_ids">
+                        <field name="x_spinoff_lead_ids" widget="statinfo" string="Spin-off Leads"/>
+                    </button>
+                </xpath>
+                <xpath expr="//field[@name='user_id'][1]" position="before">
+                    <field name="x_related_lead_id" invisible="not x_related_lead_id"/>
                 </xpath>
 
                 <xpath expr="//sheet" position="attributes">
@@ -23,8 +39,18 @@
                     <attribute name="domain">[('id', 'in', x_assignable_user_ids)]</attribute>
                 </xpath>
                 <xpath expr="//field[@name='user_id']" position="before">
-                    <field name="x_assign_type" widget="radio" options="{'horizontal': true}"/>
-                    <field name="team_id" readonly="x_assign_type == 'self'" required="x_assign_type != 'self'"/>
+                    <!-- Only DMT team members, MD and CTO/Admin may touch this radio at
+                         all (_mz_user_can_use_assign_radio) - everyone else is forced to
+                         Self and can't even click through to Team/Internal. -->
+                    <field name="x_assign_type" widget="radio" options="{'horizontal': true}"
+                           readonly="not x_can_use_assign_radio"/>
+                    <!-- Mirrors user_id's own DMT exemption below: without it, the sheet's
+                         readonly="x_content_readonly_for_me" leaks through and team_id stays
+                         locked even after picking Team/Internal in the radio. -->
+                    <field name="team_id"
+                           readonly="(x_content_readonly_for_me and not x_is_dmt_user) or x_assign_type == 'self'"
+                           required="x_assign_type != 'self'"/>
+                    <field name="x_can_use_assign_radio" invisible="1"/>
                     <field name="x_can_assign_beyond_self" invisible="1"/>
                     <field name="x_assignable_user_ids" invisible="1"/>
                     <field name="x_is_dmt_user" invisible="1"/>
@@ -345,6 +371,35 @@
                          same marker-span pattern, see kanban_red.css. -->
                     <span t-if="record.x_team_transfer_readonly.raw_value" class="mz-team-transferred-card d-none"/>
                 </xpath>
+            </field>
+        </record>
+
+        <!-- Pipeline (Opportunities) Search View: stock crm.view_crm_case_opportunities_filter
+             has "Lost" (which already implies active=False) but no standalone "Archived"
+             filter like the Leads search view does - add it so archived opportunities
+             (e.g. via the CTO mandatory-reason archive wizard) can be found directly. -->
+        <record id="view_crm_case_opportunities_filter_inherit_mz" model="ir.ui.view">
+            <field name="name">crm.lead.search.opportunity.inherit.mz</field>
+            <field name="model">crm.lead</field>
+            <field name="inherit_id" ref="crm.view_crm_case_opportunities_filter"/>
+            <field name="arch" type="xml">
+                <filter name="filter_won_status_lost" position="after">
+                    <filter string="Archived" name="inactive" domain="[('active', '=', False)]"/>
+                </filter>
+                <!-- Sales Team removed from Group By - team selection now happens via the
+                     search panel sidebar below instead of grouping. -->
+                <filter name="saleschannel" position="replace"/>
+                <!-- Sales Team search panel: native single-select sidebar (category) with a
+                     built-in "All" entry, so clicking a team shows only that team's records
+                     and "All" resets - no custom widget/JS needed. CTO/Admin and MD are the
+                     only roles with cross-team visibility to begin with, so this is the only
+                     place a "pick any team" control makes sense - everyone else only ever
+                     sees their own team's leads regardless. -->
+                <search position="inside">
+                    <searchpanel groups="mazenet_access_rights.group_mzr_cto_admin,mazenet_access_rights.group_mzr_md">
+                        <field name="team_id" string="Sales Team" icon="fa-users" enable_counters="1"/>
+                    </searchpanel>
+                </search>
             </field>
         </record>
 
