@@ -17,6 +17,7 @@
                     </group>
                     <group string="Route To">
                         <field name="team_id"/>
+                        <field name="assignable_user_ids" invisible="1"/>
                         <field name="user_id"/>
                     </group>
                     <group>

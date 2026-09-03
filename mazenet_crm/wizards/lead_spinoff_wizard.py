@@ -20,10 +20,23 @@ class MzLeadSpinoffWizard(models.TransientModel):
     email_from = fields.Char(string="Email")
     phone = fields.Char(string="Phone")
     team_id = fields.Many2one("crm.team", string="Sales Team", required=True)
+    assignable_user_ids = fields.Many2many(
+        "res.users", compute="_compute_assignable_user_ids",
+        help="team_id.member_ids - used as user_id's domain in the view. A plain "
+             "dotted domain ('team_id.member_ids.ids') can't be evaluated "
+             "client-side since the wizard's team_id record data doesn't carry "
+             "its own member_ids along with it, so this compute exists purely to "
+             "give the view a real field to filter on."
+    )
     user_id = fields.Many2one(
         "res.users", string="Salesperson",
-        domain="[('id', 'in', team_id.member_ids.ids)]",
+        domain="[('id', 'in', assignable_user_ids)]",
     )
+
+    @api.depends('team_id')
+    def _compute_assignable_user_ids(self):
+        for wizard in self:
+            wizard.assignable_user_ids = wizard.team_id.member_ids
     description = fields.Text(
         string="New Requirement",
         help="What the customer is asking for THIS time - left blank rather than "
