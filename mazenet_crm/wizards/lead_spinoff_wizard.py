@@ -19,7 +19,6 @@ class MzLeadSpinoffWizard(models.TransientModel):
     contact_name = fields.Char(string="Contact Name")
     email_from = fields.Char(string="Email")
     phone = fields.Char(string="Phone")
-    mobile = fields.Char(string="Mobile")
     team_id = fields.Many2one("crm.team", string="Sales Team", required=True)
     user_id = fields.Many2one(
         "res.users", string="Salesperson",
@@ -45,7 +44,6 @@ class MzLeadSpinoffWizard(models.TransientModel):
                 'contact_name': lead.contact_name,
                 'email_from': lead.email_from,
                 'phone': lead.phone,
-                'mobile': lead.mobile,
             })
         return res
 
@@ -68,7 +66,6 @@ class MzLeadSpinoffWizard(models.TransientModel):
             'contact_name': self.contact_name,
             'email_from': self.email_from,
             'phone': self.phone,
-            'mobile': self.mobile,
             'team_id': self.team_id.id,
             'user_id': self.user_id.id,
             'stage_id': first_stage.id,

@@ -14,7 +14,6 @@
                         <field name="contact_name"/>
                         <field name="email_from"/>
                         <field name="phone"/>
-                        <field name="mobile"/>
                     </group>
                     <group string="Route To">
                         <field name="team_id"/>
