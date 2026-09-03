@@ -494,5 +494,31 @@
             <field name="perm_unlink" eval="False"/>
         </record>
 
+        <!-- Disable core CRM's "Personal Leads" rule (crm module -
+             crm_security.xml): domain [('user_id','=',user.id) OR
+             ('user_id','=',False)] has NO team_id condition at all. Every
+             mazenet role group implies sales_team.group_sale_salesman (for
+             base CRM menu/action access), which brings this rule along -
+             it gets OR'd against our team-scoped rules above, so an agent
+             ends up seeing (a) any UNASSIGNED lead in ANY other team, and
+             (b) any lead in another team that happens to carry their own
+             user_id (e.g. after a cross-team reassignment). Root-caused via
+             odoo shell 2026-09-03: a MIS agent could see an unassigned DMT
+             lead purely through this rule, with My Pipeline off. Our own
+             per-team rules above already fully cover read/write visibility
+             for every tier, so this core rule is redundant as well as
+             leaky - confirmed only Odoo's own sample "demo" user relies on
+             it independent of the mazenet role hierarchy. -->
+        <!-- A plain <record> override is silently ignored here: this xmlid was
+             originally loaded with noupdate="1" by the crm module itself, and
+             Odoo's loader skips updating any existing record whose STORED
+             noupdate flag is True during a module upgrade, regardless of our
+             own file's noupdate wrapping (odoo/orm/models.py _load_records:
+             `if not (update and d_noupdate): to_update.append(data)`).
+             A <function> call bypasses that entirely by invoking write()
+             directly at data-load time. -->
+        <function model="ir.rule" name="write"
+                   eval="[[ref('crm.crm_rule_personal_lead')], {'active': False}]"/>
+
     </data>
 </odoo>
