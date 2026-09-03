@@ -4,3 +4,4 @@ access_crm_lead_mzr_user,crm.lead.mzr.user,crm.model_crm_lead,base.group_user,1,
 access_crm_team_mzr_user,crm.team.mzr.user,sales_team.model_crm_team,base.group_user,1,0,0,0
 access_crm_stage_mzr_user,crm.stage.mzr.user,crm.model_crm_stage,base.group_user,1,0,0,0
 access_crm_lead_scoring_freq_mzr_user,crm.lead.scoring.frequency.mzr.user,crm.model_crm_lead_scoring_frequency,base.group_user,1,0,0,0
+access_mz_mass_assign_wizard_user,mz.mass.assign.wizard.user,model_mz_mass_assign_wizard,base.group_user,1,1,1,1

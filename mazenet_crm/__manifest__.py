@@ -31,7 +31,8 @@ Mazenet CRM - Pipeline Customizations
         "views/res_company_views.xml",
         "views/res_users_views.xml",
         "wizards/archive_wizard_views.xml",
-        "wizards/mail_activity_schedule_views.xml"
+        "wizards/mail_activity_schedule_views.xml",
+        "wizards/mass_assign_wizard_views.xml"
     ],
     'assets': {
         'web.assets_backend': [
