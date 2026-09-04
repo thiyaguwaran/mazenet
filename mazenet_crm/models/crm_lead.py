@@ -203,8 +203,48 @@ class CrmLead(models.Model):
         (see _mz_can_edit_owned), a wrong default here means hitting an
         AccessError on the very first save - this is what actually prevents
         that, for both the full form and the Kanban quick-create
-        (crm.quick_create_opportunity_form, inherited to show team_id)."""
-        return self._mz_user_own_team().id
+        (crm.quick_create_opportunity_form, inherited to show team_id).
+
+        CTO/Admin and MD belong to no crm.team of their own, so _mz_user_own_team
+        is empty for them and this used to default to False - their own "My
+        Pipeline" leads then had no team-scoped stage set at all, landing on
+        whatever generic fallback stage stock CRM picked. Default those two
+        roles to the DMT team instead (mirrors _read_group_stage_ids below,
+        which shows DMT's stage columns for them for the same reason)."""
+        own_team = self._mz_user_own_team()
+        if own_team:
+            return own_team.id
+        user = self.env.user
+        if (
+            user.has_group('mazenet_access_rights.group_mzr_cto_admin')
+            or user.has_group('mazenet_access_rights.group_mzr_md')
+        ):
+            dmt_team = self.env.ref('mazenet_crm.team_dmt', raise_if_not_found=False)
+            if dmt_team:
+                return dmt_team.id
+        return False
+
+    @api.model
+    def _read_group_stage_ids(self, stages, domain):
+        """CTO/Admin and MD have no crm.team of their own (_mz_user_own_team is
+        empty), so the stock implementation's own-team stage columns
+        (self.env.context['default_team_id']) never kick in for them and their
+        Pipeline kanban - most visibly "My Pipeline", since My Pipeline's action
+        sets no default_team_id at all - shows no stage columns until they
+        happen to own a lead in one. Inject DMT's team_id into context so they
+        see DMT's stage set, matching where _mz_default_team_id above now
+        routes their own new leads. Skipped when a team-specific menu already
+        set default_team_id, so per-team Pipeline menus are unaffected."""
+        if not self.env.context.get('default_team_id'):
+            user = self.env.user
+            if (
+                user.has_group('mazenet_access_rights.group_mzr_cto_admin')
+                or user.has_group('mazenet_access_rights.group_mzr_md')
+            ):
+                dmt_team = self.env.ref('mazenet_crm.team_dmt', raise_if_not_found=False)
+                if dmt_team:
+                    self = self.with_context(default_team_id=dmt_team.id)
+        return super()._read_group_stage_ids(stages, domain)
 
     def _get_team_id_domain(self):
         return [("id", "not in", self.env.user.crm_team_ids.ids)]
