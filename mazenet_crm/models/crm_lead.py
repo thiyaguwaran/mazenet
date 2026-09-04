@@ -230,6 +230,39 @@ class CrmLead(models.Model):
                 return dmt_team.id
         return False
 
+    def _mz_resolve_stage_team_id_from_domain(self, domain):
+        """Sales Team AND Salesperson search panel selections should both drive
+        the Pipeline kanban's stage columns the same way (2026-09-04: "the same
+        [as Sales Team] should follow ... for salesperson filter also"). Reads
+        the selected team_id/user_id straight off the domain's own leaves
+        (Domain.iter_conditions(), so it works whether `domain` arrives as a
+        plain list or an already-parsed Domain object) rather than deriving it
+        from matching lead records (_read_group(domain, ['team_id']), the
+        original approach) - that broke for a team/salesperson with ZERO leads
+        currently matching, since a group-by naturally returns no groups for
+        an empty result set even though the selection itself is unambiguous.
+        team_id wins if both are somehow present; user_id resolves via
+        res.users.x_mz_team_id (the same field the Salesperson section's own
+        groupby uses). None if neither is selected (the "All" view)."""
+        from odoo.orm.domains import Domain
+        team_id = None
+        user_id = None
+        for cond in Domain(domain).iter_conditions():
+            value = cond.value
+            if isinstance(value, (list, tuple, set)):
+                value = next(iter(value), None)
+            if not isinstance(value, int):
+                continue
+            if cond.field_expr == 'team_id' and cond.operator in ('=', 'in'):
+                team_id = value
+            elif cond.field_expr == 'user_id' and cond.operator in ('=', 'in'):
+                user_id = value
+        if team_id:
+            return team_id
+        if user_id:
+            return self.env['res.users'].browse(user_id).x_mz_team_id.id
+        return None
+
     @api.model
     def _read_group_stage_ids(self, stages, domain):
         """CTO/Admin and MD have no crm.team of their own (_mz_user_own_team is
@@ -237,19 +270,29 @@ class CrmLead(models.Model):
         (self.env.context['default_team_id']) never kick in for them and their
         Pipeline kanban - most visibly "My Pipeline", since My Pipeline's action
         sets no default_team_id at all - shows no stage columns until they
-        happen to own a lead in one. Inject DMT's team_id into context so they
-        see DMT's stage set, matching where _mz_default_team_id above now
-        routes their own new leads. Skipped when a team-specific menu already
-        set default_team_id, so per-team Pipeline menus are unaffected."""
+        happen to own a lead in one. Inject a team_id into context so they see
+        a proper stage set, matching where _mz_default_team_id above now routes
+        their own new leads. Skipped when a team-specific menu already set
+        default_team_id, so per-team Pipeline menus are unaffected.
+
+        Which team to inject is resolved from `domain` itself
+        (_mz_resolve_stage_team_id_from_domain) - fixed 2026-09-04: clicking a
+        specific team (or now, salesperson) in the sidebar kept showing DMT's
+        stage columns regardless, because this used to force default_team_id=
+        DMT unconditionally. DMT is only the fallback when nothing is selected
+        (the "All" view)."""
         if not self.env.context.get('default_team_id'):
             user = self.env.user
             if (
                 user.has_group('mazenet_access_rights.group_mzr_cto_admin')
                 or user.has_group('mazenet_access_rights.group_mzr_md')
             ):
-                dmt_team = self.env.ref('mazenet_crm.team_dmt', raise_if_not_found=False)
-                if dmt_team:
-                    self = self.with_context(default_team_id=dmt_team.id)
+                target_team_id = self.sudo()._mz_resolve_stage_team_id_from_domain(domain)
+                if not target_team_id:
+                    dmt_team = self.env.ref('mazenet_crm.team_dmt', raise_if_not_found=False)
+                    target_team_id = dmt_team.id if dmt_team else False
+                if target_team_id:
+                    self = self.with_context(default_team_id=target_team_id)
         return super()._read_group_stage_ids(stages, domain)
 
     def _get_team_id_domain(self):
@@ -1086,10 +1129,46 @@ class CrmLead(models.Model):
         Must stay decorated @api.model, matching the original exactly - without
         it the RPC dispatcher's call_kw() no longer binds field_name at all
         (TypeError: missing 1 required positional argument: 'field_name'),
-        also hit locally 2026-09-04."""
+        also hit locally 2026-09-04.
+
+        Also scopes the Salesperson section (field_name == 'user_id') to the
+        CURRENT user's own team for everyone except CTO/Admin/MD - 2026-09-04:
+        Salesperson was opened up to every login (previously CTO/Admin/MD
+        only, same as Sales Team), so a DMT member must only ever see DMT
+        members in that list, a Tech member only Tech members, etc., never
+        the whole company. CTO/Admin/MD keep full cross-team visibility
+        (already scoped by whichever team they pick via Sales Team's own
+        groupby, x_mz_team_id on res.users)."""
         if kwargs.get('group_domain') is None:
             kwargs['group_domain'] = []
+        if field_name == 'user_id':
+            user = self.env.user
+            if not (
+                user.has_group('mazenet_access_rights.group_mzr_cto_admin')
+                or user.has_group('mazenet_access_rights.group_mzr_md')
+            ):
+                own_team = self._mz_user_own_team(user)
+                team_domain = [('id', 'in', own_team.member_ids.ids)] if own_team else [('id', '=', 0)]
+                kwargs['comodel_domain'] = (kwargs.get('comodel_domain') or []) + team_domain
         return super().search_panel_select_multi_range(field_name, **kwargs)
+
+    @api.model
+    def search_panel_select_range(self, field_name, **kwargs):
+        """Hides the Corporate team from the Sales Team search panel section
+        (category type - field_name == 'team_id') without touching the
+        underlying crm.team record: not in use yet, needed again in a future
+        phase. category sections don't accept a view-level domain= attribute
+        (the JS parser only reads attrs.domain for select="multi" filter
+        sections, confirmed in search_arch_parser.js's visitSearchPanel - a
+        category section always calls search_panel_select_range, whose JS
+        caller in search_model.js only ever sends category_domain, never
+        comodel_domain), so this is the only place that exclusion can
+        actually take effect."""
+        if field_name == 'team_id':
+            corporate = self.env.ref('mazenet_crm.team_corporate', raise_if_not_found=False)
+            if corporate:
+                kwargs['comodel_domain'] = (kwargs.get('comodel_domain') or []) + [('id', '!=', corporate.id)]
+        return super().search_panel_select_range(field_name, **kwargs)
 
     # (Agent-tier, ATL-tier, Team Lead-tier, BU Manager-tier) group chains from
     # mazenet_access_rights, independent of crm.team. teams.xml consolidates Hunter/
@@ -1275,6 +1354,20 @@ class CrmLead(models.Model):
                     subject=_("RED Lock Released"),
                     body=_("Lead '%s' has been released by %s and is editable again.") % (lead.name, self.env.user.name),
                 )
+
+    def action_set_lost(self, **additional_values):
+        """Stock CRM's 'Mark Lost' flow (crm.lead.lost wizard -> here -> action_archive
+        -> write({'active': False})) is a normal, everyday sales action open to
+        whoever owns the lead - NOT the same thing as the Direct Lead Archiving
+        Restriction in write() is guarding against (a raw active=False bypassing
+        the CTO-only Archive Lead Wizard). Without this, every non-CTO/Admin user
+        hit an AccessError just clicking Lost, since action_archive()'s write()
+        never stamps mz_archive_wizard - only mazenet_crm's own wizard does.
+        Stamping it here waives that gate for this one legitimate path, the same
+        way the Archive Lead Wizard does for itself."""
+        return super(
+            CrmLead, self.with_context(mz_archive_wizard=True)
+        ).action_set_lost(**additional_values)
 
     def action_view_spinoff_leads(self):
         """Smart-button target: leads created FROM this one via the 'Create New
