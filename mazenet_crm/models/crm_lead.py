@@ -62,18 +62,24 @@ MZR_MANAGER_GROUPS = [
 #   to gate against - these stay reference-only, same as every stage's Mandatory column
 #   is explicitly scoped to be until M3 actually implements a trigger for them.
 # Deliberate deviation from the sheet: business wants phone/email as an either-or
-# pair on every BU's first stage (fill one, the other stops being required) - NOT
-# what the sheet's own "Any one source mandatory" annotation means (that's about the
-# Source field's own option list, already satisfied since source_id is a single
-# field), and NOT the sheet's "Progressive" wording for Tally's email either (which
-# would have made it a plain separate Stage-2 requirement instead).
+# pair (fill one, the other stops being required) - NOT what the sheet's own "Any
+# one source mandatory" annotation means (that's about the Source field's own
+# option list, already satisfied since source_id is a single field), and NOT the
+# sheet's "Progressive" wording for Tally's email either (which would have made
+# it a plain separate Stage-2 requirement instead).
+#
+# Unlike every other MZ_STAGE_GATE_RULES entry, phone_or_email is NOT listed
+# against any one BU's first stage below - it's checked on EVERY forward stage
+# move instead (_mz_stage_gate_check's own universal check, ahead of the
+# per-stage loop), since either field can be edited back to blank after the
+# first stage passes and a once-only first-stage check would stop catching that.
 MZ_EITHER_OR_MANDATORY_FIELDS = {
     'phone_or_email': ('phone', 'email_from'),
 }
 
 MZ_STAGE_GATE_RULES = {
     'dmt': [
-        ('stage_dmt_new', ['name', 'phone_or_email', 'x_organic_inorganic', 'source_id']),
+        ('stage_dmt_new', ['name', 'x_organic_inorganic', 'source_id']),
         ('stage_dmt_contacted', [
             'x_company_or_individual', 'x_contact_purpose', 'x_product_service',
             'x_employee_count', 'x_company_turnover',
@@ -86,7 +92,7 @@ MZ_STAGE_GATE_RULES = {
         # deviation from the sheet's "Progressive" wording for email - see
         # MZ_EITHER_OR_MANDATORY_FIELDS). email_from is NOT a separate entry at
         # Stage 2 anymore - phone_or_email above already covers it.
-        ('stage_tally_new', ['name', 'phone_or_email', 'source_id']),
+        ('stage_tally_new', ['name', 'source_id']),
         ('stage_tally_contacted', ['x_tally_category']),
         ('stage_tally_demo', ['x_requirements_attachment_ids', 'x_product_service', 'x_feasibility', 'x_timeline']),
         ('stage_tally_proposal', ['x_quote_date', 'x_quote_document_ids']),
@@ -95,7 +101,7 @@ MZ_STAGE_GATE_RULES = {
         ('stage_tally_lost', []),
     ],
     'tech': [
-        ('stage_tech_new', ['name', 'phone_or_email', 'source_id']),
+        ('stage_tech_new', ['name', 'source_id']),
         ('stage_tech_2', ['x_customer_status', 'x_customer_need']),
         ('stage_tech_3', [
             'x_requirements_attachment_ids', 'x_product_service', 'x_feasibility_identified', 'x_timeline',
@@ -109,7 +115,7 @@ MZ_STAGE_GATE_RULES = {
         ('stage_tech_won', []),
     ],
     'swdev': [
-        ('stage_swdev_new', ['name', 'phone_or_email', 'source_id']),
+        ('stage_swdev_new', ['name', 'source_id']),
         ('stage_swdev_2', [
             'x_branch_count', 'x_sw_employee_count', 'x_nature_of_business',
             'x_established_year', 'x_meeting_attendees',
@@ -120,7 +126,7 @@ MZ_STAGE_GATE_RULES = {
         ('stage_swdev_won', []),
     ],
     'mis': [
-        ('stage_mis_new', ['name', 'phone_or_email', 'source_id']),
+        ('stage_mis_new', ['name', 'source_id']),
         ('stage_mis_2', [
             'x_requirements_attachment_ids', 'x_product_service', 'x_target_audience',
             'x_mis_timelines_estimate', 'x_deliverables',
@@ -279,15 +285,32 @@ class CrmLead(models.Model):
         tier, _chain = self._mz_user_tier_chain(self.env.user)
         return 'team' if tier in ('atl', 'tl', 'manager') else 'self'
 
+    @api.model
+    def _selection_x_assign_type(self):
+        """MD and CTO/Admin never delegate to a subordinate group (they're not
+        part of any team's privilege hierarchy - _mz_team_subordinate_group_users
+        would just come back empty for them anyway), so 'Internal' is dropped
+        from their radio entirely rather than left as a dead option. Everyone
+        else still gets all three; who may actually USE anything beyond 'Self'
+        is separately gated by x_can_use_assign_radio/x_can_assign_beyond_self."""
+        options = [('self', 'Self'), ('team', 'Team'), ('internal', 'Internal')]
+        user = self.env.user
+        if (
+            user.has_group('mazenet_access_rights.group_mzr_md')
+            or user.has_group('mazenet_access_rights.group_mzr_cto_admin')
+        ):
+            options = [opt for opt in options if opt[0] != 'internal']
+        return options
+
     x_assign_type = fields.Selection(
-        [('self', 'Self'), ('team', 'Team'), ('internal', 'Internal')],
+        selection='_selection_x_assign_type',
         string="Assign Type", default=_default_x_assign_type,
         help="How user_id gets populated:\n"
              "- Self: always the current user. Available to everyone.\n"
              "- Team: hand-picked from the selected team's 'Create To' users.\n"
              "- Internal: hand-picked from whoever's directly in a group ranked below "
              "yours in the team's configured privilege/group hierarchy (DMT: any team "
-             "member, no restriction).\n"
+             "member, no restriction). Not offered to MD/CTO/Admin at all.\n"
              "'Team' and 'Internal' are only offered to Team Leads, ATLs and BU Managers "
              "(mazenet_access_rights) - an Agent has no one to delegate to, so both are "
              "restricted to Self for them."
@@ -323,6 +346,15 @@ class CrmLead(models.Model):
              "domain in the view; not stored, purely a UI helper. An onchange-returned "
              "domain isn't reliably honored by the web client for Many2one search, so "
              "the domain lives in the view via this computed field instead."
+    )
+    x_hide_salesperson = fields.Boolean(
+        compute='_compute_x_assignable_user_ids',
+        string="Hide Salesperson Field",
+        help="Whether the CURRENT user (viewing/editing this lead right now) is MD "
+             "or CTO/Admin - both roles get the Salesperson (user_id) field hidden "
+             "entirely, alongside the 'Internal' assign-type option "
+             "(_selection_x_assign_type) being dropped for them. Not stored - "
+             "reflects whoever has the form open."
     )
     x_is_dmt_user = fields.Boolean(
         compute='_compute_x_assignable_user_ids',
@@ -404,10 +436,15 @@ class CrmLead(models.Model):
         can_use_radio = self._mz_user_can_use_assign_radio(user)
         tier, _chain = self._mz_user_tier_chain(user)
         can_beyond_self = can_use_radio and (user_is_dmt or tier in ('atl', 'tl', 'manager'))
+        hide_salesperson = (
+            user.has_group('mazenet_access_rights.group_mzr_md')
+            or user.has_group('mazenet_access_rights.group_mzr_cto_admin')
+        )
         for lead in self:
             lead.x_is_dmt_user = user_is_dmt
             lead.x_can_use_assign_radio = can_use_radio
             lead.x_can_assign_beyond_self = can_beyond_self
+            lead.x_hide_salesperson = hide_salesperson
             if not can_beyond_self:
                 lead.x_assignable_user_ids = False
             elif user_is_dmt:
@@ -586,6 +623,36 @@ class CrmLead(models.Model):
              "anywhere in this view's own field spec, which left every Pipeline Fields "
              "group permanently invisible."
     )
+    x_current_stage_gate_fields = fields.Char(
+        compute='_compute_x_current_stage_gate_fields',
+        string="Current Stage Required Fields",
+        help="Comma-delimited (leading/trailing commas included, so 'in' checks in the "
+             "view can match a whole field name and not a substring of a longer one - "
+             "e.g. 'x_feasibility' vs 'x_feasibility_identified') list of the field "
+             "names MZ_STAGE_GATE_RULES requires to move OUT of the lead's CURRENT "
+             "stage - drives the red-asterisk 'required' indicator on those fields in "
+             "the Pipeline Fields page (view can't itself resolve MZ_STAGE_GATE_RULES "
+             "or match against team_id.x_bu_category via a dotted expression, so this "
+             "compute does it server-side). Purely a UI indicator matching what "
+             "_mz_stage_gate_check will actually enforce on the next forward stage "
+             "move - NOT a stored/model-level required=True, so it doesn't block "
+             "saving while just sitting on the current stage, only shows the marker. "
+             "Not stored - reflects the record's own state, recomputed on stage_id/"
+             "team_id change."
+    )
+
+    @api.depends('stage_id', 'team_id')
+    def _compute_x_current_stage_gate_fields(self):
+        for lead in self:
+            team = lead.team_id
+            resolved = lead._mz_stage_gate_rules_resolved(team.x_bu_category) if team else []
+            field_names = next(
+                (names for stage, names in resolved if stage.id == lead.stage_id.id), []
+            )
+            lead.x_current_stage_gate_fields = (
+                ',' + ','.join(field_names) + ',' if field_names else False
+            )
+
     x_product_service = fields.Char(string="Product / Service")
     x_feasibility = fields.Char(string="Feasibility")
     x_timeline = fields.Char(string="Timeline")
@@ -842,29 +909,39 @@ class CrmLead(models.Model):
         the fields in M2, enforce the Mandatory column on stage change in M3" from the
         pipeline sheets. Only a FORWARD move (to a later stage) is gated; moving
         backward never is. Jumping straight past several stages checks every stage in
-        between, not just the one immediately before `new_stage`."""
+        between, not just the one immediately before `new_stage`.
+
+        Phone/Email (MZ_EITHER_OR_MANDATORY_FIELDS's 'phone_or_email') is checked
+        separately here, on EVERY forward move regardless of BU or current stage -
+        unlike the rest of MZ_STAGE_GATE_RULES it isn't tied to one specific stage
+        being passed through, since either field can be blanked out again well
+        after the first stage that required it."""
         self.ensure_one()
-        team = self.team_id
-        if not team or not new_stage:
+        if not new_stage:
             return
-        resolved = self._mz_stage_gate_rules_resolved(team.x_bu_category)
-        if not resolved:
-            return
-        stage_ids = [s.id for s, _fields in resolved]
-        if new_stage.id not in stage_ids:
-            return
-        new_index = stage_ids.index(new_stage.id)
         current_stage = self.stage_id
-        current_index = stage_ids.index(current_stage.id) if current_stage.id in stage_ids else -1
-        if new_index <= current_index:
-            return
+        is_forward_move = bool(current_stage) and new_stage.sequence > current_stage.sequence
 
         problems = []
-        for stage, field_names in resolved[max(current_index, 0):new_index]:
-            missing = self._mz_missing_mandatory_fields(field_names, vals)
+        if is_forward_move:
+            missing = self._mz_missing_mandatory_fields(['phone_or_email'], vals)
             if missing:
-                labels = ', '.join(self._mz_gate_field_label(f) for f in missing)
-                problems.append(f"{stage.name}: {labels}")
+                problems.append(_("Every stage: %s") % self._mz_gate_field_label('phone_or_email'))
+
+        team = self.team_id
+        if team:
+            resolved = self._mz_stage_gate_rules_resolved(team.x_bu_category)
+            stage_ids = [s.id for s, _fields in resolved]
+            if new_stage.id in stage_ids:
+                new_index = stage_ids.index(new_stage.id)
+                current_index = stage_ids.index(current_stage.id) if current_stage.id in stage_ids else -1
+                if new_index > current_index:
+                    for stage, field_names in resolved[max(current_index, 0):new_index]:
+                        missing = self._mz_missing_mandatory_fields(field_names, vals)
+                        if missing:
+                            labels = ', '.join(self._mz_gate_field_label(f) for f in missing)
+                            problems.append(f"{stage.name}: {labels}")
+
         if problems:
             raise UserError(_(
                 "'%(lead)s' can't move to '%(target)s' yet - required fields are still "
@@ -991,6 +1068,28 @@ class CrmLead(models.Model):
         if not self.env.su:
             raise AccessError(_("Deletion of leads is disabled for all roles. Please use the Archive Lead Wizard to archive leads."))
         return super(CrmLead, self).unlink()
+
+    @api.model
+    def search_panel_select_multi_range(self, field_name, **kwargs):
+        """Core bug workaround: the web client's search panel sends group_domain=None
+        (not omitted) for a select="multi" filter section with no group filters
+        active yet. web.models.Base's own many2one branch does an unconditional
+        AND([extra_domain, kwargs.get('group_domain', [])]) with no None-guard
+        (unlike its many2many branch just above it, which checks 'if group_by and
+        group_domain' first) - so a None here blows up in odoo.orm.domains.Domain()
+        with TypeError: Domain() invalid argument type for domain: None. Only bites
+        a many2one field used with select="multi" + groupby, which is exactly the
+        Pipeline search panel's Salesperson section (views/crm_lead_views.xml -
+        user_id is many2one, grouped under Sales Team) - hit locally 2026-09-04.
+        Normalizing None to [] here, ahead of core, is the minimal fix.
+
+        Must stay decorated @api.model, matching the original exactly - without
+        it the RPC dispatcher's call_kw() no longer binds field_name at all
+        (TypeError: missing 1 required positional argument: 'field_name'),
+        also hit locally 2026-09-04."""
+        if kwargs.get('group_domain') is None:
+            kwargs['group_domain'] = []
+        return super().search_panel_select_multi_range(field_name, **kwargs)
 
     # (Agent-tier, ATL-tier, Team Lead-tier, BU Manager-tier) group chains from
     # mazenet_access_rights, independent of crm.team. teams.xml consolidates Hunter/

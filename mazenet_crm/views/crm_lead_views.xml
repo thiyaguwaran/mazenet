@@ -37,6 +37,9 @@
                 <xpath expr="//field[@name='user_id']" position="attributes">
                     <attribute name="readonly">(x_content_readonly_for_me and not x_is_dmt_user) or x_assign_type == 'self'</attribute>
                     <attribute name="domain">[('id', 'in', x_assignable_user_ids)]</attribute>
+                    <!-- MD and CTO/Admin get Salesperson hidden entirely, alongside the
+                         'Internal' assign-type option (_selection_x_assign_type). -->
+                    <attribute name="invisible">x_hide_salesperson</attribute>
                 </xpath>
                 <xpath expr="//field[@name='user_id']" position="before">
                     <!-- Only DMT team members, MD and CTO/Admin may touch this radio at
@@ -54,6 +57,35 @@
                     <field name="x_can_assign_beyond_self" invisible="1"/>
                     <field name="x_assignable_user_ids" invisible="1"/>
                     <field name="x_is_dmt_user" invisible="1"/>
+                    <field name="x_hide_salesperson" invisible="1"/>
+                </xpath>
+
+                <!-- Phone/Email either-or indicator (MZ_EITHER_OR_MANDATORY_FIELDS,
+                     crm_lead.py): a plain visual marker, NOT the native required=
+                     attribute - required= would ALSO block saving the record any
+                     time it's used, on any edit, not just a forward stage move,
+                     which is stricter than the actual gate (_mz_stage_gate_check
+                     only fires on a forward stage change). Shown as long as the
+                     OTHER field is still empty - matches the gate exactly (satisfied
+                     by either field, not both), on every stage now, not just the
+                     first. Both the 'opportunity'-type fields (no @id) and the
+                     'lead'-type variants (id=..._group_lead_info) are covered,
+                     though mazenet leads are always type='opportunity' in practice. -->
+                <xpath expr="//field[@name='email_from'][not(@id)]" position="after">
+                    <span class="text-danger fw-bold ms-1" title="Required until Phone is filled"
+                          invisible="phone">*</span>
+                </xpath>
+                <xpath expr="//field[@name='phone'][not(@id)]" position="after">
+                    <span class="text-danger fw-bold ms-1" title="Required until Email is filled"
+                          invisible="email_from">*</span>
+                </xpath>
+                <xpath expr="//field[@name='email_from'][@id='email_from_group_lead_info']" position="after">
+                    <span class="text-danger fw-bold ms-1" title="Required until Phone is filled"
+                          invisible="phone">*</span>
+                </xpath>
+                <xpath expr="//field[@name='phone'][@id='phone_group_lead_info']" position="after">
+                    <span class="text-danger fw-bold ms-1" title="Required until Email is filled"
+                          invisible="email_from">*</span>
                 </xpath>
 
                 <xpath expr="//field[@name='stage_id']" position="attributes">
@@ -126,23 +158,65 @@
                 <xpath expr="//page[@name='extra']" position="after">
                     <page name="mz_pipeline" string="Pipeline Fields">
                         <field name="x_team_bu_category" invisible="1"/>
+                        <!-- Red-asterisk "required" indicator, scoped to whichever fields
+                             MZ_STAGE_GATE_RULES actually needs to leave the CURRENT stage
+                             (x_current_stage_gate_fields, crm_lead.py) - purely a UI marker
+                             matching what _mz_stage_gate_check enforces on the NEXT forward
+                             move; doesn't block saving while still on the current stage. -->
+                        <field name="x_current_stage_gate_fields" invisible="1"/>
                         <div invisible="x_team_bu_category != 'dmt'">
                             <group string="Stage 1 - New Lead / Source">
-                                <field name="x_organic_inorganic"/>
-                                <field name="source_id" domain="[('team_ids', 'in', team_id)]"/>
+                                <label for="x_organic_inorganic"/>
+                                <div class="o_row">
+                                    <field name="x_organic_inorganic"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_organic_inorganic,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="source_id"/>
+                                <div class="o_row">
+                                    <field name="source_id" domain="[('team_ids', 'in', team_id)]"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',source_id,' in x_current_stage_gate_fields)">*</span>
+                                </div>
                                 <field name="referred" string="Source Reference (Referral / Ads)"/>
                             </group>
                             <group string="Stage 2 - Lead Validation">
-                                <field name="x_company_or_individual"/>
-                                <field name="x_contact_purpose"/>
-                                <field name="x_product_service"/>
-                                <field name="x_employee_count"/>
-                                <field name="x_company_turnover"/>
+                                <label for="x_company_or_individual"/>
+                                <div class="o_row">
+                                    <field name="x_company_or_individual"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_company_or_individual,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_contact_purpose"/>
+                                <div class="o_row">
+                                    <field name="x_contact_purpose"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_contact_purpose,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_product_service"/>
+                                <div class="o_row">
+                                    <field name="x_product_service"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_product_service,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_employee_count"/>
+                                <div class="o_row">
+                                    <field name="x_employee_count"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_employee_count,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_company_turnover"/>
+                                <div class="o_row">
+                                    <field name="x_company_turnover"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_company_turnover,' in x_current_stage_gate_fields)">*</span>
+                                </div>
                                 <field name="priority" widget="priority" string="Lead Fit"/>
                             </group>
                             <group string="Stage 3 - Transfer to BU">
-                                <field name="x_target_team_id"/>
-                                <field name="x_transfer_notes"/>
+                                <label for="x_target_team_id"/>
+                                <div class="o_row">
+                                    <field name="x_target_team_id"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_target_team_id,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_transfer_notes"/>
+                                <div class="o_row">
+                                    <field name="x_transfer_notes"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_transfer_notes,' in x_current_stage_gate_fields)">*</span>
+                                </div>
                             </group>
                             <group string="Stage 4 - Follow-up's">
                                 <div class="text-muted" colspan="2">
@@ -153,22 +227,54 @@
                         </div>
                         <div invisible="x_team_bu_category != 'tally'">
                             <group string="Stage 1 - New Lead">
-                                <field name="source_id" domain="[('team_ids', 'in', team_id)]"/>
+                                <label for="source_id"/>
+                                <div class="o_row">
+                                    <field name="source_id" domain="[('team_ids', 'in', team_id)]"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',source_id,' in x_current_stage_gate_fields)">*</span>
+                                </div>
                                 <field name="referred" string="Source Reference (Referral)"/>
                             </group>
                             <group string="Stage 2 - Lead Validation">
-                                <field name="x_tally_category"/>
+                                <label for="x_tally_category"/>
+                                <div class="o_row">
+                                    <field name="x_tally_category"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_tally_category,' in x_current_stage_gate_fields)">*</span>
+                                </div>
                             </group>
                             <group string="Stage 3 - Requirements">
                                 <field name="x_company_intro_done"/>
-                                <field name="x_product_service"/>
-                                <field name="x_feasibility"/>
-                                <field name="x_timeline"/>
-                                <field name="x_requirements_attachment_ids" widget="many2many_binary"/>
+                                <label for="x_product_service"/>
+                                <div class="o_row">
+                                    <field name="x_product_service"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_product_service,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_feasibility"/>
+                                <div class="o_row">
+                                    <field name="x_feasibility"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_feasibility,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_timeline"/>
+                                <div class="o_row">
+                                    <field name="x_timeline"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_timeline,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_requirements_attachment_ids"/>
+                                <div class="o_row">
+                                    <field name="x_requirements_attachment_ids" widget="many2many_binary"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_requirements_attachment_ids,' in x_current_stage_gate_fields)">*</span>
+                                </div>
                             </group>
                             <group string="Stage 4 - Quote Shared">
-                                <field name="x_quote_date"/>
-                                <field name="x_quote_document_ids" widget="many2many_binary"/>
+                                <label for="x_quote_date"/>
+                                <div class="o_row">
+                                    <field name="x_quote_date"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_quote_date,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_quote_document_ids"/>
+                                <div class="o_row">
+                                    <field name="x_quote_document_ids" widget="many2many_binary"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_quote_document_ids,' in x_current_stage_gate_fields)">*</span>
+                                </div>
                             </group>
                             <group string="Stage 5 - Follow-up's">
                                 <div class="text-muted" colspan="2">
@@ -194,27 +300,79 @@
 
                         <div invisible="x_team_bu_category != 'tech'">
                             <group string="Stage 1 - New Lead / Source">
-                                <field name="source_id" domain="[('team_ids', 'in', team_id)]"/>
+                                <label for="source_id"/>
+                                <div class="o_row">
+                                    <field name="source_id" domain="[('team_ids', 'in', team_id)]"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',source_id,' in x_current_stage_gate_fields)">*</span>
+                                </div>
                                 <field name="referred" string="Source Reference (Referral / GeM Bid)"/>
                                 <field name="x_can_create_partner" invisible="1"/>
                             </group>
                             <group string="Stage 2 - Lead Validation">
-                                <field name="x_customer_status"/>
-                                <field name="x_customer_need"/>
+                                <label for="x_customer_status"/>
+                                <div class="o_row">
+                                    <field name="x_customer_status"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_customer_status,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_customer_need"/>
+                                <div class="o_row">
+                                    <field name="x_customer_need"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_customer_need,' in x_current_stage_gate_fields)">*</span>
+                                </div>
                             </group>
                             <group string="Stage 3 - Requirement Understanding">
-                                <field name="x_product_service"/>
-                                <field name="x_feasibility_identified"/>
-                                <field name="x_timeline"/>
-                                <field name="x_requirements_attachment_ids" widget="many2many_binary"/>
+                                <label for="x_product_service"/>
+                                <div class="o_row">
+                                    <field name="x_product_service"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_product_service,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_feasibility_identified"/>
+                                <div class="o_row">
+                                    <field name="x_feasibility_identified"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_feasibility_identified,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_timeline"/>
+                                <div class="o_row">
+                                    <field name="x_timeline"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_timeline,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_requirements_attachment_ids"/>
+                                <div class="o_row">
+                                    <field name="x_requirements_attachment_ids" widget="many2many_binary"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_requirements_attachment_ids,' in x_current_stage_gate_fields)">*</span>
+                                </div>
                             </group>
                             <group string="Stage 4 - Quote">
-                                <field name="x_bom_attachment_ids" widget="many2many_binary"/>
-                                <field name="x_boq_attachment_ids" widget="many2many_binary"/>
-                                <field name="x_quote_shared_checkbox"/>
-                                <field name="x_customer_goods_finalised"/>
-                                <field name="x_quote_date"/>
-                                <field name="x_quote_document_ids" widget="many2many_binary"/>
+                                <label for="x_bom_attachment_ids"/>
+                                <div class="o_row">
+                                    <field name="x_bom_attachment_ids" widget="many2many_binary"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_bom_attachment_ids,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_boq_attachment_ids"/>
+                                <div class="o_row">
+                                    <field name="x_boq_attachment_ids" widget="many2many_binary"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_boq_attachment_ids,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_quote_shared_checkbox"/>
+                                <div class="o_row">
+                                    <field name="x_quote_shared_checkbox"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_quote_shared_checkbox,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_customer_goods_finalised"/>
+                                <div class="o_row">
+                                    <field name="x_customer_goods_finalised"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_customer_goods_finalised,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_quote_date"/>
+                                <div class="o_row">
+                                    <field name="x_quote_date"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_quote_date,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_quote_document_ids"/>
+                                <div class="o_row">
+                                    <field name="x_quote_document_ids" widget="many2many_binary"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_quote_document_ids,' in x_current_stage_gate_fields)">*</span>
+                                </div>
                             </group>
                             <group string="Stage 5 - Follow-up's">
                                 <div class="text-muted" colspan="2">
@@ -240,30 +398,78 @@
 
                         <div invisible="x_team_bu_category != 'swdev'">
                             <group string="Stage 1 - New Lead / Source">
-                                <field name="source_id" domain="[('team_ids', 'in', team_id)]"/>
+                                <label for="source_id"/>
+                                <div class="o_row">
+                                    <field name="source_id" domain="[('team_ids', 'in', team_id)]"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',source_id,' in x_current_stage_gate_fields)">*</span>
+                                </div>
                                 <field name="referred" string="Source Reference (Referral)"/>
                             </group>
                             <group string="Stage 2 - Lead Validation">
                                 <field name="expected_revenue" string="Order Value"/>
-                                <field name="x_branch_count"/>
-                                <field name="x_sw_employee_count"/>
-                                <field name="x_nature_of_business"/>
-                                <field name="x_established_year"/>
+                                <label for="x_branch_count"/>
+                                <div class="o_row">
+                                    <field name="x_branch_count"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_branch_count,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_sw_employee_count"/>
+                                <div class="o_row">
+                                    <field name="x_sw_employee_count"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_sw_employee_count,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_nature_of_business"/>
+                                <div class="o_row">
+                                    <field name="x_nature_of_business"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_nature_of_business,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_established_year"/>
+                                <div class="o_row">
+                                    <field name="x_established_year"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_established_year,' in x_current_stage_gate_fields)">*</span>
+                                </div>
                                 <field name="x_founder"/>
                                 <field name="x_ceo"/>
                                 <field name="x_company_turnover"/>
                                 <field name="website"/>
-                                <field name="x_meeting_attendees"/>
+                                <label for="x_meeting_attendees"/>
+                                <div class="o_row">
+                                    <field name="x_meeting_attendees"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_meeting_attendees,' in x_current_stage_gate_fields)">*</span>
+                                </div>
                             </group>
                             <group string="Stage 3 - Demo">
-                                <field name="x_demo_completed"/>
-                                <field name="x_system_study_attachment_ids" widget="many2many_binary"/>
-                                <field name="x_feasibility"/>
-                                <field name="x_timeline"/>
+                                <label for="x_demo_completed"/>
+                                <div class="o_row">
+                                    <field name="x_demo_completed"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_demo_completed,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_system_study_attachment_ids"/>
+                                <div class="o_row">
+                                    <field name="x_system_study_attachment_ids" widget="many2many_binary"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_system_study_attachment_ids,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_feasibility"/>
+                                <div class="o_row">
+                                    <field name="x_feasibility"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_feasibility,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_timeline"/>
+                                <div class="o_row">
+                                    <field name="x_timeline"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_timeline,' in x_current_stage_gate_fields)">*</span>
+                                </div>
                             </group>
                             <group string="Stage 4 - Quote">
-                                <field name="x_quote_date"/>
-                                <field name="x_quote_document_ids" widget="many2many_binary"/>
+                                <label for="x_quote_date"/>
+                                <div class="o_row">
+                                    <field name="x_quote_date"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_quote_date,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_quote_document_ids"/>
+                                <div class="o_row">
+                                    <field name="x_quote_document_ids" widget="many2many_binary"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_quote_document_ids,' in x_current_stage_gate_fields)">*</span>
+                                </div>
                             </group>
                             <group string="Stage 5 - Won / Lost">
                                 <div class="text-muted" colspan="2">
@@ -284,24 +490,68 @@
 
                         <div invisible="x_team_bu_category != 'mis'">
                             <group string="Stage 1 - New Lead / Source">
-                                <field name="source_id" domain="[('team_ids', 'in', team_id)]"/>
+                                <label for="source_id"/>
+                                <div class="o_row">
+                                    <field name="source_id" domain="[('team_ids', 'in', team_id)]"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',source_id,' in x_current_stage_gate_fields)">*</span>
+                                </div>
                                 <field name="referred" string="Source Reference (Referral)"/>
                             </group>
                             <group string="Stage 2 - Lead Validation">
-                                <field name="x_product_service"/>
-                                <field name="x_target_audience"/>
-                                <field name="x_mis_timelines_estimate"/>
-                                <field name="x_deliverables"/>
-                                <field name="x_requirements_attachment_ids" widget="many2many_binary" string="Client Expectations Attachment"/>
+                                <label for="x_product_service"/>
+                                <div class="o_row">
+                                    <field name="x_product_service"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_product_service,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_target_audience"/>
+                                <div class="o_row">
+                                    <field name="x_target_audience"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_target_audience,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_mis_timelines_estimate"/>
+                                <div class="o_row">
+                                    <field name="x_mis_timelines_estimate"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_mis_timelines_estimate,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_deliverables"/>
+                                <div class="o_row">
+                                    <field name="x_deliverables"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_deliverables,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_requirements_attachment_ids"/>
+                                <div class="o_row">
+                                    <field name="x_requirements_attachment_ids" widget="many2many_binary" string="Client Expectations Attachment"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_requirements_attachment_ids,' in x_current_stage_gate_fields)">*</span>
+                                </div>
                             </group>
                             <group string="Stage 3 - Demo">
-                                <field name="x_demo_completed"/>
-                                <field name="x_system_study_attachment_ids" widget="many2many_binary"/>
-                                <field name="x_feasibility"/>
-                                <field name="x_timeline"/>
+                                <label for="x_demo_completed"/>
+                                <div class="o_row">
+                                    <field name="x_demo_completed"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_demo_completed,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_system_study_attachment_ids"/>
+                                <div class="o_row">
+                                    <field name="x_system_study_attachment_ids" widget="many2many_binary"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_system_study_attachment_ids,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_feasibility"/>
+                                <div class="o_row">
+                                    <field name="x_feasibility"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_feasibility,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_timeline"/>
+                                <div class="o_row">
+                                    <field name="x_timeline"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_timeline,' in x_current_stage_gate_fields)">*</span>
+                                </div>
                             </group>
                             <group string="Stage 4 - Quote">
-                                <field name="x_quote_document_ids" widget="many2many_binary"/>
+                                <label for="x_quote_document_ids"/>
+                                <div class="o_row">
+                                    <field name="x_quote_document_ids" widget="many2many_binary"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_quote_document_ids,' in x_current_stage_gate_fields)">*</span>
+                                </div>
                             </group>
                             <group string="Stage 5 - Won / Lost">
                                 <div class="text-muted" colspan="2">
@@ -389,15 +639,28 @@
                 <!-- Sales Team removed from Group By - team selection now happens via the
                      search panel sidebar below instead of grouping. -->
                 <filter name="saleschannel" position="replace"/>
-                <!-- Sales Team search panel: native single-select sidebar (category) with a
-                     built-in "All" entry, so clicking a team shows only that team's records
-                     and "All" resets - no custom widget/JS needed. CTO/Admin and MD are the
-                     only roles with cross-team visibility to begin with, so this is the only
-                     place a "pick any team" control makes sense - everyone else only ever
-                     sees their own team's leads regardless. -->
+                <!-- Sales Team search panel section: native single-select sidebar (category)
+                     with a built-in "All" entry, so clicking a team shows only that team's
+                     records and "All" resets. Salesperson is grouped UNDER it instead of
+                     being its own flat section - clicking a team expands its salespeople as
+                     checkboxes right below it (same nested-dropdown shape as the "Creation
+                     Date" filter's own options submenu), so picking a salesperson narrows
+                     within whichever team is selected. No custom widget/JS needed - both
+                     are native searchpanel behavior.
+                     groupby MUST name a field on user_id's own comodel (res.users) -
+                     search_panel_select_multi_range does Comodel._fields[group_by], where
+                     Comodel is res.users, NOT crm.lead - "team_id" doesn't exist there
+                     (KeyError: 'team_id', hit locally). res_users.py's x_mz_team_id
+                     exists purely to give it one.
+                     CTO/Admin and MD are the only roles with cross-team, cross-salesperson
+                     visibility to begin with, so this is the only place either "pick any
+                     team/salesperson" control makes sense - everyone else only ever sees
+                     their own team's leads regardless. -->
                 <search position="inside">
                     <searchpanel groups="mazenet_access_rights.group_mzr_cto_admin,mazenet_access_rights.group_mzr_md">
                         <field name="team_id" string="Sales Team" icon="fa-users" enable_counters="1"/>
+                        <field name="user_id" string="Salesperson" select="multi" icon="fa-user"
+                               enable_counters="1" groupby="x_mz_team_id"/>
                     </searchpanel>
                 </search>
             </field>
