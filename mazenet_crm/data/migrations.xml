@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- noupdate="0": these <function> calls must re-run on every -u upgrade,
+         not just on a fresh install (a post_init_hook would only fire on
+         install, never on upgrading an already-installed module - the actual
+         path these fixes need). Each one is idempotent, so repeated runs are
+         harmless. -->
+    <data noupdate="0">
+        <!-- x_dmt_originated backfill (crm_lead.py) - fixed 2026-09-08: DMT lost
+             all read access to a lead the instant they transferred its team_id
+             elsewhere, even the agent who'd just done the transfer, since none
+             of DMT's own ir.rules matched a non-DMT team_id anymore. New leads
+             get x_dmt_originated set at create() time now, but leads already
+             sitting in team_dmt before this fix need a one-time backfill. -->
+        <function model="crm.lead" name="_mz_backfill_x_dmt_originated" eval="()"/>
+    </data>
+</odoo>

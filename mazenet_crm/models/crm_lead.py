@@ -243,15 +243,27 @@ class CrmLead(models.Model):
         an empty result set even though the selection itself is unambiguous.
         team_id wins if both are somehow present; user_id resolves via
         res.users.x_mz_team_id (the same field the Salesperson section's own
-        groupby uses). None if neither is selected (the "All" view)."""
+        groupby uses). None if neither is selected (the "All" view).
+
+        A DomainCondition's 'in' value isn't reliably a plain list/tuple/set -
+        confirmed 2026-09-08 via live debug logging: the real search panel
+        selection arrives as ('team_id', 'in', OrderedSet([40])), and
+        OrderedSet (odoo.tools.misc) is NOT a subclass of the builtin set (it's
+        a collections.abc.MutableSet), so an isinstance(value, (list, tuple,
+        set)) check silently failed to unwrap it - team_id was never found,
+        and every CTO/MD team selection quietly fell back to DMT, leaking
+        DMT's stages into whatever team was actually picked. Checking
+        Iterable instead (rather than trying to enumerate every container
+        type Odoo domains might use) is what actually holds up here."""
+        from collections.abc import Iterable
         from odoo.orm.domains import Domain
         team_id = None
         user_id = None
         for cond in Domain(domain).iter_conditions():
             value = cond.value
-            if isinstance(value, (list, tuple, set)):
+            if isinstance(value, Iterable) and not isinstance(value, (str, bytes)):
                 value = next(iter(value), None)
-            if not isinstance(value, int):
+            if not isinstance(value, int) or isinstance(value, bool):
                 continue
             if cond.field_expr == 'team_id' and cond.operator in ('=', 'in'):
                 team_id = value
@@ -280,7 +292,23 @@ class CrmLead(models.Model):
         specific team (or now, salesperson) in the sidebar kept showing DMT's
         stage columns regardless, because this used to force default_team_id=
         DMT unconditionally. DMT is only the fallback when nothing is selected
-        (the "All" view)."""
+        (the "All" view).
+
+        Also strips show_user_team_stages from context - fixed 2026-09-08:
+        crm.crm_lead_action_pipeline (the stock Pipeline action) always sets
+        show_user_team_stages=1, which makes the super() call ALSO unconditionally
+        OR in self.env.user.crm_team_ids regardless of our own default_team_id
+        override. Whenever a CTO/Admin/MD happens to be a member/leader of some
+        team too (crm_team_ids is res_users.py's OWN Many2many, separate from
+        our res.users.x_mz_team_id / _mz_user_own_team), THAT team's stages kept
+        leaking in on top of whichever team was actually selected - reported as
+        an extra "New Lead / Source" (DMT) column bleeding into MIS's own "New
+        Lead" one - this alone wasn't the full story though, see
+        _mz_resolve_stage_team_id_from_domain's own docstring for the other
+        half (an OrderedSet unwrapping bug that made team/salesperson
+        selection silently fall back to DMT every time). Since we're already
+        resolving the correct team ourselves here, that extra OR only ever
+        reintroduces stale/wrong columns."""
         if not self.env.context.get('default_team_id'):
             user = self.env.user
             if (
@@ -292,7 +320,9 @@ class CrmLead(models.Model):
                     dmt_team = self.env.ref('mazenet_crm.team_dmt', raise_if_not_found=False)
                     target_team_id = dmt_team.id if dmt_team else False
                 if target_team_id:
-                    self = self.with_context(default_team_id=target_team_id)
+                    self = self.with_context(
+                        default_team_id=target_team_id, show_user_team_stages=False
+                    )
         return super()._read_group_stage_ids(stages, domain)
 
     def _get_team_id_domain(self):
@@ -317,6 +347,21 @@ class CrmLead(models.Model):
              "a different requirement routed to another team/salesperson."
     )
 
+    x_dmt_originated = fields.Boolean(
+        string="Originated From DMT", copy=False,
+        help="Set once, at creation, if the lead's team_id was DMT at the time - "
+             "never changed afterwards even if team_id later moves elsewhere. "
+             "Exists purely so rule_crm_lead_dmt_originated_read "
+             "(security/record_rules.xml) can give DMT read-only visibility on a "
+             "lead they originally handled, even after handing it off to another "
+             "team via the 'Team' assign-type radio - DMT's own pipeline has a "
+             "'Follow-up's' stage AFTER 'Transfer to BU', so losing all read "
+             "access the instant team_id changes broke that follow-up step (and "
+             "surfaced as an AccessError on the very save that performed the "
+             "handoff, since the client's own post-write re-read hit the same "
+             "now-out-of-scope domain) - fixed 2026-09-08."
+    )
+
     @api.model
     def _default_x_assign_type(self):
         """Agents can't use 'team' or 'internal' (see x_can_assign_beyond_self), so
@@ -324,8 +369,20 @@ class CrmLead(models.Model):
         with a warning on every single new lead. Pick the default from the current
         user's own tier instead, so an Agent starts on 'self' - the only option
         that was ever going to stick for them - and TL/ATL/Manager keep the
-        original 'team' default."""
-        tier, _chain = self._mz_user_tier_chain(self.env.user)
+        original 'team' default.
+
+        'Team'/'Internal' default is now ALSO gated on _mz_user_can_use_assign_radio
+        (DMT/CTO/Admin/MD only) - fixed 2026-09-08: a non-DMT Team Lead/Manager
+        (e.g. Tally TL) still qualified for the tier check below on its own, so
+        Kanban quick-create defaulted x_assign_type='team' for them even though
+        _mz_check_assign_type_allowed has rejected 'team' for anyone outside
+        DMT/CTO/Admin for a while now - the create() call then hit that very
+        AccessError on a plain quick-create, before the user ever touched the
+        (correctly readonly-forced-to-self) radio on the full form."""
+        user = self.env.user
+        if not self._mz_user_can_use_assign_radio(user):
+            return 'self'
+        tier, _chain = self._mz_user_tier_chain(user)
         return 'team' if tier in ('atl', 'tl', 'manager') else 'self'
 
     @api.model
@@ -991,6 +1048,29 @@ class CrmLead(models.Model):
                 "empty:\n%(details)s"
             ) % {'lead': self.name, 'target': new_stage.name, 'details': '\n'.join(problems)})
 
+    @api.model
+    def _mz_backfill_x_dmt_originated(self):
+        """Data-file hook (data/teams.xml's own <function> call, NOT a
+        post_init_hook - post_init_hook only fires on a fresh install, never on
+        a plain -u upgrade of an already-installed module, which is exactly the
+        upgrade path this fix needed to run through). x_dmt_originated is only
+        ever set going forward, by create() - existing leads already sitting in
+        team_dmt when this field was introduced (2026-09-08, fixing the
+        AccessError a DMT agent hit transferring a lead to another team) would
+        otherwise never get it, and lose all read access the moment they're
+        transferred out, same as before the fix. One-time-in-effect backfill:
+        every lead CURRENTLY in team_dmt originated from DMT by definition.
+        Idempotent (only touches x_dmt_originated=False rows) so re-running it
+        on every future -u upgrade is harmless."""
+        dmt_team = self.env.ref('mazenet_crm.team_dmt', raise_if_not_found=False)
+        if not dmt_team:
+            return
+        leads = self.sudo().with_context(active_test=False).search([
+            ('team_id', '=', dmt_team.id), ('x_dmt_originated', '=', False),
+        ])
+        if leads:
+            leads.write({'x_dmt_originated': True})
+
     @api.model_create_multi
     def create(self, vals_list):
         u = self.env.user
@@ -1003,8 +1083,12 @@ class CrmLead(models.Model):
                 if (vals.get('user_id') or u.id) != u.id:
                     raise AccessError(_(
                         "MD role can only create leads assigned to themselves."))
+        dmt_team = self.env.ref('mazenet_crm.team_dmt', raise_if_not_found=False)
         for vals in vals_list:
             self._mz_check_assign_type_allowed(vals)
+            if dmt_team and 'x_dmt_originated' not in vals:
+                team_id = vals['team_id'] if 'team_id' in vals else self._mz_default_team_id()
+                vals['x_dmt_originated'] = team_id == dmt_team.id
         return super(CrmLead, self).create(vals_list)
 
     def write(self, vals):

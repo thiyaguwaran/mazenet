@@ -24,6 +24,7 @@ Mazenet CRM - Pipeline Customizations
         "data/stages.xml",
         "data/teams.xml",
         "data/utm_sources.xml",
+        "data/migrations.xml",
         "security/ir.model.access.csv",
         "security/record_rules.xml",
         "wizards/archive_wizard_views.xml",

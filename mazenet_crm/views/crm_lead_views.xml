@@ -40,6 +40,9 @@
                     <!-- MD and CTO/Admin get Salesperson hidden entirely, alongside the
                          'Internal' assign-type option (_selection_x_assign_type). -->
                     <attribute name="invisible">x_hide_salesperson</attribute>
+                    <!-- no_open: don't let users click through to the salesperson's
+                         res.users form from here. -->
+                    <attribute name="options">{'no_open': True}</attribute>
                 </xpath>
                 <xpath expr="//field[@name='user_id']" position="before">
                     <!-- Only DMT team members, MD and CTO/Admin may touch this radio at
@@ -52,7 +55,8 @@
                          locked even after picking Team/Internal in the radio. -->
                     <field name="team_id"
                            readonly="(x_content_readonly_for_me and not x_is_dmt_user) or x_assign_type == 'self'"
-                           required="x_assign_type != 'self'"/>
+                           required="x_assign_type != 'self'"
+                           options="{'no_open': True}"/>
                     <field name="x_can_use_assign_radio" invisible="1"/>
                     <field name="x_can_assign_beyond_self" invisible="1"/>
                     <field name="x_assignable_user_ids" invisible="1"/>
@@ -699,7 +703,7 @@
                     <div class="d-flex align-items-center" colspan="2">
                         <i class="fa fa-users" title="Sales Team"/>
                         <field name="team_id" nolabel="1" class="o_field_highlight w-100 mb-0"
-                               options="{'no_create': True}"/>
+                               options="{'no_create': True, 'no_open': True}"/>
                     </div>
                 </xpath>
             </field>

@@ -81,6 +81,33 @@
             <field name="perm_create" eval="True"/>
             <field name="perm_unlink" eval="False"/>
         </record>
+        <!-- dmt: retain READ visibility on any lead DMT ever originated
+             (x_dmt_originated, crm_lead.py), even after it's transferred to
+             another team's team_id via the 'Team' assign-type radio. Without
+             this, every one of the DMT rules above stops matching the instant
+             team_id changes away from DMT, so even the AGENT WHO JUST DID THE
+             TRANSFER lost all access to the record - surfacing as an
+             AccessError on the very save that performed the handoff (the web
+             client's own post-write re-read hit the same now-unmatched
+             domain). DMT's own pipeline has a "Follow-up's" stage AFTER
+             "Transfer to BU", so this read-only carry-over is intentional,
+             not a workaround - fixed 2026-09-08. perm_write intentionally
+             NOT granted: DMT's ability to EDIT a lead still ends the moment
+             team_id changes elsewhere. -->
+        <record id="rule_crm_lead_dmt_originated_read" model="ir.rule">
+            <field name="name">Mazenet CRM Lead: dmt (Retain Read After Team Transfer)</field>
+            <field name="model_id" ref="crm.model_crm_lead"/>
+            <field name="domain_force">[('x_dmt_originated', '=', True)]</field>
+            <field name="groups" eval="[
+            (4, ref('mazenet_access_rights.group_mzr_dmt_agent')),
+            (4, ref('mazenet_access_rights.group_mzr_dmt_tl_direct_agent')),
+            (4, ref('mazenet_access_rights.group_mzr_dmt_manager_direct_agent')),
+            (4, ref('mazenet_access_rights.group_mzr_dmt_tl'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="False"/>
+            <field name="perm_create" eval="False"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
 
         <!-- technology: base tier (view/create team-wide) -->
         <record id="rule_crm_lead_technology_base" model="ir.rule">
