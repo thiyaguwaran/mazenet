@@ -140,7 +140,6 @@ MZ_STAGE_GATE_RULES = {
 
 class CrmLead(models.Model):
     _inherit = "crm.lead"
-    _order = "x_next_activity_datetime asc, priority desc, id desc"
 
     x_next_activity_datetime = fields.Datetime(
         string="Next Activity Time",
@@ -152,9 +151,12 @@ class CrmLead(models.Model):
              "activity's own mz_activity_time combined with its due date, for Call/To-Do "
              "activities that were given a time; (3) the due date at a default hour "
              "(MZ_DEFAULT_ACTIVITY_HOUR), for activities with no time source at all. Drives "
-             "the default Kanban/List ordering (soonest activity on top) instead of "
-             "crm.lead's stock priority/id order; leads with no open activity naturally "
-             "sort to the bottom (NULL last)."
+             "the Pipeline KANBAN's card order (soonest activity on top; leads with no open "
+             "activity naturally sort to the bottom - NULL last on ASC) via that view's own "
+             "default_order (views/crm_lead_views.xml) - deliberately NOT crm.lead's model-"
+             "level _order, which would apply this ordering to every list/pivot/calendar view "
+             "of leads system-wide, not just the one Pipeline kanban it's meant for. Stored "
+             "(not a plain compute) specifically so it CAN be used to order a kanban at all."
     )
 
     @api.model

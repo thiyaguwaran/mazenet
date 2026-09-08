@@ -601,6 +601,16 @@
             <field name="model">crm.lead</field>
             <field name="inherit_id" ref="crm.crm_case_kanban_view_leads"/>
             <field name="arch" type="xml">
+                <!-- Cards sorted by next activity, earliest on top, within each stage -
+                     scoped to just this Kanban view (default_order), not crm.lead's
+                     model-level _order, which would affect every list/pivot/calendar
+                     view of leads. id asc as the tiebreaker so two activities due at the
+                     exact same moment always render in the same, stable order. Leads
+                     with no open activity (x_next_activity_datetime is NULL) sort to the
+                     bottom for free - PostgreSQL puts NULLs last on ASC. -->
+                <xpath expr="//kanban" position="attributes">
+                    <attribute name="default_order">x_next_activity_datetime asc, id asc</attribute>
+                </xpath>
                 <xpath expr="//kanban" position="inside">
                     <field name="x_is_locked"/>
                     <field name="activity_state"/>
