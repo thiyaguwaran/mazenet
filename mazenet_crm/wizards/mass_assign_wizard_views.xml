@@ -9,7 +9,10 @@
                     <group>
                         <field name="lead_ids" widget="many2many_tags" readonly="1"/>
                         <field name="x_assign_type" widget="radio" options="{'horizontal': true}"/>
-                        <field name="user_id"/>
+                        <field name="team_id" invisible="x_assign_type != 'team'"
+                               required="x_assign_type == 'team'" options="{'no_open': True}"/>
+                        <field name="user_id" invisible="x_assign_type != 'internal'"
+                               required="x_assign_type == 'internal'" options="{'no_open': True}"/>
                     </group>
                     <footer>
                         <button name="action_apply" string="Assign" type="object" class="btn-primary"/>

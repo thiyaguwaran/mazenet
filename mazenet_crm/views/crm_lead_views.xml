@@ -16,7 +16,7 @@
                     <!-- Spin-off: same customer, a new/different requirement, routed to
                          another team - opens mz.lead.spinoff.wizard pre-filled with this
                          lead's customer/contact info. Only makes sense on a saved lead. -->
-                    <button name="%(action_mz_lead_spinoff_wizard)d" string="Create New Lead"
+                    <button name="%(action_mz_lead_spinoff_wizard)d" string="Create New Opportunity"
                             type="action" class="btn-secondary" invisible="not id"/>
                 </xpath>
 
@@ -47,9 +47,19 @@
                 <xpath expr="//field[@name='user_id']" position="before">
                     <!-- Only DMT team members, MD and CTO/Admin may touch this radio at
                          all (_mz_user_can_use_assign_radio) - everyone else is forced to
-                         Self and can't even click through to Team/Internal. -->
+                         Self and can't even click through to Team/Internal.
+                         Two fields, mutually exclusive via x_hide_internal_option: a
+                         Selection's option list is per-environment, not per-record, so
+                         hiding 'Internal' just for CTO/Admin/MD's OWN already-saved lead
+                         (while still offering it to them on someone ELSE's lead) needs a
+                         second, narrower field shown instead of the real one - see
+                         x_assign_type_no_internal's own help text. -->
                     <field name="x_assign_type" widget="radio" options="{'horizontal': true}"
-                           readonly="not x_can_use_assign_radio"/>
+                           readonly="not x_can_use_assign_radio"
+                           invisible="x_hide_internal_option"/>
+                    <field name="x_assign_type_no_internal" widget="radio" options="{'horizontal': true}"
+                           readonly="not x_can_use_assign_radio"
+                           invisible="not x_hide_internal_option"/>
                     <!-- Mirrors user_id's own DMT exemption below: without it, the sheet's
                          readonly="x_content_readonly_for_me" leaks through and team_id stays
                          locked even after picking Team/Internal in the radio. -->
@@ -62,6 +72,7 @@
                     <field name="x_assignable_user_ids" invisible="1"/>
                     <field name="x_is_dmt_user" invisible="1"/>
                     <field name="x_hide_salesperson" invisible="1"/>
+                    <field name="x_hide_internal_option" invisible="1"/>
                 </xpath>
 
                 <!-- Phone/Email either-or indicator (MZ_EITHER_OR_MANDATORY_FIELDS,
@@ -614,7 +625,7 @@
                 <xpath expr="//kanban" position="inside">
                     <field name="x_is_locked"/>
                     <field name="activity_state"/>
-                    <field name="x_activity_warning"/>
+                    <field name="x_activity_card_state"/>
                     <field name="x_team_transfer_readonly"/>
                 </xpath>
                 <xpath expr="//t[@t-name='card']/*[1]" position="before">
@@ -624,12 +635,15 @@
                          read as too aggressive for a simple overdue/locked indicator. -->
                     <widget name="web_ribbon" id="mz_red_lock_ribbon" title="Overdue" bg_color="text-bg-danger" invisible="not x_is_locked and activity_state != 'overdue'"/>
                     <span t-if="record.x_is_locked.raw_value or record.activity_state.raw_value == 'overdue'" class="mz-red-locked-card d-none"/>
-                    <!-- Pre-lock warnings (see crm_lead.py x_activity_warning): purple in the
-                         30-min window before the next activity, orange in the 10-min window -
-                         already scoped server-side to just the owner/attendees, so no extra
-                         invisible condition needed here beyond the field's own value. -->
-                    <span t-if="record.x_activity_warning.raw_value == 'purple'" class="mz-activity-purple-card d-none"/>
-                    <span t-if="record.x_activity_warning.raw_value == 'orange'" class="mz-activity-orange-card d-none"/>
+                    <!-- Client rework spec (2026-09-08) - x_activity_card_state
+                         (crm_lead.py): PURPLE = activity due today, GREEN = within 20
+                         minutes either side of it, RED is the same signal as x_is_locked
+                         above so it's not repeated here. Stored and cron-recomputed
+                         (data/cron.xml), so - unlike the old per-viewer x_activity_warning
+                         this replaces - every viewer sees the same colour, not just the
+                         owner. Only ever set for DMT/Tally/Technology leads. -->
+                    <span t-if="record.x_activity_card_state.raw_value == 'purple'" class="mz-activity-purple-card d-none"/>
+                    <span t-if="record.x_activity_card_state.raw_value == 'green'" class="mz-activity-green-card d-none"/>
                     <!-- Read-only because Sales Team moved off whoever's browsing (not a
                          RED lock - that already gets the red treatment above) - grey tint,
                          same marker-span pattern, see kanban_red.css. -->

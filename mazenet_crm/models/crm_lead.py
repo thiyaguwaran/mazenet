@@ -2,6 +2,8 @@
 import re
 from datetime import timedelta
 
+import pytz
+
 from odoo import models, fields, api, _
 from odoo.exceptions import AccessError, UserError, ValidationError
 
@@ -14,18 +16,23 @@ MZ_EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
 # other teams (Corporate/LMS/TNH/Hunter...) aren't newly constrained by this build.
 MZ_FORMAT_VALIDATED_BU_CATEGORIES = {'dmt', 'tally', 'tech', 'swdev', 'mis'}
 
-# Grace period between an activity's real due moment (x_next_activity_datetime) and the
-# RED lock actually triggering - e.g. a 10:00 AM activity locks at 10:15, not the instant
-# 10:00 passes.
-MZ_RED_LOCK_GRACE_MINUTES = 15
+# Client rework spec (2026-09-08): the window either side of an activity's real due moment
+# (x_next_activity_datetime) for both the GREEN card state and the RED lock - e.g. a 10:00 AM
+# activity turns GREEN at 9:40, and locks/turns RED at 10:20, not the instant 10:00 passes.
+# Previously this was res.company.grace_time (a separate, user-configurable field defaulting
+# to 15 minutes) - replaced with this fixed 20-minute constant so the two states share
+# exactly one number, matching the client's explicit "20 minutes" spec rather than whatever
+# happens to be configured on the company record.
+MZ_ACTIVITY_WINDOW_MINUTES = 20
 
-# x_assign_type drives user_id alongside team_id (assign_salesperson onchange) - it's
-# part of the same reassignment picker, not lead "content", so it belongs here too:
-# without it, a BU Manager doing a normal Self/Team/Internal team hand-off through the
-# form (which always touches x_assign_type together with team_id/user_id) would trip
-# the "Managers view and reassign; content edits go through the Team Lead" rule below
-# on a lead they don't own, even though nothing about the lead's actual content changed.
-REASSIGN_FIELDS = {"user_id", "team_id", "stage_id", "x_assign_type"}
+# Which BU pipelines the purple/green/red activity card state (and the RED lock it's built
+# on) applies to at all - client rework spec (2026-09-08): "DMT, Tally, Technology only. Not
+# Software Dev, not MIS - they have no Follow-up's stage." Every other team's leads always
+# get x_activity_card_state = False ('Normal'), and are excluded from the RED-lock cron
+# entirely (_cron_trigger_red_locks) - not just from the colour, the lock itself no longer
+# applies there either.
+MZ_ACTIVITY_CARD_BU_CATEGORIES = {'dmt', 'tally', 'tech'}
+
 SYSTEM_FIELDS = {
     "message_follower_ids", "activity_ids", "message_ids", "message_main_attachment_id",
     "website_message_ids", "message_has_error", "message_has_error_counter", "message_needaction",
@@ -34,18 +41,6 @@ SYSTEM_FIELDS = {
     "activity_exception_type", "activity_exception_decoration", "active",
     "x_is_locked", "x_lock_date",
 }
-
-# The 6 BU Manager-tier groups from mazenet_access_rights. Kept as an explicit list (rather
-# than a naming-pattern match) since the module isolates each team's groups from the others
-# on purpose - there's no single "any manager" group to check against.
-MZR_MANAGER_GROUPS = [
-    "mazenet_access_rights.group_mzr_dmt_manager",
-    "mazenet_access_rights.group_mzr_technology_manager",
-    "mazenet_access_rights.group_mzr_software_manager",
-    "mazenet_access_rights.group_mzr_mis_manager",
-    "mazenet_access_rights.group_mzr_corporate_manager",
-    "mazenet_access_rights.group_tally_manager",
-]
 
 # M3: mandatory-field-on-stage-change gate (Mazenet_CRM_M2_Build_Tasks.xlsx's per-stage
 # "Mandatory" column). Keyed by crm.team.x_bu_category, one ordered list per BU of
@@ -338,14 +333,14 @@ class CrmLead(models.Model):
 
     x_related_lead_id = fields.Many2one(
         'crm.lead', string="Related Lead", readonly=True, copy=False,
-        help="The lead this one was spun off from via 'Create New Lead' - same "
+        help="The lead this one was spun off from via 'Create New Opportunity' - same "
              "customer, a different requirement routed to (usually) a different "
              "Sales Team. Set once at creation by the wizard, never editable "
              "afterwards."
     )
     x_spinoff_lead_ids = fields.One2many(
         'crm.lead', 'x_related_lead_id', string="Spin-off Leads",
-        help="Leads created FROM this one via 'Create New Lead' - same customer, "
+        help="Leads created FROM this one via 'Create New Opportunity' - same customer, "
              "a different requirement routed to another team/salesperson."
     )
 
@@ -389,20 +384,14 @@ class CrmLead(models.Model):
 
     @api.model
     def _selection_x_assign_type(self):
-        """MD and CTO/Admin never delegate to a subordinate group (they're not
-        part of any team's privilege hierarchy - _mz_team_subordinate_group_users
-        would just come back empty for them anyway), so 'Internal' is dropped
-        from their radio entirely rather than left as a dead option. Everyone
-        else still gets all three; who may actually USE anything beyond 'Self'
-        is separately gated by x_can_use_assign_radio/x_can_assign_beyond_self."""
-        options = [('self', 'Self'), ('team', 'Team'), ('internal', 'Internal')]
-        user = self.env.user
-        if (
-            user.has_group('mazenet_access_rights.group_mzr_md')
-            or user.has_group('mazenet_access_rights.group_mzr_cto_admin')
-        ):
-            options = [opt for opt in options if opt[0] != 'internal']
-        return options
+        """Always all three - who may actually USE anything beyond 'Self' is separately
+        gated by x_can_use_assign_radio/x_can_assign_beyond_self, and (2026-09-08) whether
+        CTO/Admin/MD specifically see 'Internal' AT ALL on a given lead is a PER-RECORD
+        question (hidden on their own already-saved lead, shown otherwise) that a
+        Selection field's static, per-environment-only option list can't answer - see
+        x_hide_internal_option and x_assign_type_no_internal for how that's actually
+        done."""
+        return [('self', 'Self'), ('internal', 'Internal'), ('team', 'Team')]
 
     x_assign_type = fields.Selection(
         selection='_selection_x_assign_type',
@@ -412,11 +401,46 @@ class CrmLead(models.Model):
              "- Team: hand-picked from the selected team's 'Create To' users.\n"
              "- Internal: hand-picked from whoever's directly in a group ranked below "
              "yours in the team's configured privilege/group hierarchy (DMT: any team "
-             "member, no restriction). Not offered to MD/CTO/Admin at all.\n"
+             "member, no restriction). For CTO/Admin/MD specifically, hidden in the view "
+             "(x_assign_type_no_internal shown instead) on a lead they already own - see "
+             "x_hide_internal_option.\n"
              "'Team' and 'Internal' are only offered to Team Leads, ATLs and BU Managers "
              "(mazenet_access_rights) - an Agent has no one to delegate to, so both are "
              "restricted to Self for them."
     )
+    x_hide_internal_option = fields.Boolean(
+        compute='_compute_x_assignable_user_ids',
+        string="Hide Internal Option",
+        help="CTO/Admin and MD only: True when viewing a lead THEY ALREADY OWN "
+             "(lead.id is set - a genuinely new, unsaved lead is never 'owned' yet even "
+             "though user_id defaults to the creator - and user_id == the current user). "
+             "Drives which of x_assign_type (all 3 options) / x_assign_type_no_internal "
+             "(Self/Team only) is shown in the view - 'Internal' makes sense for CTO/MD "
+             "delegating someone ELSE's lead, not their own. Not stored - reflects "
+             "whoever has the form open."
+    )
+    x_assign_type_no_internal = fields.Selection(
+        [('self', 'Self'), ('team', 'Team')],
+        string="Assign Type", compute='_compute_x_assign_type_no_internal',
+        inverse='_inverse_x_assign_type_no_internal',
+        help="Mirror of x_assign_type with 'Internal' left out entirely (not just hidden -"
+             " a Selection field's option list is per-environment, not per-record, so "
+             "hiding one choice on some leads and not others needs a second field with "
+             "its own static, narrower option list, shown INSTEAD of the real one via "
+             "x_hide_internal_option). Reads/writes the exact same underlying value as "
+             "x_assign_type; exists purely for this view swap, not a separate concept."
+    )
+
+    @api.depends('x_assign_type')
+    def _compute_x_assign_type_no_internal(self):
+        for lead in self:
+            lead.x_assign_type_no_internal = (
+                lead.x_assign_type if lead.x_assign_type != 'internal' else 'self'
+            )
+
+    def _inverse_x_assign_type_no_internal(self):
+        for lead in self:
+            lead.x_assign_type = lead.x_assign_type_no_internal
     x_can_use_assign_radio = fields.Boolean(
         compute='_compute_x_assignable_user_ids',
         string="Can Use Assign Radio",
@@ -452,11 +476,12 @@ class CrmLead(models.Model):
     x_hide_salesperson = fields.Boolean(
         compute='_compute_x_assignable_user_ids',
         string="Hide Salesperson Field",
-        help="Whether the CURRENT user (viewing/editing this lead right now) is MD "
-             "or CTO/Admin - both roles get the Salesperson (user_id) field hidden "
-             "entirely, alongside the 'Internal' assign-type option "
-             "(_selection_x_assign_type) being dropped for them. Not stored - "
-             "reflects whoever has the form open."
+        help="CTO/Admin and MD only: True on a lead THEY ALREADY OWN (same condition "
+             "as x_hide_internal_option, and for the same reason - 'Internal' is "
+             "meant for delegating someone ELSE's lead, and picking a salesperson "
+             "only means anything alongside that). Shown (and pickable) again the "
+             "moment they're viewing anyone else's lead, or creating a brand-new one. "
+             "Not stored - reflects whoever has the form open."
     )
     x_is_dmt_user = fields.Boolean(
         compute='_compute_x_assignable_user_ids',
@@ -517,7 +542,7 @@ class CrmLead(models.Model):
         )
         return lower_groups.mapped('user_ids')
 
-    @api.depends('team_id', 'x_assign_type')
+    @api.depends('team_id', 'x_assign_type', 'user_id')
     @api.depends_context('uid')
     def _compute_x_assignable_user_ids(self):
         """DMT is a special case: a DMT team member may assign to ANY of the team's
@@ -538,7 +563,7 @@ class CrmLead(models.Model):
         can_use_radio = self._mz_user_can_use_assign_radio(user)
         tier, _chain = self._mz_user_tier_chain(user)
         can_beyond_self = can_use_radio and (user_is_dmt or tier in ('atl', 'tl', 'manager'))
-        hide_salesperson = (
+        is_cto_or_md = (
             user.has_group('mazenet_access_rights.group_mzr_md')
             or user.has_group('mazenet_access_rights.group_mzr_cto_admin')
         )
@@ -546,7 +571,21 @@ class CrmLead(models.Model):
             lead.x_is_dmt_user = user_is_dmt
             lead.x_can_use_assign_radio = can_use_radio
             lead.x_can_assign_beyond_self = can_beyond_self
-            lead.x_hide_salesperson = hide_salesperson
+            # Shown only for an EXISTING lead already owned by someone else - a brand-new,
+            # unsaved lead (lead.id falsy) is being created by this CTO/MD themselves, same
+            # as their own already-saved lead, so both hide it (2026-09-09 correction: the
+            # user initially asked for new-lead-creation to show Internal too, then reversed
+            # that after seeing it live).
+            show_for_others_lead = bool(is_cto_or_md and lead.id and lead.user_id != user)
+            hide_for_own_lead = bool(is_cto_or_md) and not show_for_others_lead
+            # DMT hands a lead to the TEAM only when 'Team' is picked - the team lead
+            # assigns the actual salesperson afterwards, so DMT never needs (or should
+            # see) this field for that one combination (client instruction, 2026-09-09).
+            # Mirrors assign_salesperson's onchange, which likewise leaves user_id unset
+            # for DMT+'team' instead of auto-picking create_lead_id.
+            hide_for_dmt_team = bool(user_is_dmt and lead.x_assign_type == 'team')
+            lead.x_hide_salesperson = hide_for_own_lead or hide_for_dmt_team
+            lead.x_hide_internal_option = hide_for_own_lead
             if not can_beyond_self:
                 lead.x_assignable_user_ids = False
             elif user_is_dmt:
@@ -569,9 +608,26 @@ class CrmLead(models.Model):
             self.team_id = self._mz_user_own_team()
             return
         if self.x_assign_type == 'team':
+            # DMT only ever hands a lead to the TEAM, never to a specific person - the
+            # team lead picks the actual salesperson afterwards (client instruction,
+            # 2026-09-09). Leave user_id unset rather than auto-picking create_lead_id;
+            # the Salesperson field is hidden for this exact combination in the view
+            # (x_hide_salesperson) so there's nothing for the DMT user to fill in anyway.
+            if self._mz_user_is_dmt(user):
+                self.user_id = False
+                return
             self.user_id = self.team_id.create_lead_id and self.team_id.create_lead_id[0] or False
         if self.x_assign_type == 'internal':
-            self.team_id = user.crm_team_ids[0]
+            # Only snap team_id to the ACTING user's own team when they have one - a
+            # regular TL/Manager picking 'Internal' is always delegating within their
+            # own team, so this is the normal case. CTO/Admin (and MD) have no
+            # crm_team_ids of their own at all - user.crm_team_ids[0] on an empty
+            # recordset raised IndexError the moment they picked 'Internal' on
+            # someone ELSE's lead (2026-09-08). For them, team_id already correctly
+            # holds whatever team the lead they're viewing belongs to - leave it as
+            # is instead of forcing a team that doesn't exist for this user.
+            if user.crm_team_ids:
+                self.team_id = user.crm_team_ids[0]
             return
         if not self.x_can_assign_beyond_self:
             self.x_assign_type = 'self'
@@ -661,56 +717,79 @@ class CrmLead(models.Model):
                 lead.x_content_readonly_for_me and not lead.x_is_locked
             )
 
-    x_activity_warning = fields.Selection(
+    x_activity_card_state = fields.Selection(
         [
-            ('purple', 'Activity due within 30 minutes'),
-            ('orange', 'Activity due within 10 minutes'),
+            ('purple', 'Activity Today'),
+            ('green', 'Activity Due Now'),
+            ('red', 'Activity Overdue (RED Lock)'),
         ],
-        string="Activity Warning",
-        compute="_compute_x_activity_warning",
-        help="Kanban card pre-warning before RED lock: purple in the 30-minute window "
-             "before the next activity, orange in the 10-minute window - only shown to the "
-             "lead's owner or, for a Meeting activity, one of its calendar attendees, not "
-             "to everyone browsing the Pipeline. Deliberately not stored: this is inherently "
-             "relative to 'now' and to the viewing user, so it's recomputed fresh on every "
-             "read rather than cron-maintained, the same way Odoo's own activity_state is."
+        string="Activity Card State", compute="_compute_x_activity_card_state", store=True,
+        help="Drives the Pipeline kanban card's colour, for DMT/Tally/Technology leads only "
+             "(MZ_ACTIVITY_CARD_BU_CATEGORIES - Software Dev and MIS have no Follow-up's "
+             "stage, so this doesn't apply to them; False/'Normal' for every other lead "
+             "regardless of team). Client rework spec (2026-09-08), precedence top to "
+             "bottom:\n"
+             "- RED: same signal as x_is_locked (the RED lock) - " + str(MZ_ACTIVITY_WINDOW_MINUTES) + " minutes "
+             "past the activity's real moment with it still open. Deliberately reuses "
+             "x_is_locked rather than its own independent timer, so there's exactly one "
+             "'is this overdue' answer in the whole module.\n"
+             "- GREEN: within " + str(MZ_ACTIVITY_WINDOW_MINUTES) + " minutes either side of "
+             "the activity's real moment (not locked yet).\n"
+             "- PURPLE: the activity falls on TODAY (any time today, in the responsible "
+             "user's own timezone) - not a proximity window, just 'something is due today'.\n"
+             "A plain Selection, NOT the kanban 'color' integer (that's a colour-picker "
+             "index, unrelated to this). Stored, because it needs to be orderable/filterable "
+             "and - critically - a card must repaint purely because TIME has passed even "
+             "when nothing on the record was written, which a stored field can only do via "
+             "an explicit periodic recompute: ir_cron_mz_recompute_activity_card_state "
+             "(data/cron.xml) re-triggers this compute, every 5 minutes, for leads whose "
+             "activity falls within a day of now (a cheap, indexed window - not a full-table "
+             "sweep) - ordinary field writes (a new/edited/completed activity, a fresh RED "
+             "lock) still recompute it immediately via these @api.depends as usual."
     )
 
-    @api.depends('x_next_activity_datetime', 'x_is_locked')
-    def _compute_x_activity_warning(self):
+    @api.depends('x_next_activity_datetime', 'x_is_locked', 'team_id.x_bu_category')
+    def _compute_x_activity_card_state(self):
         now = fields.Datetime.now()
         for lead in self:
-            lead.x_activity_warning = False
-            if lead.x_is_locked or not lead.x_next_activity_datetime:
+            if lead.team_id.x_bu_category not in MZ_ACTIVITY_CARD_BU_CATEGORIES:
+                lead.x_activity_card_state = False
                 continue
-            if not lead._mz_user_involved_in_next_activity():
+            if lead.x_is_locked:
+                lead.x_activity_card_state = 'red'
                 continue
-            minutes_to_go = (lead.x_next_activity_datetime - now).total_seconds() / 60
-            if 0 <= minutes_to_go <= 10:
-                lead.x_activity_warning = 'orange'
-            elif 10 < minutes_to_go <= 30:
-                lead.x_activity_warning = 'purple'
+            if not lead.x_next_activity_datetime:
+                lead.x_activity_card_state = False
+                continue
+            minutes_away = (lead.x_next_activity_datetime - now).total_seconds() / 60
+            if abs(minutes_away) <= MZ_ACTIVITY_WINDOW_MINUTES:
+                lead.x_activity_card_state = 'green'
+                continue
+            tz_name = (lead.user_id.tz if lead.user_id else self.env.user.tz) or 'UTC'
+            activity_local_date = pytz.UTC.localize(
+                lead.x_next_activity_datetime
+            ).astimezone(pytz.timezone(tz_name)).date()
+            today_local_date = pytz.UTC.localize(now).astimezone(pytz.timezone(tz_name)).date()
+            lead.x_activity_card_state = 'purple' if activity_local_date == today_local_date else False
 
-    def _mz_user_involved_in_next_activity(self):
-        """Whether the current user should see this lead's pre-RED-lock warning: the lead's
-        own owner always does; for a Meeting activity, so does anyone in its calendar
-        attendee list (e.g. a TL sitting in on an agent's call) - Calls/To-Dos have no
-        attendee list, so only the owner sees the warning for those."""
-        self.ensure_one()
-        u = self.env.user
-        if self.user_id == u:
-            return True
-        open_activities = self.activity_ids.filtered('active')
-        if not open_activities:
-            return False
-        next_activity = min(
-            open_activities,
-            key=lambda a: a._mz_resolve_activity_datetime() or fields.Datetime.now(),
-        )
-        return bool(
-            next_activity.calendar_event_id
-            and u.partner_id in next_activity.calendar_event_id.partner_ids
-        )
+    @api.model
+    def _cron_recompute_activity_card_state(self):
+        """Forces x_activity_card_state (a stored field) to repaint purely because time has
+        passed - see that field's own help text for why a cron is needed at all. Scoped to
+        DMT/Tally/Technology leads whose activity falls within a day of now: wide enough to
+        safely cover every timezone's 'today' without a per-row timezone calculation in SQL
+        (the exact per-user-timezone check happens in the compute itself), but nowhere close
+        to a full-table sweep - x_next_activity_datetime is indexed, and this excludes every
+        lead with a far-future/past/no activity, or in a BU this feature doesn't apply to."""
+        now = fields.Datetime.now()
+        leads = self.sudo().search([
+            ('x_next_activity_datetime', '>=', now - timedelta(days=1)),
+            ('x_next_activity_datetime', '<=', now + timedelta(days=1)),
+            ('team_id.x_bu_category', 'in', list(MZ_ACTIVITY_CARD_BU_CATEGORIES)),
+            ('active', '=', True),
+        ])
+        if leads:
+            leads._compute_x_activity_card_state()
 
     # ------------------------------------------------------------------
     # M2 pipeline fields (Mazenet_CRM_M2_Build_Tasks.xlsx)
@@ -1098,6 +1177,15 @@ class CrmLead(models.Model):
         is_cto_admin = u.has_group("mazenet_access_rights.group_mzr_cto_admin")
         self._mz_check_assign_type_allowed(vals)
 
+        # Assign/Reassign Notification (client instruction, 2026-09-09): capture the
+        # PRE-write owner/team so it can be compared against the post-write value below,
+        # once super().write() actually applies it - vals['user_id']/['team_id'] being
+        # present doesn't guarantee the value actually CHANGED (e.g. re-saving the same
+        # salesperson), so the comparison has to happen after the write, not from vals.
+        track_assign = 'user_id' in vals or 'team_id' in vals
+        if track_assign:
+            pre_assign = {lead.id: (lead.user_id, lead.team_id) for lead in self}
+
         # Direct Lead Archiving Restriction: leads are archived only via the Archive Lead
         # Wizard (which stamps mz_archive_wizard on the context), never a raw active=False.
         if "active" in vals and not vals["active"]:
@@ -1172,15 +1260,13 @@ class CrmLead(models.Model):
                             "read-only for you now."
                         ) % lead.name)
 
-            # BU Manager Content Lock: a Manager can view/reassign every lead in their scope
-            # (granted by the ir.rule Team Lead tier, which Manager inherits via implied_ids),
-            # but content edits on a lead they don't own go through the Team Lead instead.
-            if any(u.has_group(g) for g in MZR_MANAGER_GROUPS):
-                for lead in self:
-                    if lead.user_id and lead.user_id != u:
-                        touched_content = content_touched
-                        if touched_content - REASSIGN_FIELDS:
-                            raise AccessError(_("Managers view and reassign; content edits go through the Team Lead."))
+            # BU Manager Content Lock REMOVED (client instruction, 2026-09-09): the
+            # hierarchy is Manager full rights, TL full rights, ATL full rights - a
+            # Manager editing an Agent's lead directly (e.g. Tally Manager on a Tally
+            # Prime Upgrade Agent's lead) is normal, not something to route through the
+            # TL first. Manager already reaches here via _mz_can_edit_by_team/
+            # _mz_can_edit_owned like any other ATL/TL/Manager on the lead's current
+            # team - no separate content-vs-reassign restriction on top of that.
 
         # M3 stage-mandatory-field gate: enforced regardless of role (CTO/Admin included -
         # this is a data-completeness rule, not an authority one), skipped only for raw
@@ -1191,7 +1277,15 @@ class CrmLead(models.Model):
             for lead in self:
                 lead._mz_stage_gate_check(new_stage, vals)
 
-        return super(CrmLead, self).write(vals)
+        result = super(CrmLead, self).write(vals)
+
+        if track_assign:
+            for lead in self:
+                old_user, old_team = pre_assign.get(lead.id, (lead.user_id, lead.team_id))
+                if lead.user_id != old_user or lead.team_id != old_team:
+                    lead._notify_assign_reassign(old_user)
+
+        return result
 
     def unlink(self):
         if not self.env.su:
@@ -1236,6 +1330,32 @@ class CrmLead(models.Model):
                 own_team = self._mz_user_own_team(user)
                 team_domain = [('id', 'in', own_team.member_ids.ids)] if own_team else [('id', '=', 0)]
                 kwargs['comodel_domain'] = (kwargs.get('comodel_domain') or []) + team_domain
+            else:
+                # CTO/Admin/MD: the Salesperson section also carries groupby="x_mz_team_id"
+                # (views/crm_lead_views.xml), which routes core's
+                # search_panel_select_multi_range into its many2one+group_by branch - that
+                # branch builds its value list purely from comodel_domain (all res.users
+                # matching it) and only uses category_domain for the __count numbers, NOT
+                # for pruning which users even appear. So selecting "Tally" in the Sales
+                # Team category above had zero effect on which salespeople showed up here
+                # (hit 2026-09-09). Pull the selected team id(s) straight out of the
+                # category_domain leaf core already built for us and fold them into
+                # comodel_domain. Can't filter via x_mz_team_id itself here - it's a
+                # non-stored compute with no search() method, and comodel_domain gets
+                # compiled straight to SQL (ValueError: Cannot convert
+                # res.users.x_mz_team_id to SQL because it is not stored, hit
+                # 2026-09-09) - so resolve the team(s) to their member_ids ourselves and
+                # filter res.users by id instead.
+                team_ids = []
+                for leaf in (kwargs.get('category_domain') or []):
+                    if isinstance(leaf, (list, tuple)) and len(leaf) == 3 and leaf[0] == 'team_id':
+                        value = leaf[2]
+                        team_ids += list(value) if isinstance(value, (list, tuple)) else [value]
+                if team_ids:
+                    member_ids = self.env['crm.team'].sudo().browse(team_ids).exists().member_ids.ids
+                    kwargs['comodel_domain'] = (kwargs.get('comodel_domain') or []) + [
+                        ('id', 'in', member_ids)
+                    ]
         return super().search_panel_select_multi_range(field_name, **kwargs)
 
     @api.model
@@ -1482,6 +1602,55 @@ class CrmLead(models.Model):
             body=body,
         )
 
+    def _mz_assign_notify_recipients(self, new_owner):
+        """CTO/Admin always, plus whichever of the lead's CURRENT team_id's own ATL/TL/
+        Manager members sit strictly ABOVE new_owner's tier (client instruction,
+        2026-09-09: notify 'CTO or Manager or TL or ATL' whenever a lead is assigned/
+        reassigned) - e.g. an Agent getting assigned notifies their team's ATL, TL AND
+        Manager; a lead reassigned straight to a TL only notifies that team's Manager
+        (their ATL peers/subordinates aren't "above" them). If new_owner is empty (DMT+
+        Team bulk hand-off deliberately leaves user_id unset) or holds no recognized
+        tier, every ATL/TL/Manager member of the team is notified instead - there's no
+        specific tier to be "above" yet. Scoped to THIS team only (team_id.member_ids),
+        not company-wide, same reasoning as _mz_can_edit_by_team."""
+        self.ensure_one()
+        cto_group = self.env.ref('mazenet_access_rights.group_mzr_cto_admin', raise_if_not_found=False)
+        recipients = cto_group.users if cto_group else self.env['res.users']
+        if not self.team_id:
+            return recipients
+        owner_tier, _chain = self._mz_user_tier_chain(new_owner) if new_owner else (None, None)
+        owner_rank = self.MZR_TIER_RANK.get(owner_tier, -1)
+        for member in self.team_id.member_ids:
+            tier, _chain = self._mz_user_tier_chain(member)
+            if tier in ('atl', 'tl', 'manager') and self.MZR_TIER_RANK[tier] > owner_rank:
+                recipients |= member
+        return recipients
+
+    def _notify_assign_reassign(self, old_owner):
+        """Chatter + real-time/persistent Inbox notification whenever a lead's user_id
+        or team_id actually changes (single-lead form, bulk Mass Assign wizard, or any
+        other write() that touches either) - client instruction, 2026-09-09. Fires from
+        write() itself so every path that can change assignment is covered without
+        needing to duplicate this in each wizard/onchange."""
+        self.ensure_one()
+        new_owner_name = self.user_id.name if self.user_id else _("Unassigned")
+        old_owner_name = old_owner.name if old_owner else _("Unassigned")
+        body = _(
+            "Lead reassigned: %(old)s → %(new)s (Team: %(team)s), by %(actor)s."
+        ) % {
+            'old': old_owner_name, 'new': new_owner_name,
+            'team': self.team_id.name or _("None"), 'actor': self.env.user.name,
+        }
+        self.message_post(body=body, subtype_xmlid="mail.mt_note")
+
+        recipients = self._mz_assign_notify_recipients(self.user_id) - self.env.user
+        if recipients:
+            self._push_notification(
+                recipients,
+                subject=_("Lead Assigned/Reassigned: %s") % self.name,
+                body=body,
+            )
+
     def _notify_red_lock_triggered(self):
         """Chatter (audit trail on the lead) + real-time/persistent Inbox notification +
         a standing activity for the lead's owner when a lock triggers."""
@@ -1512,13 +1681,17 @@ class CrmLead(models.Model):
     def _cron_trigger_red_locks(self):
         """Auto-trigger the RED lock on leads whose next activity's real moment
         (x_next_activity_datetime - already resolved per-activity-type, see mail_activity.py)
-        is more than MZ_RED_LOCK_GRACE_MINUTES in the past. A 10:00 AM activity locks at
-        10:15, not the instant 10:00 passes - gives the owner a short window to still make
-        it before it counts against them."""
+        is more than MZ_ACTIVITY_WINDOW_MINUTES (20) in the past. A 10:00 AM activity locks
+        at 10:20, not the instant 10:00 passes - gives the owner a short window to still
+        make it before it counts against them. Scoped to MZ_ACTIVITY_CARD_BU_CATEGORIES
+        (DMT/Tally/Technology) - client rework spec (2026-09-08): Software Dev and MIS have
+        no Follow-up's stage, so the RED lock itself no longer applies there, not just its
+        colour. data/cron.xml calls check_red_lock_recods() (right below) immediately after
+        this, in the same cron tick, and that method no longer waits out a second grace
+        period of its own before escalating to the Team Lead - the client wants the TL
+        notified together with RED triggering, not some extra minutes after that."""
         now = fields.Datetime.now()
-        current_company = self.env.company
-        grace_time = current_company.grace_time
-        cutoff = now - timedelta(minutes=grace_time)
+        cutoff = now - timedelta(minutes=MZ_ACTIVITY_WINDOW_MINUTES)
 
         leads = self.sudo().search([
             ('x_next_activity_datetime', '!=', False),
@@ -1526,6 +1699,7 @@ class CrmLead(models.Model):
             ('x_is_locked', '=', False),
             ('active', '=', True),
             ('user_id', '!=', False),
+            ('team_id.x_bu_category', 'in', list(MZ_ACTIVITY_CARD_BU_CATEGORIES)),
         ])
         for lead in leads:
             lead.write({
@@ -1533,8 +1707,6 @@ class CrmLead(models.Model):
                 'x_lock_date': now,
             })
             lead._notify_red_lock_triggered()
-    
-
 
     def _get_parent_hierarchy(self, group):
             """Recursively fetch all parent/ancestor groups."""
@@ -1544,42 +1716,52 @@ class CrmLead(models.Model):
             return parents
 
     def check_red_lock_recods(self):
-        red_lock_rec_vals = self.search([('x_is_locked', '=', True)])
-        company = self.env.company
-        grace_time = company.grace_time or 0
+        """Escalate a RED lock to the owner's Team Lead/Manager chain. Runs on every
+        cron tick (data/cron.xml, right after _cron_trigger_red_locks) against every
+        currently-locked lead in scope - no elapsed-since-lock delay of its own anymore
+        (client rework spec, 2026-09-08: the TL should be notified together with RED
+        triggering, not some extra minutes after that - this used to wait out a SECOND
+        grace_time on top of the one that already delayed the lock itself, so a TL
+        wasn't actually notified until ~2x the intended grace period had passed).
+        Idempotent via the existing_activity check below, so running it on every
+        already-escalated lead every 2 minutes is harmless. Scoped to
+        MZ_ACTIVITY_CARD_BU_CATEGORIES the same as the lock itself."""
+        red_lock_rec_vals = self.search([
+            ('x_is_locked', '=', True),
+            ('team_id.x_bu_category', 'in', list(MZ_ACTIVITY_CARD_BU_CATEGORIES)),
+        ])
         todo_activity_type = self.env.ref('mail.mail_activity_data_todo', raise_if_not_found=False)
         activity_type_id = todo_activity_type.id if todo_activity_type else False
         for lead in red_lock_rec_vals:
-            if lead.x_lock_date and (fields.Datetime.now() - lead.x_lock_date).total_seconds() / 60 > grace_time:
-                user = lead.user_id
-                if not user:
-                    continue
-                target_groups = lead.team_id.privelege_ids.mapped('group_ids')
-                matching_groups = target_groups & user.group_ids
-                parent_users = self.env['res.users']
-                for group in matching_groups:
-                    all_parents = self._get_parent_hierarchy(group)
-                    for parent in all_parents:
-                        parent_users |= parent.user_ids
-                escalation_users = parent_users - user
-                for parent_user in escalation_users:
-                    existing_activity = self.env['mail.activity'].sudo().search([
-                        ('res_model', '=', 'crm.lead'),
-                        ('res_id', '=', lead.id),
-                        ('user_id', '=', parent_user.id),
-                        ('summary', '=', 'Red Lock Release Pending'),
-                    ], limit=1)
-                    if not existing_activity:
-                        lead.activity_schedule(
-                            activity_type_id=activity_type_id,
-                            summary="Red Lock Release Pending",
-                            note=(
-                                f"<p><strong>Alert:</strong> No one has released the Red Lock on lead "
-                                f"<strong>{lead.name}</strong> assigned to <strong>{user.name}</strong>.</p>"
-                                f"<p>Grace period of {grace_time} minutes has been exceeded.</p>"
-                            ),
-                            user_id=parent_user.id,
-                            date_deadline=fields.Date.context_today(self),)
+            user = lead.user_id
+            if not user:
+                continue
+            target_groups = lead.team_id.privelege_ids.mapped('group_ids')
+            matching_groups = target_groups & user.group_ids
+            parent_users = self.env['res.users']
+            for group in matching_groups:
+                all_parents = self._get_parent_hierarchy(group)
+                for parent in all_parents:
+                    parent_users |= parent.user_ids
+            escalation_users = parent_users - user
+            for parent_user in escalation_users:
+                existing_activity = self.env['mail.activity'].sudo().search([
+                    ('res_model', '=', 'crm.lead'),
+                    ('res_id', '=', lead.id),
+                    ('user_id', '=', parent_user.id),
+                    ('summary', '=', 'Red Lock Release Pending'),
+                ], limit=1)
+                if not existing_activity:
+                    lead.activity_schedule(
+                        activity_type_id=activity_type_id,
+                        summary="Red Lock Release Pending",
+                        note=(
+                            f"<p><strong>Alert:</strong> No one has released the Red Lock on lead "
+                            f"<strong>{lead.name}</strong> assigned to <strong>{user.name}</strong>.</p>"
+                            f"<p>Overdue by more than {MZ_ACTIVITY_WINDOW_MINUTES} minutes.</p>"
+                        ),
+                        user_id=parent_user.id,
+                        date_deadline=fields.Date.context_today(self),)
 
 
 

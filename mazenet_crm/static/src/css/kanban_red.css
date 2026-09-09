@@ -26,10 +26,13 @@
     }
 }
 
-/* Pre-RED-lock warnings - same subtle tint/border treatment, one stage earlier: purple at
-   30 minutes out, orange at 10 minutes out. Only ever rendered for the lead's owner (or a
-   meeting's attendees) - see crm_lead.py _mz_user_involved_in_next_activity - so unlike the
-   red lock tint, other users browsing the same Pipeline won't see these at all. */
+/* Activity card state (client rework spec, 2026-09-08) - same subtle tint/border
+   treatment as the RED lock above, one stage earlier: PURPLE = the lead's next activity
+   falls today, GREEN = within 20 minutes either side of it (crm_lead.py
+   x_activity_card_state / MZ_ACTIVITY_WINDOW_MINUTES). Stored and cron-recomputed, so -
+   unlike the old per-viewer pre-lock warning this replaces - every viewer browsing the
+   Pipeline sees the same colour, not just the lead's owner. Only ever set for
+   DMT/Tally/Technology leads (Software Dev and MIS have no Follow-up's stage). */
 .o_kanban_record:has(> .mz-activity-purple-card),
 .o_kanban_record_has_image:has(> .mz-activity-purple-card) {
     background-color: rgba(142, 68, 173, 0.06) !important;
@@ -37,10 +40,10 @@
     border-radius: 4px;
 }
 
-.o_kanban_record:has(> .mz-activity-orange-card),
-.o_kanban_record_has_image:has(> .mz-activity-orange-card) {
-    background-color: rgba(230, 126, 34, 0.08) !important;
-    border-left: 3px solid rgba(230, 126, 34, 0.6) !important;
+.o_kanban_record:has(> .mz-activity-green-card),
+.o_kanban_record_has_image:has(> .mz-activity-green-card) {
+    background-color: rgba(39, 174, 96, 0.08) !important;
+    border-left: 3px solid rgba(39, 174, 96, 0.6) !important;
     border-radius: 4px;
 }
 
@@ -51,10 +54,10 @@
         border-left-color: rgba(187, 143, 206, 0.6) !important;
     }
 
-    .o_kanban_record:has(> .mz-activity-orange-card),
-    .o_kanban_record_has_image:has(> .mz-activity-orange-card) {
-        background-color: rgba(240, 178, 122, 0.16) !important;
-        border-left-color: rgba(240, 178, 122, 0.65) !important;
+    .o_kanban_record:has(> .mz-activity-green-card),
+    .o_kanban_record_has_image:has(> .mz-activity-green-card) {
+        background-color: rgba(122, 224, 163, 0.16) !important;
+        border-left-color: rgba(122, 224, 163, 0.65) !important;
     }
 }
 

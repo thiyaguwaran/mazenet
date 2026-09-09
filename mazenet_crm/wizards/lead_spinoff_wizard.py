@@ -5,7 +5,20 @@ from odoo.exceptions import UserError
 
 class MzLeadSpinoffWizard(models.TransientModel):
     _name = "mz.lead.spinoff.wizard"
-    _description = "Create New Lead From Existing Lead (Spin-off)"
+    _description = "Create New Opportunity From Existing Lead (Spin-off)"
+
+    # Every "detail" field copied from the source lead (client instruction, 2026-09-09:
+    # "all details should be pre-filled ... except assigning") - customer/contact/address/
+    # marketing-source info, NOT the assignment fields (team_id/user_id, kept blank/manual
+    # below - picking who/which team gets the new opportunity is a fresh decision each
+    # time, not a copied "detail") and NOT description (still deliberately blank - a
+    # spin-off is a NEW requirement, not a repeat of the old one).
+    DETAIL_FIELDS = [
+        'partner_id', 'partner_name', 'contact_name', 'email_from', 'email_cc', 'phone',
+        'function', 'website', 'street', 'street2', 'city', 'state_id', 'zip', 'country_id',
+        'tag_ids', 'priority', 'campaign_id', 'medium_id', 'source_id', 'referred',
+        'company_id', 'lang_id',
+    ]
 
     source_lead_id = fields.Many2one(
         "crm.lead", string="Source Lead", required=True,
@@ -18,7 +31,27 @@ class MzLeadSpinoffWizard(models.TransientModel):
     partner_name = fields.Char(string="Company Name")
     contact_name = fields.Char(string="Contact Name")
     email_from = fields.Char(string="Email")
+    email_cc = fields.Char(string="Cc")
     phone = fields.Char(string="Phone")
+    function = fields.Char(string="Job Position")
+    website = fields.Char(string="Website")
+    street = fields.Char(string="Street")
+    street2 = fields.Char(string="Street 2")
+    city = fields.Char(string="City")
+    state_id = fields.Many2one("res.country.state", string="State")
+    zip = fields.Char(string="ZIP")
+    country_id = fields.Many2one("res.country", string="Country")
+    tag_ids = fields.Many2many("crm.tag", string="Tags")
+    priority = fields.Selection(
+        [('0', 'Low'), ('1', 'Medium'), ('2', 'High'), ('3', 'Very High')],
+        string="Priority", default='0',
+    )
+    campaign_id = fields.Many2one("utm.campaign", string="Campaign")
+    medium_id = fields.Many2one("utm.medium", string="Medium")
+    source_id = fields.Many2one("utm.source", string="Source")
+    referred = fields.Char(string="Referred By")
+    company_id = fields.Many2one("res.company", string="Company")
+    lang_id = fields.Many2one("res.lang", string="Language")
     team_id = fields.Many2one("crm.team", string="Sales Team", required=True)
     assignable_user_ids = fields.Many2many(
         "res.users", compute="_compute_assignable_user_ids",
@@ -32,17 +65,17 @@ class MzLeadSpinoffWizard(models.TransientModel):
         "res.users", string="Salesperson",
         domain="[('id', 'in', assignable_user_ids)]",
     )
-
-    @api.depends('team_id')
-    def _compute_assignable_user_ids(self):
-        for wizard in self:
-            wizard.assignable_user_ids = wizard.team_id.member_ids
     description = fields.Text(
         string="New Requirement",
         help="What the customer is asking for THIS time - left blank rather than "
              "copied from the source lead, since it's a new ask, not a repeat of "
              "the old one."
     )
+
+    @api.depends('team_id')
+    def _compute_assignable_user_ids(self):
+        for wizard in self:
+            wizard.assignable_user_ids = wizard.team_id.member_ids
 
     @api.model
     def default_get(self, fields_list):
@@ -52,12 +85,16 @@ class MzLeadSpinoffWizard(models.TransientModel):
             res.update({
                 'source_lead_id': lead.id,
                 'name': _("%s - New Requirement") % lead.name,
-                'partner_id': lead.partner_id.id,
-                'partner_name': lead.partner_name,
-                'contact_name': lead.contact_name,
-                'email_from': lead.email_from,
-                'phone': lead.phone,
             })
+            for fname in self.DETAIL_FIELDS:
+                field = lead._fields[fname]
+                value = lead[fname]
+                if field.type == 'many2many':
+                    res[fname] = [(6, 0, value.ids)]
+                elif field.type == 'many2one':
+                    res[fname] = value.id
+                else:
+                    res[fname] = value
         return res
 
     def action_create_lead(self):
@@ -71,23 +108,28 @@ class MzLeadSpinoffWizard(models.TransientModel):
                 "for it."
             ) % self.team_id.name)
 
-        new_lead = self.env['crm.lead'].create({
+        vals = {
             'name': self.name,
             'type': 'opportunity',
-            'partner_id': self.partner_id.id,
-            'partner_name': self.partner_name,
-            'contact_name': self.contact_name,
-            'email_from': self.email_from,
-            'phone': self.phone,
             'team_id': self.team_id.id,
             'user_id': self.user_id.id,
             'stage_id': first_stage.id,
             'description': self.description,
             'x_related_lead_id': self.source_lead_id.id,
-        })
+        }
+        for fname in self.DETAIL_FIELDS:
+            field = self._fields[fname]
+            value = self[fname]
+            if field.type == 'many2many':
+                vals[fname] = [(6, 0, value.ids)]
+            elif field.type == 'many2one':
+                vals[fname] = value.id
+            else:
+                vals[fname] = value
+        new_lead = self.env['crm.lead'].create(vals)
 
         self.source_lead_id.message_post(body=_(
-            "Spun off a new lead for a different requirement: %(link)s "
+            "Spun off a new opportunity for a different requirement: %(link)s "
             "(Team: %(team)s)."
         ) % {'link': new_lead._get_html_link(), 'team': self.team_id.name})
         new_lead.message_post(body=_(
