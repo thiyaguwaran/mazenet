@@ -1615,7 +1615,10 @@ class CrmLead(models.Model):
         not company-wide, same reasoning as _mz_can_edit_by_team."""
         self.ensure_one()
         cto_group = self.env.ref('mazenet_access_rights.group_mzr_cto_admin', raise_if_not_found=False)
-        recipients = cto_group.users if cto_group else self.env['res.users']
+        # res.groups has no 'users' field in Odoo 19 - it's all_user_ids (also picks up
+        # implied membership, e.g. Admin via a higher-level implied_ids chain), NOT the
+        # non-existent 'users' attribute (AttributeError, hit live 2026-09-10).
+        recipients = cto_group.all_user_ids if cto_group else self.env['res.users']
         if not self.team_id:
             return recipients
         owner_tier, _chain = self._mz_user_tier_chain(new_owner) if new_owner else (None, None)
