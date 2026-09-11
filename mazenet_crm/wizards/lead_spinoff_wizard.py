@@ -53,29 +53,12 @@ class MzLeadSpinoffWizard(models.TransientModel):
     company_id = fields.Many2one("res.company", string="Company")
     lang_id = fields.Many2one("res.lang", string="Language")
     team_id = fields.Many2one("crm.team", string="Sales Team", required=True)
-    assignable_user_ids = fields.Many2many(
-        "res.users", compute="_compute_assignable_user_ids",
-        help="team_id.member_ids - used as user_id's domain in the view. A plain "
-             "dotted domain ('team_id.member_ids.ids') can't be evaluated "
-             "client-side since the wizard's team_id record data doesn't carry "
-             "its own member_ids along with it, so this compute exists purely to "
-             "give the view a real field to filter on."
-    )
-    user_id = fields.Many2one(
-        "res.users", string="Salesperson",
-        domain="[('id', 'in', assignable_user_ids)]",
-    )
     description = fields.Text(
         string="New Requirement",
         help="What the customer is asking for THIS time - left blank rather than "
              "copied from the source lead, since it's a new ask, not a repeat of "
              "the old one."
     )
-
-    @api.depends('team_id')
-    def _compute_assignable_user_ids(self):
-        for wizard in self:
-            wizard.assignable_user_ids = wizard.team_id.member_ids
 
     @api.model
     def default_get(self, fields_list):
@@ -112,7 +95,13 @@ class MzLeadSpinoffWizard(models.TransientModel):
             'name': self.name,
             'type': 'opportunity',
             'team_id': self.team_id.id,
-            'user_id': self.user_id.id,
+            # No Salesperson field on this wizard (client instruction, 2026-09-11) -
+            # same reasoning as DMT+Team on the single-lead form: the spin-off just
+            # routes to a team, the receiving team's lead assigns the actual
+            # salesperson afterwards. Explicit False needed - crm.lead's own
+            # user_id defaults to self.env.user otherwise, silently assigning the
+            # NEW opportunity to whoever ran this wizard.
+            'user_id': False,
             'stage_id': first_stage.id,
             'description': self.description,
             'x_related_lead_id': self.source_lead_id.id,
@@ -126,7 +115,22 @@ class MzLeadSpinoffWizard(models.TransientModel):
                 vals[fname] = value.id
             else:
                 vals[fname] = value
-        new_lead = self.env['crm.lead'].create(vals)
+
+        # Each team's own ir.rule create-domain restricts creation to leads with
+        # team_id = that user's own team (e.g. "Mazenet CRM Lead: dmt (Team View/
+        # Create)") - correct for the normal case, but a spin-off is specifically
+        # meant to let DMT (and CTO/Admin/MD, same cross-team authority as everywhere
+        # else - _mz_user_can_use_assign_radio) route a brand-new opportunity to a
+        # DIFFERENT team than their own. Without sudo() here, that legitimate cross-
+        # team create hits the SAME AccessError a raw unauthorized cross-team create
+        # would (hit live 2026-09-11: DMT Agent blocked creating a Tally-routed
+        # opportunity by rule_crm_lead_dmt_base). Anyone else keeps the normal,
+        # non-sudo create - if they're not authorized to route outside their own
+        # team, the ir.rule should still stop them, same as it always has.
+        crm_lead = self.env['crm.lead']
+        if crm_lead._mz_user_can_use_assign_radio(self.env.user):
+            crm_lead = crm_lead.sudo()
+        new_lead = crm_lead.create(vals)
 
         self.source_lead_id.message_post(body=_(
             "Spun off a new opportunity for a different requirement: %(link)s "
@@ -136,10 +140,34 @@ class MzLeadSpinoffWizard(models.TransientModel):
             "Created from %(link)s - existing customer, new requirement."
         ) % {'link': self.source_lead_id._get_html_link()})
 
+        # DMT specifically has NO read access outside its own team (mazenet_access_
+        # rights' group_mzr_dmt_agent deliberately excludes sales_team.
+        # group_sale_salesman_all_leads - "No visibility into other teams") - so
+        # redirecting them into the very lead they just (sudo-)created for another
+        # team would immediately hit a read AccessError on open. CTO/Admin/MD read
+        # every team regardless (own dedicated ir.rules), so they're fine either way.
+        user = self.env.user
+        can_view_new_lead = (
+            user.has_group('mazenet_access_rights.group_mzr_cto_admin')
+            or user.has_group('mazenet_access_rights.group_mzr_md')
+            or self.team_id == self.env['crm.lead']._mz_user_own_team(user)
+        )
+        if can_view_new_lead:
+            return {
+                'type': 'ir.actions.act_window',
+                'res_model': 'crm.lead',
+                'res_id': new_lead.id,
+                'view_mode': 'form',
+                'target': 'current',
+            }
         return {
-            'type': 'ir.actions.act_window',
-            'res_model': 'crm.lead',
-            'res_id': new_lead.id,
-            'view_mode': 'form',
-            'target': 'current',
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': _("Opportunity Created"),
+                'message': _(
+                    "New opportunity '%(name)s' created and routed to %(team)s."
+                ) % {'name': new_lead.name, 'team': self.team_id.name},
+                'type': 'success',
+            },
         }

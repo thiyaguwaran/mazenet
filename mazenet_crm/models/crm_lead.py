@@ -305,8 +305,28 @@ class CrmLead(models.Model):
         half (an OrderedSet unwrapping bug that made team/salesperson
         selection silently fall back to DMT every time). Since we're already
         resolving the correct team ourselves here, that extra OR only ever
-        reintroduces stale/wrong columns."""
-        if not self.env.context.get('default_team_id'):
+        reintroduces stale/wrong columns.
+
+        Second leak, same symptom, different cause (hit live 2026-09-11, DMT
+        Agent's Pipeline once the 'My Pipeline' filter was removed): DMT keeps
+        READ access to a lead it originated even after it's transferred to
+        another team (rule_crm_lead_dmt_originated_read, x_dmt_originated) -
+        intentional, so the handoff doesn't lock the originating DMT user out
+        entirely. But stock's own _read_group_stage_ids (see its
+        'id in stages.ids' clause below) adds a column for ANY stage that has
+        at least one currently-VISIBLE record, with no team check at all - so
+        the instant one such transferred-out lead is visible, its CURRENT
+        stage (which belongs to the OTHER team, e.g. MIS's own 'New Lead')
+        shows up as an extra column mixed into DMT's kanban. Narrowing the
+        search (the 'My Pipeline' filter) just happened to keep that record
+        out of the read_group's matches; it was never actually team-scoped.
+        Fixed the same way for every user, not just CTO/MD: once the team
+        this Pipeline actually belongs to is known (from context or the
+        viewer's own team), strip the result down to that team's own stages
+        (plus genuinely global, team_ids=False ones) - a stage only present
+        because of some OTHER cross-cutting read grant doesn't belong here."""
+        target_team_id = self.env.context.get('default_team_id')
+        if not target_team_id:
             user = self.env.user
             if (
                 user.has_group('mazenet_access_rights.group_mzr_cto_admin')
@@ -316,11 +336,16 @@ class CrmLead(models.Model):
                 if not target_team_id:
                     dmt_team = self.env.ref('mazenet_crm.team_dmt', raise_if_not_found=False)
                     target_team_id = dmt_team.id if dmt_team else False
-                if target_team_id:
-                    self = self.with_context(
-                        default_team_id=target_team_id, show_user_team_stages=False
-                    )
-        return super()._read_group_stage_ids(stages, domain)
+            else:
+                target_team_id = self._mz_user_own_team(user).id or None
+            if target_team_id:
+                self = self.with_context(
+                    default_team_id=target_team_id, show_user_team_stages=False
+                )
+        result = super()._read_group_stage_ids(stages, domain)
+        if target_team_id:
+            result = result.filtered(lambda s: not s.team_ids or target_team_id in s.team_ids.ids)
+        return result
 
     def _get_team_id_domain(self):
         return [("id", "not in", self.env.user.crm_team_ids.ids)]
@@ -439,8 +464,28 @@ class CrmLead(models.Model):
             )
 
     def _inverse_x_assign_type_no_internal(self):
+        """Guarded to a genuine no-op when the value already matches (2026-09-11 fix):
+        `lead.x_assign_type = ...` on a real record is a plain attribute assignment,
+        but Odoo implements that as `lead.write({'x_assign_type': ...})` under the
+        hood - a full RECURSIVE call back into this model's own write() override,
+        mid-flight, while the OUTER write() that triggered this inverse is still
+        running. The web client sends x_assign_type_no_internal alongside
+        x_assign_type in the SAME vals whenever the real field changes (it's an
+        invisible mirror, but still a dependent compute the client tracks as
+        dirty), both set to the SAME target value - so by the time this inverse
+        fires, x_assign_type has already been applied by the outer write and
+        already equals x_assign_type_no_internal. Without this guard, the
+        recursive write still fired anyway, re-running every access check with
+        team_id/user_id ALREADY updated (uncommitted) by the outer write - so a
+        legitimate team handoff (which moves team_id off DMT) made the recursive
+        write's own _mz_can_edit_owned check fail, and that failure rolled back
+        the ENTIRE transaction, silently undoing the outer write's real change too
+        (hit live 2026-09-11: DMT Agent's team-transfer save always reverted with
+        an AccessError, even though nothing was actually wrong with the transfer
+        itself)."""
         for lead in self:
-            lead.x_assign_type = lead.x_assign_type_no_internal
+            if lead.x_assign_type != lead.x_assign_type_no_internal:
+                lead.x_assign_type = lead.x_assign_type_no_internal
     x_can_use_assign_radio = fields.Boolean(
         compute='_compute_x_assignable_user_ids',
         string="Can Use Assign Radio",
@@ -483,15 +528,6 @@ class CrmLead(models.Model):
              "moment they're viewing anyone else's lead, or creating a brand-new one. "
              "Not stored - reflects whoever has the form open."
     )
-    x_is_dmt_user = fields.Boolean(
-        compute='_compute_x_assignable_user_ids',
-        string="Is DMT User",
-        help="Whether the CURRENT user (viewing/editing this lead right now) belongs "
-             "to the DMT team - used in the view to exempt user_id from the general "
-             "x_content_readonly_for_me gate for DMT, on top of the unrestricted "
-             "assignment pool above. Not stored - reflects whoever has the form open."
-    )
-
     x_can_create_partner = fields.Boolean(
         compute='_compute_x_can_create_partner',
         string="Can Create Partner",
@@ -501,7 +537,7 @@ class CrmLead(models.Model):
              "creating one is restricted to Team Leads and Managers'). True for every "
              "other BU (no such rule there) and for Technology TL/Manager tier; False "
              "for a Technology Agent/ATL. Not stored - reflects whoever has the form "
-             "open, same pattern as x_is_dmt_user."
+             "open."
     )
 
     @api.depends('team_id')
@@ -568,7 +604,6 @@ class CrmLead(models.Model):
             or user.has_group('mazenet_access_rights.group_mzr_cto_admin')
         )
         for lead in self:
-            lead.x_is_dmt_user = user_is_dmt
             lead.x_can_use_assign_radio = can_use_radio
             lead.x_can_assign_beyond_self = can_beyond_self
             # Shown only for an EXISTING lead already owned by someone else - a brand-new,
@@ -700,21 +735,30 @@ class CrmLead(models.Model):
         compute="_compute_x_team_transfer_readonly",
         string="Read-Only (Team Transfer)",
         help="True specifically when this lead is read-only for the CURRENT user "
-             "because of the Sales Team rule (_mz_can_edit_owned) - NOT because of a "
-             "RED lock. Kept separate from x_content_readonly_for_me (which covers "
-             "both) so the UI can color-code the two causes differently: RED lock "
-             "already gets red (ribbon/tint/banner) elsewhere, this one drives a "
-             "grey tint/banner instead, in the kanban card and the form, so a "
-             "lead that's simply moved off your team doesn't read as 'overdue' when "
-             "it isn't. Not stored - same per-user reasoning as "
-             "x_content_readonly_for_me."
+             "because team_id no longer includes them (a genuine transfer to another "
+             "team) - NOT because of a RED lock, and NOT because of the separate "
+             "'need ATL/TL/Manager tier to edit a peer's owned lead' rule that applies "
+             "WITHIN a team you're still a member of (_mz_can_edit_by_team). Kept "
+             "separate from x_content_readonly_for_me (which covers all three reasons)"
+             " so the UI can label each cause correctly: RED lock already gets red "
+             "(ribbon/tint/banner) elsewhere, an actual team transfer gets this grey "
+             "tint/'TRANSFERRED' banner, and the peer-lead-tier case just goes plain "
+             "readonly with no banner at all - conflating that last one with "
+             "'TRANSFERRED' was actively misleading (the lead never left the team;"
+             " hit live 2026-09-11 once DMT stopped being exempt from the tier rule "
+             "and this mislabeling became visible for the first time). Not stored - "
+             "same per-user reasoning as x_content_readonly_for_me."
     )
 
-    @api.depends('x_is_locked', 'x_content_readonly_for_me')
+    @api.depends('x_is_locked', 'x_content_readonly_for_me', 'team_id')
+    @api.depends_context('uid')
     def _compute_x_team_transfer_readonly(self):
+        u = self.env.user
         for lead in self:
             lead.x_team_transfer_readonly = (
-                lead.x_content_readonly_for_me and not lead.x_is_locked
+                lead.x_content_readonly_for_me
+                and not lead.x_is_locked
+                and (not lead.team_id or u not in lead.team_id.member_ids)
             )
 
     x_activity_card_state = fields.Selection(
@@ -1237,16 +1281,12 @@ class CrmLead(models.Model):
             # branch just above, where the owner is deliberately excluded even on
             # their OWN team - being locked out is the whole point of RED lock for
             # them specifically.
-            # DMT Reassignment Waiver: mirrors x_is_dmt_user's view-level exemption of
-            # user_id from x_content_readonly_for_me - a DMT team member may reassign
-            # user_id on a locked/transferred lead even though they'd otherwise fail
-            # _mz_can_edit_by_team/_mz_can_edit_owned below. Scoped to a write that
-            # touches ONLY user_id (besides system fields); any other content field in
-            # the same write still goes through the normal gate, so this doesn't become
-            # a backdoor for editing locked/transferred lead content generally.
-            dmt_reassign_only = content_touched == {"user_id"} and self._mz_user_is_dmt(u)
+            # DMT Reassignment Waiver REMOVED (client instruction, 2026-09-11, same
+            # change as _mz_can_edit_owned above): a transferred/locked lead is now
+            # fully read-only for DMT too, including user_id - no more carve-out for
+            # reassigning the salesperson on a lead DMT no longer has any claim to.
 
-            if content_touched and not dmt_reassign_only:
+            if content_touched:
                 for lead in self:
                     if lead.x_is_locked:
                         if not lead.can_user_release_lock(u):
@@ -1255,9 +1295,22 @@ class CrmLead(models.Model):
                                 "before it can be edited again."
                             ) % lead.name)
                     elif not lead._mz_can_edit_owned(u):
+                        # Same distinction as _compute_x_team_transfer_readonly
+                        # (2026-09-11 fix): "not on this team at all" (a genuine
+                        # transfer) and "on the team but not the owner, without
+                        # ATL/TL/Manager tier" are different problems with different
+                        # fixes - conflating them under one "transferred" message
+                        # was actively misleading (hit live 2026-09-11: a DMT Agent
+                        # got told a peer-owned, never-transferred DMT lead had
+                        # "been transferred to another team").
+                        if not lead.team_id or u not in lead.team_id.member_ids:
+                            raise AccessError(_(
+                                "Lead '%s' has been transferred to another team and is "
+                                "read-only for you now."
+                            ) % lead.name)
                         raise AccessError(_(
-                            "Lead '%s' has been transferred to another team and is "
-                            "read-only for you now."
+                            "Lead '%s' is owned by someone else on your team. Only the "
+                            "owner, or an ATL/TL/Manager, can edit it."
                         ) % lead.name)
 
             # BU Manager Content Lock REMOVED (client instruction, 2026-09-09): the
@@ -1278,6 +1331,51 @@ class CrmLead(models.Model):
                 lead._mz_stage_gate_check(new_stage, vals)
 
         result = super(CrmLead, self).write(vals)
+
+        # DMT Handoff Auto-Advance (client instruction, 2026-09-11): the instant a
+        # lead's team_id moves OFF DMT, park it on DMT's own "Follow-up's" stage
+        # (the last stage in DMT's 4-stage funnel) - both so DMT's Pipeline shows
+        # it as done-from-their-side rather than under whatever foreign stage the
+        # receiving team eventually moves it to (that foreign stage was bleeding
+        # into DMT's kanban as an extra column - the x_dmt_originated read grant
+        # makes the record visible, but nothing previously fixed WHICH stage
+        # column it showed up under), and so "Follow-up's" actually means
+        # something (previously unreachable via this path - DMT's own stage
+        # progression stopped at "Transfer to BU"). sudo() + skip if the caller
+        # already set stage_id explicitly (respects an explicit override, and
+        # this write is a one-time system-driven convenience, not a user stage
+        # change - same reasoning as the x_dmt_originated retire-write below).
+        # The receiving team naturally moves it into one of THEIR OWN stages the
+        # first time they actually work it, which also retires x_dmt_originated
+        # (see below) and ends DMT's visibility into it entirely.
+        if track_assign and 'team_id' in vals and 'stage_id' not in vals:
+            dmt_team = self.env.ref('mazenet_crm.team_dmt', raise_if_not_found=False)
+            stage_dmt_transferred = self.env.ref(
+                'mazenet_crm.stage_dmt_transferred', raise_if_not_found=False
+            )
+            if dmt_team and stage_dmt_transferred:
+                to_advance = self.filtered(
+                    lambda l: pre_assign.get(l.id, (None, l.team_id))[1] == dmt_team
+                    and l.team_id != dmt_team
+                    and l.stage_id != stage_dmt_transferred
+                )
+                if to_advance:
+                    to_advance.sudo().write({'stage_id': stage_dmt_transferred.id})
+
+        # x_dmt_originated self-expiry (2026-09-11): the first time someone OUTSIDE
+        # DMT substantively edits a lead DMT originated, permanently retire the flag
+        # - see record_rules.xml's rule_crm_lead_dmt_originated_read/_write for why a
+        # static ir.rule domain condition (e.g. keyed off stage_id) can't do this
+        # safely instead (stock CRM resets stage_id in the SAME write that changes
+        # team_id, so a stage-based condition would break the handoff write itself).
+        # sudo() here is deliberate and safe: it only ever flips this one flag to
+        # False, and self.env.su on the recursive write() call short-circuits every
+        # guard above keyed on "not self.env.su", so this can't recurse further.
+        if not self.env.su and not self._mz_user_is_dmt(u):
+            if set(vals.keys()) - SYSTEM_FIELDS:
+                to_retire = self.filtered('x_dmt_originated')
+                if to_retire:
+                    to_retire.sudo().write({'x_dmt_originated': False})
 
         if track_assign:
             for lead in self:
@@ -1507,21 +1605,29 @@ class CrmLead(models.Model):
         aside this is the general-purpose check for the non-locked case. Sales Team
         (team_id) is the single source of truth, no owner exemption - `user` must
         currently be a member of team_id.member_ids, full stop. Within that, two
-        cases: the lead's OWNER (if any - an unowned lead never matches this) may
-        edit it at ANY tier (an Agent editing their own lead is normal day-to-day CRM
-        use, not something this rule should block) as long as they're still on the
-        team it's filed under; anyone else - including on an unowned lead, where this
-        is the ONLY path in - additionally needs ATL/TL/Manager tier
+        cases: the lead's OWNER (if any) may edit it at ANY tier (an Agent editing
+        their own lead is normal day-to-day CRM use, not something this rule should
+        block) as long as they're still on the team it's filed under; an UNOWNED
+        lead is likewise editable by any tier on the team (nobody's turf to
+        protect yet - includes the Agent who just cleared it themselves via
+        Team/Internal assign-type mid-edit: x_content_readonly_for_me recomputes
+        live off the in-progress user_id, and DMT+Team intentionally sets user_id
+        to False before team_id has even changed, so without this the form went
+        fully read-only the instant 'Team' was picked, before the Agent could
+        even choose a team - hit live 2026-09-11); anyone else editing a lead
+        SOMEONE ELSE owns additionally needs ATL/TL/Manager tier
         (_mz_can_edit_by_team). Either way, the moment team_id moves elsewhere,
         whoever isn't a member of the NEW team loses access - owner included -
         matching how the transfer itself only ever considers Sales Team, nothing
-        else. EXCEPT for DMT: a DMT team member is exempt from this whole
-        Sales-Team-membership gate (same waiver as assignment - see
-        _compute_x_assignable_user_ids) - they can edit a lead regardless of
-        which team it's currently filed under, so they never hit the "transferred
-        to another team" read-only message. RED-lock read-only (_mz_can_edit_by_team,
-        used directly in write() while locked) is untouched by this - DMT still
-        respects RED lock like everyone else.
+        else.
+
+        DMT is NOT exempt from this (client instruction, 2026-09-11, reversing an
+        earlier blanket bypass): a transferred lead greys out for DMT exactly like
+        it does for every other team's team-transfer readonly, including the
+        narrow "reassign salesperson only" waiver this used to preserve - team_id
+        moving off DMT ends DMT's involvement entirely, full read-only, same as
+        anyone else. RED-lock read-only (_mz_can_edit_by_team, used directly in
+        write() while locked) is untouched by this either way.
 
         MD gets a narrower waiver, scoped to leads they personally own: MD isn't
         a member of any crm.team at all (by design - global read-only role), so
@@ -1530,14 +1636,11 @@ class CrmLead(models.Model):
         to owned leads only, so this doesn't widen anything - it just lets that
         case reach here instead of dead-ending on team membership)."""
         self.ensure_one()
-        dmt_team = self.env.ref('mazenet_crm.team_dmt', raise_if_not_found=False)
-        if dmt_team and self._mz_user_own_team(user) == dmt_team:
-            return True
         if user == self.user_id and user.has_group('mazenet_access_rights.group_mzr_md'):
             return True
         if not self.team_id or user not in self.team_id.member_ids:
             return False
-        if user == self.user_id:
+        if user == self.user_id or not self.user_id:
             return True
         return self._mz_can_edit_by_team(user)
 

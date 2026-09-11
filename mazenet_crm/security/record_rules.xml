@@ -45,11 +45,30 @@
              what actually narrows this down to user_id-only reassignment for a locked/
              transferred lead, and still fully gates real content edits (RED-lock,
              Manager-content-lock, etc.) - this rule only removes the ORM-level blocker,
-             it doesn't grant unrestricted content write on its own. -->
+             it doesn't grant unrestricted content write on its own.
+
+             Also OR'd with the x_dmt_originated exemption (2026-09-11 fix): ir.rule
+             re-validates a write's domain AFTER the values are applied, to stop a
+             write from moving a record outside the very rule that permitted it. The
+             write that actually PERFORMS a DMT->another-team handoff (team_id
+             changing away from team_dmt) is exactly such a write - post-write,
+             team_id no longer equals team_dmt, so this rule's plain domain stopped
+             matching and the ORM re-check rejected the agent's own save with an
+             AccessError (hit live 2026-09-11: DMT Agent assigning a lead to another
+             team via the radio). x_dmt_originated is unconditional (not scoped to
+             stage_id, unlike an earlier attempt at this fix) because stock CRM's own
+             team_id onchange ALSO resets stage_id to the new team's first stage in
+             THAT SAME write - a stage-scoped condition would already be false the
+             instant the handoff write happens, never actually fixing this. Expiry
+             is instead handled in crm_lead.py's write() (_mz_maybe_retire_dmt_originated):
+             the FIRST time someone outside DMT substantively edits the record
+             afterward, x_dmt_originated flips to False and every DMT-only rule
+             (this one and the read-after-transfer one below) stops matching for
+             good - so this stays a one-time handoff waiver, not standing access. -->
         <record id="rule_crm_lead_dmt_base_write" model="ir.rule">
             <field name="name">Mazenet CRM Lead: dmt (Team Write - Reassignment Waiver)</field>
             <field name="model_id" ref="crm.model_crm_lead"/>
-            <field name="domain_force" eval="[('team_id', '=', ref('team_dmt'))]"/>
+            <field name="domain_force" eval="['|', ('team_id', '=', ref('team_dmt')), ('x_dmt_originated', '=', True)]"/>
             <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_dmt_agent')), (4, ref('mazenet_access_rights.group_mzr_dmt_tl_direct_agent')), (4, ref('mazenet_access_rights.group_mzr_dmt_manager_direct_agent'))]"/>
             <field name="perm_read" eval="False"/>
             <field name="perm_write" eval="True"/>
@@ -70,11 +89,14 @@
             <field name="perm_create" eval="False"/>
             <field name="perm_unlink" eval="False"/>
         </record>
-        <!-- dmt: Team Lead tier (full team view/create/write - Manager & CTO/Admin inherit via implied_ids) -->
+        <!-- dmt: Team Lead tier (full team view/create/write - Manager & CTO/Admin inherit via implied_ids).
+             Same handoff-write exemption as rule_crm_lead_dmt_base_write above (2026-09-11) -
+             a TL/Manager performing the same DMT->another-team transfer hits the identical
+             post-write domain re-check failure otherwise. -->
         <record id="rule_crm_lead_dmt_tl" model="ir.rule">
             <field name="name">Mazenet CRM Lead: dmt (Team Lead - Full Team)</field>
             <field name="model_id" ref="crm.model_crm_lead"/>
-            <field name="domain_force" eval="[('team_id', '=', ref('team_dmt'))]"/>
+            <field name="domain_force" eval="['|', ('team_id', '=', ref('team_dmt')), ('x_dmt_originated', '=', True)]"/>
             <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_dmt_tl'))]"/>
             <field name="perm_read" eval="True"/>
             <field name="perm_write" eval="True"/>
@@ -93,7 +115,24 @@
              "Transfer to BU", so this read-only carry-over is intentional,
              not a workaround - fixed 2026-09-08. perm_write intentionally
              NOT granted: DMT's ability to EDIT a lead still ends the moment
-             team_id changes elsewhere. -->
+             team_id changes elsewhere.
+
+             Expiry handled in Python, not the domain (2026-09-11 fix, replacing an
+             earlier stage_id.team_ids-based attempt): a stage-based condition
+             sounds right ("still visible only while it hasn't left DMT's own stage
+             set") but breaks the exact save it's meant to protect - stock CRM's
+             own team_id onchange ALSO resets stage_id to the new team's first
+             stage in that SAME write, so post-write the stage condition is
+             immediately false too, right when it's needed most (hit live
+             2026-09-11: DMT Agent's own handoff save started failing again).
+             x_dmt_originated instead now self-expires via crm_lead.py's write()
+             (_mz_maybe_retire_dmt_originated): the FIRST time someone OUTSIDE DMT
+             substantively edits the record (the receiving team actually starting
+             to work it), the flag flips to False for good and this rule stops
+             matching - fixing the original kanban/list-view leak (a long-since-
+             transferred lead no longer bleeding into DMT's Pipeline once the
+             other team has touched it) without breaking the handoff write itself,
+             since that write is performed by the DMT user, not "outside DMT". -->
         <record id="rule_crm_lead_dmt_originated_read" model="ir.rule">
             <field name="name">Mazenet CRM Lead: dmt (Retain Read After Team Transfer)</field>
             <field name="model_id" ref="crm.model_crm_lead"/>
