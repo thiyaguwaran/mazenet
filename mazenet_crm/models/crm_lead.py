@@ -1211,8 +1211,28 @@ class CrmLead(models.Model):
         dmt_team = self.env.ref('mazenet_crm.team_dmt', raise_if_not_found=False)
         for vals in vals_list:
             self._mz_check_assign_type_allowed(vals)
+            team_id = vals['team_id'] if 'team_id' in vals else self._mz_default_team_id()
+            # No-Teamless-Lead Guarantee (2026-09-11): _mz_default_team_id is only a
+            # DEFAULT - an explicit team_id=False in vals, or any creation path where
+            # _mz_default_team_id itself resolves to nothing (a non-CTO/Admin/MD/DMT
+            # user with no crm.team of their own - e.g. an import, an API call, an
+            # incoming-email lead, or a plain Agent creating outside the normal form),
+            # slips straight past it with a genuinely empty team_id. Every ir.rule,
+            # stage domain, and kanban grouping in this module assumes team_id is
+            # always set - a teamless lead becomes invisible to everyone except
+            # CTO/Admin/MD and permanently stuck with whatever generic stage a route
+            # like that happens to assign (hit live on staging, lead id 1406, "GH
+            # 100": created via a path with no team resolution at all, dated well
+            # before this module's usual demo data - "not assigned to any team" was
+            # stock CRM's OWN chatter message, so this isn't new, it's just never
+            # been closed off at create() itself). Falling back to DMT here mirrors
+            # every other "no team of my own" fallback already in this file
+            # (_mz_default_team_id's own CTO/Admin/MD case, _mz_resolve_stage_team_id_
+            # from_domain) - DMT is this module's designated catch-all intake team.
+            if not team_id and dmt_team:
+                team_id = dmt_team.id
+                vals['team_id'] = team_id
             if dmt_team and 'x_dmt_originated' not in vals:
-                team_id = vals['team_id'] if 'team_id' in vals else self._mz_default_team_id()
                 vals['x_dmt_originated'] = team_id == dmt_team.id
         return super(CrmLead, self).create(vals_list)
 
