@@ -198,34 +198,26 @@ class CrmLead(models.Model):
 
     @api.model
     def _mz_default_team_id(self):
-        """Default a new lead's Sales Team to the CREATING user's own team
-        (_mz_user_own_team) - without this, a new lead's team_id falls back to
-        whatever stock CRM's own _get_default_team_id resolves, which isn't
-        guaranteed to match the actual creator's team. Since write() now strictly
-        requires being a member of a lead's CURRENT team_id to touch it at all
-        (see _mz_can_edit_owned), a wrong default here means hitting an
-        AccessError on the very first save - this is what actually prevents
-        that, for both the full form and the Kanban quick-create
-        (crm.quick_create_opportunity_form, inherited to show team_id).
+        """Wired back as team_id's field default 2026-09-12 (client instruction, after a
+        brief stint - 2026-09-12 same day - with NO default at all): prefill should
+        happen ONLY for whoever actually has an own team to prefill with (a DMT member's
+        new lead starts on DMT, a Tally member's starts on Tally, etc, via
+        _mz_user_own_team) - the earlier "no default" fix was really only needed to stop
+        CTO/Admin/MD (who own no team) from getting silently defaulted to DMT the instant
+        they created a lead. That CTO/Admin/MD fallback-to-DMT branch is gone for good now
+        - they get a genuinely empty team_id and are expected to route the lead via the
+        'Internal' assign type instead (_default_x_assign_type defaults them there), which
+        forces an explicit team pick through team_id's own required="x_assign_type !=
+        'self'" in the view.
 
-        CTO/Admin and MD belong to no crm.team of their own, so _mz_user_own_team
-        is empty for them and this used to default to False - their own "My
-        Pipeline" leads then had no team-scoped stage set at all, landing on
-        whatever generic fallback stage stock CRM picked. Default those two
-        roles to the DMT team instead (mirrors _read_group_stage_ids below,
-        which shows DMT's stage columns for them for the same reason)."""
+        Still doubles as create()'s own last-resort fallback (see create()'s
+        No-Teamless-Lead Guarantee below) for creation paths that never went through the
+        form at all - import, API, incoming email - where there's no view-level required
+        check to rely on; for a CTO/Admin/MD/no-team caller going through one of those
+        paths, this now correctly returns False and lets create()'s own DMT catch-all
+        (a SEPARATE, deliberate safety net - see its comment) take over instead."""
         own_team = self._mz_user_own_team()
-        if own_team:
-            return own_team.id
-        user = self.env.user
-        if (
-            user.has_group('mazenet_access_rights.group_mzr_cto_admin')
-            or user.has_group('mazenet_access_rights.group_mzr_md')
-        ):
-            dmt_team = self.env.ref('mazenet_crm.team_dmt', raise_if_not_found=False)
-            if dmt_team:
-                return dmt_team.id
-        return False
+        return own_team.id if own_team else False
 
     def _mz_resolve_stage_team_id_from_domain(self, domain):
         """Sales Team AND Salesperson search panel selections should both drive
@@ -400,9 +392,28 @@ class CrmLead(models.Model):
         _mz_check_assign_type_allowed has rejected 'team' for anyone outside
         DMT/CTO/Admin for a while now - the create() call then hit that very
         AccessError on a plain quick-create, before the user ever touched the
-        (correctly readonly-forced-to-self) radio on the full form."""
+        (correctly readonly-forced-to-self) radio on the full form.
+
+        CTO/Admin and MD always start a brand-new lead on 'Self' (2026-09-12, client
+        instruction, corrected same day from a brief 'Internal' default): checked
+        BEFORE the tier fallback below on purpose - group_mzr_cto_admin's own
+        implied_ids include every team's Manager group, and has_group() (which
+        _mz_user_tier_chain relies on) resolves implied groups transitively even
+        though CTO/Admin never actually gets a real row in that group's membership
+        - so the tier-chain fallback would otherwise misread CTO/Admin as a genuine
+        DMT Manager and default them to 'team' immediately, which is the exact bug
+        that started this whole conversation ("cto tries to create new lead it auto
+        assigns to team"). 'Team' is still reachable for CTO/Admin, just only AFTER
+        the lead is saved (see x_hide_internal_option/x_show_internal_only for what
+        it looks like once picked) - 'Internal', in turn, only ever applies to an
+        EXISTING lead already owned by someone else, never to a brand-new one."""
         user = self.env.user
         if not self._mz_user_can_use_assign_radio(user):
+            return 'self'
+        if (
+            user.has_group('mazenet_access_rights.group_mzr_cto_admin')
+            or user.has_group('mazenet_access_rights.group_mzr_md')
+        ):
             return 'self'
         tier, _chain = self._mz_user_tier_chain(user)
         return 'team' if tier in ('atl', 'tl', 'manager') else 'self'
@@ -455,6 +466,28 @@ class CrmLead(models.Model):
              "x_hide_internal_option). Reads/writes the exact same underlying value as "
              "x_assign_type; exists purely for this view swap, not a separate concept."
     )
+    x_show_internal_only = fields.Boolean(
+        compute='_compute_x_assignable_user_ids',
+        string="Show Internal Only",
+        help="CTO/Admin only (2026-09-12): True when viewing an EXISTING lead owned by "
+             "someone else - the only sensible action there is 'Internal' (reassigning "
+             "within that lead's own team hierarchy); 'Self' would self-assign someone "
+             "else's lead and 'Team' would re-route it entirely, neither of which is what "
+             "CTO/Admin opening someone else's lead is for. Drives x_assign_type_internal_only "
+             "being shown instead of x_assign_type_no_internal. MD never sees this - MD's "
+             "x_can_assign_beyond_self is always False, so the radio is readonly-forced-to-"
+             "Self for them regardless of which mirror field is technically in the view."
+    )
+    x_assign_type_internal_only = fields.Selection(
+        [('internal', 'Internal')],
+        string="Assign Type", compute='_compute_x_assign_type_internal_only',
+        inverse='_inverse_x_assign_type_internal_only',
+        help="Second mirror of x_assign_type (see x_assign_type_no_internal), shown INSTEAD "
+             "of both other variants when x_show_internal_only is True - CTO/Admin viewing "
+             "an existing lead owned by someone else only ever has one meaningful choice, so "
+             "unlike x_assign_type_no_internal (a real 2-way choice), this one's whole "
+             "option list is just the single value it's already forced to."
+    )
 
     @api.depends('x_assign_type')
     def _compute_x_assign_type_no_internal(self):
@@ -462,6 +495,29 @@ class CrmLead(models.Model):
             lead.x_assign_type_no_internal = (
                 lead.x_assign_type if lead.x_assign_type != 'internal' else 'self'
             )
+
+    @api.depends('x_assign_type')
+    def _compute_x_assign_type_internal_only(self):
+        for lead in self:
+            lead.x_assign_type_internal_only = 'internal'
+
+    def _inverse_x_assign_type_internal_only(self):
+        """Guarded on x_show_internal_only too (2026-09-12 fix), not just the
+        recursive-write guard shared with _inverse_x_assign_type_no_internal below:
+        this field's compute ALWAYS returns 'internal' (it's a single-option
+        selection - there's nothing else it COULD return), regardless of whether
+        it's actually the visible one. The web client still dirty-tracks and saves
+        editable computed fields that are merely invisible, not skipped - so
+        without this guard, a CTO/Admin lead saved as Self or Team (where this
+        field is hidden and x_assign_type_no_internal is the real one) got its
+        x_assign_type silently stomped back to 'internal' by THIS field's own
+        inverse firing anyway (hit live 2026-09-12: a CTO's brand-new Self-assigned
+        lead saved with x_assign_type='internal' instead)."""
+        for lead in self:
+            if not lead.x_show_internal_only:
+                continue
+            if lead.x_assign_type != 'internal':
+                lead.x_assign_type = 'internal'
 
     def _inverse_x_assign_type_no_internal(self):
         """Guarded to a genuine no-op when the value already matches (2026-09-11 fix):
@@ -597,33 +653,53 @@ class CrmLead(models.Model):
         user = self.env.user
         user_is_dmt = self._mz_user_is_dmt(user)
         can_use_radio = self._mz_user_can_use_assign_radio(user)
+        is_md = user.has_group('mazenet_access_rights.group_mzr_md')
+        is_cto_admin = user.has_group('mazenet_access_rights.group_mzr_cto_admin')
         tier, _chain = self._mz_user_tier_chain(user)
-        can_beyond_self = can_use_radio and (user_is_dmt or tier in ('atl', 'tl', 'manager'))
-        is_cto_or_md = (
-            user.has_group('mazenet_access_rights.group_mzr_md')
-            or user.has_group('mazenet_access_rights.group_mzr_cto_admin')
-        )
+        # is_cto_admin is checked explicitly here, NEVER through the tier chain
+        # (2026-09-12): group_mzr_cto_admin's own implied_ids include every team's
+        # Manager group, and has_group() (which _mz_user_tier_chain relies on)
+        # resolves implied groups transitively even without a real membership row -
+        # so tier would otherwise misread CTO/Admin as a genuine team Manager. MD
+        # is excluded on purpose - MD is hard-restricted to Self-only leads
+        # everywhere else in this module (create()'s own MD gate), so 'beyond self'
+        # would never actually be usable for them regardless of this flag.
+        can_beyond_self = can_use_radio and (user_is_dmt or is_cto_admin or (not is_md and tier in ('atl', 'tl', 'manager')))
+        is_cto_or_md = is_md or is_cto_admin
         for lead in self:
             lead.x_can_use_assign_radio = can_use_radio
             lead.x_can_assign_beyond_self = can_beyond_self
-            # Shown only for an EXISTING lead already owned by someone else - a brand-new,
-            # unsaved lead (lead.id falsy) is being created by this CTO/MD themselves, same
-            # as their own already-saved lead, so both hide it (2026-09-09 correction: the
-            # user initially asked for new-lead-creation to show Internal too, then reversed
-            # that after seeing it live).
-            show_for_others_lead = bool(is_cto_or_md and lead.id and lead.user_id != user)
-            hide_for_own_lead = bool(is_cto_or_md) and not show_for_others_lead
+            # CTO/Admin viewing an EXISTING lead owned by someone else (typically on
+            # another team): the only sensible action is 'Internal' - reassigning
+            # within that lead's own team hierarchy. Self/Team make no sense on a
+            # lead that isn't theirs. Reworked 2026-09-12 (client correction, same
+            # day as the first pass): a brand-new lead, or their own already-saved
+            # one, ALWAYS gets Self/Team only (x_assign_type_no_internal) - Internal
+            # is exclusively for someone else's existing lead, never their own,
+            # including at creation time (the opposite of what the first pass did).
+            is_other_owned_lead = bool(lead.id and lead.user_id and lead.user_id != user)
+            show_internal_only = bool(is_cto_admin and is_other_owned_lead)
+            hide_for_own_lead = bool(is_cto_or_md) and not show_internal_only
             # DMT hands a lead to the TEAM only when 'Team' is picked - the team lead
             # assigns the actual salesperson afterwards, so DMT never needs (or should
             # see) this field for that one combination (client instruction, 2026-09-09).
             # Mirrors assign_salesperson's onchange, which likewise leaves user_id unset
-            # for DMT+'team' instead of auto-picking create_lead_id.
-            hide_for_dmt_team = bool(user_is_dmt and lead.x_assign_type == 'team')
+            # for DMT+'team' instead of auto-picking create_lead_id. CTO/Admin get the
+            # exact same treatment for 'Team' now (2026-09-12): the salesperson is left
+            # for the receiving team's own TL to pick, not CTO/Admin.
+            hide_for_dmt_team = bool((user_is_dmt or is_cto_admin) and lead.x_assign_type == 'team')
             lead.x_hide_salesperson = hide_for_own_lead or hide_for_dmt_team
             lead.x_hide_internal_option = hide_for_own_lead
+            lead.x_show_internal_only = show_internal_only
             if not can_beyond_self:
                 lead.x_assignable_user_ids = False
-            elif user_is_dmt:
+            elif user_is_dmt or (is_cto_admin and show_internal_only):
+                # CTO/Admin's 'internal' pool would otherwise be empty:
+                # _mz_team_subordinate_group_users checks raw, non-transitive group
+                # membership, and CTO/Admin never actually gets a real row in any
+                # team's own privilege groups (only the transitive has_group() result
+                # used above, which doesn't apply here) - give them the same
+                # unrestricted whole-team-roster pool as DMT for this one path.
                 lead.x_assignable_user_ids = lead.team_id.member_ids
             elif lead.x_assign_type == 'team':
                 lead.x_assignable_user_ids = lead.team_id.create_lead_id
@@ -648,7 +724,11 @@ class CrmLead(models.Model):
             # 2026-09-09). Leave user_id unset rather than auto-picking create_lead_id;
             # the Salesperson field is hidden for this exact combination in the view
             # (x_hide_salesperson) so there's nothing for the DMT user to fill in anyway.
-            if self._mz_user_is_dmt(user):
+            # CTO/Admin get the same treatment (2026-09-12): 'Team' only ever appears on
+            # their OWN lead (never someone else's - see x_show_internal_only), so this
+            # is always a hand-off to whichever team is picked, salesperson TBD by that
+            # team's own TL.
+            if self._mz_user_is_dmt(user) or user.has_group('mazenet_access_rights.group_mzr_cto_admin'):
                 self.user_id = False
                 return
             self.user_id = self.team_id.create_lead_id and self.team_id.create_lead_id[0] or False
@@ -1021,8 +1101,14 @@ class CrmLead(models.Model):
         user = self.env.user
         user_is_dmt = self._mz_user_is_dmt(user)
         can_use_radio = self._mz_user_can_use_assign_radio(user)
+        is_cto_admin = user.has_group('mazenet_access_rights.group_mzr_cto_admin')
         tier, _chain = self._mz_user_tier_chain(user)
-        if not can_use_radio or not (user_is_dmt or tier in ('atl', 'tl', 'manager')):
+        # is_cto_admin added 2026-09-12 alongside _compute_x_assignable_user_ids' own
+        # can_beyond_self - CTO/Admin belong to no crm.team of their own so tier is
+        # always None for them, which used to fail this check even though the UI
+        # error message below (and _mz_user_can_use_assign_radio) already claimed to
+        # allow it. MD is deliberately NOT included - still Self-only everywhere else.
+        if not can_use_radio or not (user_is_dmt or is_cto_admin or tier in ('atl', 'tl', 'manager')):
             raise AccessError(_(
                 "Only DMT team members and CTO/Admin can assign to a team or assign "
                 "internally. Everyone else - including MD - can only assign to "
@@ -1037,7 +1123,7 @@ class CrmLead(models.Model):
         for record in (self or [self.env['crm.lead']]):
             team_id = vals['team_id'] if 'team_id' in vals else (record.team_id.id if record else False)
             team = self.env['crm.team'].browse(team_id) if team_id else self.env['crm.team']
-            if user_is_dmt:
+            if user_is_dmt or is_cto_admin:
                 pool_ids = team.member_ids.ids
             elif assign_type == 'team':
                 pool_ids = team.create_lead_id.ids
@@ -1211,26 +1297,29 @@ class CrmLead(models.Model):
         dmt_team = self.env.ref('mazenet_crm.team_dmt', raise_if_not_found=False)
         for vals in vals_list:
             self._mz_check_assign_type_allowed(vals)
-            team_id = vals['team_id'] if 'team_id' in vals else self._mz_default_team_id()
-            # No-Teamless-Lead Guarantee (2026-09-11): _mz_default_team_id is only a
-            # DEFAULT - an explicit team_id=False in vals, or any creation path where
-            # _mz_default_team_id itself resolves to nothing (a non-CTO/Admin/MD/DMT
-            # user with no crm.team of their own - e.g. an import, an API call, an
-            # incoming-email lead, or a plain Agent creating outside the normal form),
-            # slips straight past it with a genuinely empty team_id. Every ir.rule,
-            # stage domain, and kanban grouping in this module assumes team_id is
-            # always set - a teamless lead becomes invisible to everyone except
-            # CTO/Admin/MD and permanently stuck with whatever generic stage a route
-            # like that happens to assign (hit live on staging, lead id 1406, "GH
-            # 100": created via a path with no team resolution at all, dated well
-            # before this module's usual demo data - "not assigned to any team" was
-            # stock CRM's OWN chatter message, so this isn't new, it's just never
-            # been closed off at create() itself). Falling back to DMT here mirrors
-            # every other "no team of my own" fallback already in this file
-            # (_mz_default_team_id's own CTO/Admin/MD case, _mz_resolve_stage_team_id_
-            # from_domain) - DMT is this module's designated catch-all intake team.
-            if not team_id and dmt_team:
-                team_id = dmt_team.id
+            # No-Teamless-Lead Guarantee (2026-09-11, narrowed 2026-09-12): only kicks
+            # in when 'team_id' is entirely ABSENT from vals - a creation path that
+            # never resolved a team at all (an import, an API call, an incoming-email
+            # lead, or a plain Agent creating outside the normal form; hit live on
+            # staging, lead id 1406, "GH 100" - "not assigned to any team" was stock
+            # CRM's OWN chatter message). Every ir.rule, stage domain, and kanban
+            # grouping in this module assumes team_id is always set for THOSE cases,
+            # so falling back to DMT (this module's designated catch-all intake team,
+            # mirroring _mz_default_team_id's own CTO/Admin/MD case) still applies.
+            #
+            # Deliberately NOT applied when 'team_id' is explicitly present as False -
+            # that's the normal, INTENDED shape of a CTO/Admin/MD Self-assigned lead
+            # (own_team is empty for them, and team_id's own required="x_assign_type
+            # != 'self'" in the view already says empty is fine for Self) - silently
+            # overriding that explicit choice with DMT was itself the bug (hit live
+            # 2026-09-12: a CTO's Self-assigned lead saved with Sales Team = DMT even
+            # though nobody ever picked a team).
+            if 'team_id' in vals:
+                team_id = vals['team_id']
+            else:
+                team_id = self._mz_default_team_id()
+                if not team_id and dmt_team:
+                    team_id = dmt_team.id
                 vals['team_id'] = team_id
             if dmt_team and 'x_dmt_originated' not in vals:
                 vals['x_dmt_originated'] = team_id == dmt_team.id

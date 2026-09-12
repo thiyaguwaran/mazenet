@@ -48,18 +48,22 @@
                     <!-- Only DMT team members, MD and CTO/Admin may touch this radio at
                          all (_mz_user_can_use_assign_radio) - everyone else is forced to
                          Self and can't even click through to Team/Internal.
-                         Two fields, mutually exclusive via x_hide_internal_option: a
-                         Selection's option list is per-environment, not per-record, so
-                         hiding 'Internal' just for CTO/Admin/MD's OWN already-saved lead
-                         (while still offering it to them on someone ELSE's lead) needs a
-                         second, narrower field shown instead of the real one - see
-                         x_assign_type_no_internal's own help text. -->
+                         Three fields, mutually exclusive via x_hide_internal_option /
+                         x_show_internal_only: a Selection's option list is per-environment,
+                         not per-record, so CTO/Admin needing Self+Team on their OWN lead
+                         (new or already-saved) but ONLY Internal on someone ELSE's existing
+                         lead needs two narrower mirror fields swapped in for the real one -
+                         see x_assign_type_no_internal / x_assign_type_internal_only's own
+                         help text. -->
                     <field name="x_assign_type" widget="radio" options="{'horizontal': true}"
                            readonly="not x_can_use_assign_radio"
-                           invisible="x_hide_internal_option"/>
+                           invisible="x_hide_internal_option or x_show_internal_only"/>
                     <field name="x_assign_type_no_internal" widget="radio" options="{'horizontal': true}"
                            readonly="not x_can_use_assign_radio"
-                           invisible="not x_hide_internal_option"/>
+                           invisible="not x_hide_internal_option or x_show_internal_only"/>
+                    <field name="x_assign_type_internal_only" widget="radio" options="{'horizontal': true}"
+                           readonly="not x_can_use_assign_radio"
+                           invisible="not x_show_internal_only"/>
                     <field name="team_id"
                            readonly="x_content_readonly_for_me or x_assign_type == 'self'"
                            required="x_assign_type != 'self'"
@@ -69,6 +73,7 @@
                     <field name="x_assignable_user_ids" invisible="1"/>
                     <field name="x_hide_salesperson" invisible="1"/>
                     <field name="x_hide_internal_option" invisible="1"/>
+                    <field name="x_show_internal_only" invisible="1"/>
                 </xpath>
 
                 <!-- Phone/Email either-or indicator (MZ_EITHER_OR_MANDATORY_FIELDS,
@@ -715,13 +720,14 @@
             </field>
         </record>
 
-        <!-- Kanban Quick-Create Form: show Sales Team, defaulted to the creating user's
-             own team (crm_lead.py _mz_default_team_id) - stock CRM ships this field but
+        <!-- Kanban Quick-Create Form: show Sales Team - stock CRM ships this field but
              keeps it invisible="1". Since write() now requires being a member of a
              lead's CURRENT team_id to touch it at all, whatever team_id a lead gets
              created with has to be right from the start; surfacing the field here lets
-             the creator see/confirm/correct it (e.g. TL/ATL/Manager assigning straight
-             to a different team) instead of it being an invisible, silent default. -->
+             the creator pick/confirm it themselves (e.g. TL/ATL/Manager assigning
+             straight to a different team). team_id has no default value anymore
+             (removed 2026-09-12, client instruction) - it starts empty and must be
+             filled in explicitly, same as the main form. -->
         <record id="view_crm_lead_quick_create_inherit_mz" model="ir.ui.view">
             <field name="name">crm.lead.form.quick_create.inherit.mz</field>
             <field name="model">crm.lead</field>
