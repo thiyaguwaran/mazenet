@@ -1,12 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <data noupdate="1">
+    <data noupdate="0">
         <!-- Section 7.6 (M2): auto-trigger the RED lock on overdue leads. -->
         <record id="ir_cron_mz_trigger_red_locks" model="ir.cron">
-            <field name="name">Mazenet CRM: Trigger RED Locks on Overdue Leads</field>
+            <field name="name">Mazenet CRM: Trigger &amp; Escalate RED Locks on Overdue Leads</field>
             <field name="model_id" ref="crm.model_crm_lead"/>
             <field name="state">code</field>
-            <field name="code">model._cron_trigger_red_locks()</field>
+            <field name="code">model._cron_trigger_red_locks()
+model.check_red_lock_recods()</field>
             <!-- 2 minutes for active dev/UAT testing so lock/notify behavior is visible
                  almost immediately. Widen this back out (e.g. 15 min) before anything
                  resembling a production/staging cadence - a 2-minute poll isn't meant to
@@ -16,14 +17,22 @@
             <field name="active">True</field>
         </record>
 
-        <!-- Section 5 Fallback 2: 24h auto-escalation for unreleased locks. -->
-        <record id="ir_cron_mz_escalate_red_locks" model="ir.cron">
-            <field name="name">Mazenet CRM: Escalate RED Locks Unreleased 24h+</field>
+        <!-- Client rework spec (2026-09-08): the Pipeline kanban card must repaint
+             (purple -> green -> red) purely because time has passed, even when nothing on
+             the lead was written - x_activity_card_state is a STORED field precisely so it
+             can drive the card's CSS class, but that also means it needs an explicit
+             periodic recompute; a plain @api.depends alone only re-fires on a write.
+             Scoped inside the method itself to leads whose activity falls within a day of
+             now, in DMT/Tally/Technology only - NOT a full-table sweep. 5 minutes is short
+             enough that the green window (+/-20 min) and the day-rolls-over-to-"today"
+             purple transition are never stale for long. -->
+        <record id="ir_cron_mz_recompute_activity_card_state" model="ir.cron">
+            <field name="name">Mazenet CRM: Recompute Activity Card State (Purple/Green/Red)</field>
             <field name="model_id" ref="crm.model_crm_lead"/>
             <field name="state">code</field>
-            <field name="code">model._cron_escalate_red_locks()</field>
-            <field name="interval_number">1</field>
-            <field name="interval_type">hours</field>
+            <field name="code">model._cron_recompute_activity_card_state()</field>
+            <field name="interval_number">5</field>
+            <field name="interval_type">minutes</field>
             <field name="active">True</field>
         </record>
     </data>

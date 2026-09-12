@@ -1,67 +1,772 @@
 # -*- coding: utf-8 -*-
-from datetime import datetime, timedelta
+import re
+from datetime import timedelta
+
+import pytz
 
 from odoo import models, fields, api, _
-from odoo.exceptions import AccessError
+from odoo.exceptions import AccessError, UserError, ValidationError
 
-REASSIGN_FIELDS = {"user_id", "team_id", "stage_id"}
+MZ_PHONE_RE = re.compile(r'^\d{10}$')
+MZ_EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+
+# Build-notes format validation ("Format validation only: valid 10-digit number" /
+# "valid email syntax... No dummy-number/dummy-email detection") is the same rule
+# repeated verbatim across all 5 M2 pipeline sheets - scoped to just those BUs so
+# other teams (Corporate/LMS/TNH/Hunter...) aren't newly constrained by this build.
+MZ_FORMAT_VALIDATED_BU_CATEGORIES = {'dmt', 'tally', 'tech', 'swdev', 'mis'}
+
+# Client rework spec (2026-09-08): the window either side of an activity's real due moment
+# (x_next_activity_datetime) for both the GREEN card state and the RED lock - e.g. a 10:00 AM
+# activity turns GREEN at 9:40, and locks/turns RED at 10:20, not the instant 10:00 passes.
+# Previously this was res.company.grace_time (a separate, user-configurable field defaulting
+# to 15 minutes) - replaced with this fixed 20-minute constant so the two states share
+# exactly one number, matching the client's explicit "20 minutes" spec rather than whatever
+# happens to be configured on the company record.
+MZ_ACTIVITY_WINDOW_MINUTES = 20
+
+# Which BU pipelines the purple/green/red activity card state (and the RED lock it's built
+# on) applies to at all - client rework spec (2026-09-08): "DMT, Tally, Technology only. Not
+# Software Dev, not MIS - they have no Follow-up's stage." Every other team's leads always
+# get x_activity_card_state = False ('Normal'), and are excluded from the RED-lock cron
+# entirely (_cron_trigger_red_locks) - not just from the colour, the lock itself no longer
+# applies there either.
+MZ_ACTIVITY_CARD_BU_CATEGORIES = {'dmt', 'tally', 'tech'}
+
 SYSTEM_FIELDS = {
     "message_follower_ids", "activity_ids", "message_ids", "message_main_attachment_id",
     "website_message_ids", "message_has_error", "message_has_error_counter", "message_needaction",
     "message_needaction_counter", "message_is_follower", "message_partner_ids", "activity_state",
     "activity_user_id", "activity_type_id", "activity_date_deadline", "activity_summary",
     "activity_exception_type", "activity_exception_decoration", "active",
-    "x_is_locked", "x_lock_date", "x_lock_escalated"
+    "x_is_locked", "x_lock_date",
+}
+
+# M3: mandatory-field-on-stage-change gate (Mazenet_CRM_M2_Build_Tasks.xlsx's per-stage
+# "Mandatory" column). Keyed by crm.team.x_bu_category, one ordered list per BU of
+# (stage xmlid, [mandatory field names]) in sequence order - moving a lead FORWARD past
+# a stage requires that stage's own fields to already be filled. Only BUs with an entry
+# here are gated; teams not yet listed are unaffected.
+#
+# Two things deliberately excluded from every BU's list below, not missed:
+# - "Lost reason" (Won/Lost stage): mandatory only when marking a lead LOST, which is a
+#   parallel action (archive + lost_reason/lost_feedback) handled by stock CRM's own Lost
+#   wizard, not a forward stage-to-stage move this gate models.
+# - Each BU's terminal "Project State" stage's own a/b/c mandatory fields: there is no
+#   further stage to advance INTO past it, so "enforce on stage change" has no move left
+#   to gate against - these stay reference-only, same as every stage's Mandatory column
+#   is explicitly scoped to be until M3 actually implements a trigger for them.
+# Deliberate deviation from the sheet: business wants phone/email as an either-or
+# pair (fill one, the other stops being required) - NOT what the sheet's own "Any
+# one source mandatory" annotation means (that's about the Source field's own
+# option list, already satisfied since source_id is a single field), and NOT the
+# sheet's "Progressive" wording for Tally's email either (which would have made
+# it a plain separate Stage-2 requirement instead).
+#
+# Unlike every other MZ_STAGE_GATE_RULES entry, phone_or_email is NOT listed
+# against any one BU's first stage below - it's checked on EVERY forward stage
+# move instead (_mz_stage_gate_check's own universal check, ahead of the
+# per-stage loop), since either field can be edited back to blank after the
+# first stage passes and a once-only first-stage check would stop catching that.
+MZ_EITHER_OR_MANDATORY_FIELDS = {
+    'phone_or_email': ('phone', 'email_from'),
+}
+
+MZ_STAGE_GATE_RULES = {
+    'dmt': [
+        ('stage_dmt_new', ['name', 'x_organic_inorganic', 'source_id']),
+        ('stage_dmt_contacted', [
+            'x_company_or_individual', 'x_contact_purpose', 'x_product_service',
+            'x_employee_count', 'x_company_turnover',
+        ]),
+        ('stage_dmt_qualified', ['x_target_team_id', 'x_transfer_notes']),
+        ('stage_dmt_transferred', []),
+    ],
+    'tally': [
+        # Phone/email either-or at Stage 1, same as every other BU (deliberate
+        # deviation from the sheet's "Progressive" wording for email - see
+        # MZ_EITHER_OR_MANDATORY_FIELDS). email_from is NOT a separate entry at
+        # Stage 2 anymore - phone_or_email above already covers it.
+        ('stage_tally_new', ['name', 'source_id']),
+        ('stage_tally_contacted', ['x_tally_category']),
+        ('stage_tally_demo', ['x_requirements_attachment_ids', 'x_product_service', 'x_feasibility', 'x_timeline']),
+        ('stage_tally_proposal', ['x_quote_date', 'x_quote_document_ids']),
+        ('stage_tally_negotiation', []),
+        ('stage_tally_won', []),
+        ('stage_tally_lost', []),
+    ],
+    'tech': [
+        ('stage_tech_new', ['name', 'source_id']),
+        ('stage_tech_2', ['x_customer_status', 'x_customer_need']),
+        ('stage_tech_3', [
+            'x_requirements_attachment_ids', 'x_product_service', 'x_feasibility_identified', 'x_timeline',
+        ]),
+        ('stage_tech_4', [
+            'x_bom_attachment_ids', 'x_boq_attachment_ids',
+            'x_quote_shared_checkbox', 'x_customer_goods_finalised', 'x_quote_date', 'x_quote_document_ids',
+        ]),
+        ('stage_tech_5', []),
+        ('stage_tech_6', []),
+        ('stage_tech_won', []),
+    ],
+    'swdev': [
+        ('stage_swdev_new', ['name', 'source_id']),
+        ('stage_swdev_2', [
+            'x_branch_count', 'x_sw_employee_count', 'x_nature_of_business',
+            'x_established_year', 'x_meeting_attendees',
+        ]),
+        ('stage_swdev_3', ['x_demo_completed', 'x_system_study_attachment_ids', 'x_feasibility', 'x_timeline']),
+        ('stage_swdev_4', ['x_quote_date', 'x_quote_document_ids']),
+        ('stage_swdev_5', []),
+        ('stage_swdev_won', []),
+    ],
+    'mis': [
+        ('stage_mis_new', ['name', 'source_id']),
+        ('stage_mis_2', [
+            'x_requirements_attachment_ids', 'x_product_service', 'x_target_audience',
+            'x_mis_timelines_estimate', 'x_deliverables',
+        ]),
+        ('stage_mis_3', ['x_demo_completed', 'x_system_study_attachment_ids', 'x_feasibility', 'x_timeline']),
+        ('stage_mis_4', ['x_quote_document_ids']),
+        ('stage_mis_5', []),
+        ('stage_mis_won', []),
+    ],
 }
 
 class CrmLead(models.Model):
     _inherit = "crm.lead"
-    _order = "x_next_activity_datetime asc, priority desc, id desc"
 
     x_next_activity_datetime = fields.Datetime(
         string="Next Activity Time",
         compute="_compute_x_next_activity_datetime",
         store=True,
         index=True,
-        help="Earliest open activity's actual moment - a meeting's real start time (e.g. "
-             "10:00 AM sorts above an 11:00 AM call the same day), or midnight of the due "
-             "date for activities with no specific time. Drives the default Kanban/List "
-             "ordering (soonest activity on top) instead of crm.lead's stock priority/id "
-             "order; leads with no open activity naturally sort to the bottom (NULL last)."
+        help="Earliest open activity's actual moment, resolved in this order: (1) a linked "
+             "calendar event's real start time, for Meeting-category activities; (2) the "
+             "activity's own mz_activity_time combined with its due date, for Call/To-Do "
+             "activities that were given a time; (3) the due date at a default hour "
+             "(MZ_DEFAULT_ACTIVITY_HOUR), for activities with no time source at all. Drives "
+             "the Pipeline KANBAN's card order (soonest activity on top; leads with no open "
+             "activity naturally sort to the bottom - NULL last on ASC) via that view's own "
+             "default_order (views/crm_lead_views.xml) - deliberately NOT crm.lead's model-"
+             "level _order, which would apply this ordering to every list/pivot/calendar view "
+             "of leads system-wide, not just the one Pipeline kanban it's meant for. Stored "
+             "(not a plain compute) specifically so it CAN be used to order a kanban at all."
     )
 
-    @api.depends('activity_ids.date_deadline', 'activity_ids.calendar_event_id.start', 'activity_ids.active')
+    @api.model
+    def _mz_user_own_team(self, user=None):
+        """The crm.team `user` is a direct member of, resolved from
+        crm.team.member_ids - the relation mazenet_crm's own access-control logic
+        actually uses everywhere (_mz_can_edit_by_team, _mz_can_edit_owned,
+        record_rules.xml's team-scoped rules, etc.). Deliberately NOT
+        res.users.crm_team_ids: that's stock Odoo's OWN, separate team-membership
+        mechanism (computed from crm.team.member join records - sales_team's
+        res_users.py), which demo data never populates here, so it's empty for
+        every user in this project and silently wrong for this purpose. Assumes
+        one team per user, which matches how every mazenet_access_rights role is
+        actually set up; returns an empty recordset if none/ambiguous."""
+        user = user or self.env.user
+        return self.env['crm.team'].search([('member_ids', '=', user.id)], limit=1)
+
+    @api.model
+    def _mz_user_is_dmt(self, user=None):
+        """Whether `user` (default: current user) is a direct member of the DMT team
+        (_mz_user_own_team). Shared by every DMT waiver in this file - the assignable-
+        pool compute, the create()/write() pool backstop (_mz_check_assign_type_allowed),
+        and the write() RED-lock/team-transfer gate - so they can't drift out of sync."""
+        user = user or self.env.user
+        dmt_team = self.env.ref('mazenet_crm.team_dmt', raise_if_not_found=False)
+        return bool(dmt_team) and self._mz_user_own_team(user) == dmt_team
+
+    @api.model
+    def _mz_user_can_use_assign_radio(self, user=None):
+        """Whether `user` (default: current user) may interact with the Assign Type
+        radio (x_assign_type) at all: DMT team membership (any tier - same waiver
+        as _mz_user_is_dmt), or one of the two global oversight roles, MD or
+        CTO/Admin. Every other team's Agent/ATL/TL/Manager is Self-only now -
+        'Team'/'Internal' delegation used to be a per-team ATL/TL/Manager
+        privilege (see _compute_x_assignable_user_ids's docstring history); it's
+        now restricted to DMT plus the two global roles, and the radio itself is
+        readonly in the view for everyone else so they can't even attempt it."""
+        user = user or self.env.user
+        return (
+            self._mz_user_is_dmt(user)
+            or user.has_group('mazenet_access_rights.group_mzr_cto_admin')
+            or user.has_group('mazenet_access_rights.group_mzr_md')
+        )
+
+    @api.model
+    def _mz_default_team_id(self):
+        """Wired back as team_id's field default 2026-09-12 (client instruction, after a
+        brief stint - 2026-09-12 same day - with NO default at all): prefill should
+        happen ONLY for whoever actually has an own team to prefill with (a DMT member's
+        new lead starts on DMT, a Tally member's starts on Tally, etc, via
+        _mz_user_own_team) - the earlier "no default" fix was really only needed to stop
+        CTO/Admin/MD (who own no team) from getting silently defaulted to DMT the instant
+        they created a lead. That CTO/Admin/MD fallback-to-DMT branch is gone for good now
+        - they get a genuinely empty team_id and are expected to route the lead via the
+        'Internal' assign type instead (_default_x_assign_type defaults them there), which
+        forces an explicit team pick through team_id's own required="x_assign_type !=
+        'self'" in the view.
+
+        Still doubles as create()'s own last-resort fallback (see create()'s
+        No-Teamless-Lead Guarantee below) for creation paths that never went through the
+        form at all - import, API, incoming email - where there's no view-level required
+        check to rely on; for a CTO/Admin/MD/no-team caller going through one of those
+        paths, this now correctly returns False and lets create()'s own DMT catch-all
+        (a SEPARATE, deliberate safety net - see its comment) take over instead."""
+        own_team = self._mz_user_own_team()
+        return own_team.id if own_team else False
+
+    def _mz_resolve_stage_team_id_from_domain(self, domain):
+        """Sales Team AND Salesperson search panel selections should both drive
+        the Pipeline kanban's stage columns the same way (2026-09-04: "the same
+        [as Sales Team] should follow ... for salesperson filter also"). Reads
+        the selected team_id/user_id straight off the domain's own leaves
+        (Domain.iter_conditions(), so it works whether `domain` arrives as a
+        plain list or an already-parsed Domain object) rather than deriving it
+        from matching lead records (_read_group(domain, ['team_id']), the
+        original approach) - that broke for a team/salesperson with ZERO leads
+        currently matching, since a group-by naturally returns no groups for
+        an empty result set even though the selection itself is unambiguous.
+        team_id wins if both are somehow present; user_id resolves via
+        res.users.x_mz_team_id (the same field the Salesperson section's own
+        groupby uses). None if neither is selected (the "All" view).
+
+        A DomainCondition's 'in' value isn't reliably a plain list/tuple/set -
+        confirmed 2026-09-08 via live debug logging: the real search panel
+        selection arrives as ('team_id', 'in', OrderedSet([40])), and
+        OrderedSet (odoo.tools.misc) is NOT a subclass of the builtin set (it's
+        a collections.abc.MutableSet), so an isinstance(value, (list, tuple,
+        set)) check silently failed to unwrap it - team_id was never found,
+        and every CTO/MD team selection quietly fell back to DMT, leaking
+        DMT's stages into whatever team was actually picked. Checking
+        Iterable instead (rather than trying to enumerate every container
+        type Odoo domains might use) is what actually holds up here."""
+        from collections.abc import Iterable
+        from odoo.orm.domains import Domain
+        team_id = None
+        user_id = None
+        for cond in Domain(domain).iter_conditions():
+            value = cond.value
+            if isinstance(value, Iterable) and not isinstance(value, (str, bytes)):
+                value = next(iter(value), None)
+            if not isinstance(value, int) or isinstance(value, bool):
+                continue
+            if cond.field_expr == 'team_id' and cond.operator in ('=', 'in'):
+                team_id = value
+            elif cond.field_expr == 'user_id' and cond.operator in ('=', 'in'):
+                user_id = value
+        if team_id:
+            return team_id
+        if user_id:
+            return self.env['res.users'].browse(user_id).x_mz_team_id.id
+        return None
+
+    @api.model
+    def _read_group_stage_ids(self, stages, domain):
+        """CTO/Admin and MD have no crm.team of their own (_mz_user_own_team is
+        empty), so the stock implementation's own-team stage columns
+        (self.env.context['default_team_id']) never kick in for them and their
+        Pipeline kanban - most visibly "My Pipeline", since My Pipeline's action
+        sets no default_team_id at all - shows no stage columns until they
+        happen to own a lead in one. Inject a team_id into context so they see
+        a proper stage set, matching where _mz_default_team_id above now routes
+        their own new leads. Skipped when a team-specific menu already set
+        default_team_id, so per-team Pipeline menus are unaffected.
+
+        Which team to inject is resolved from `domain` itself
+        (_mz_resolve_stage_team_id_from_domain) - fixed 2026-09-04: clicking a
+        specific team (or now, salesperson) in the sidebar kept showing DMT's
+        stage columns regardless, because this used to force default_team_id=
+        DMT unconditionally. DMT is only the fallback when nothing is selected
+        (the "All" view).
+
+        Also strips show_user_team_stages from context - fixed 2026-09-08:
+        crm.crm_lead_action_pipeline (the stock Pipeline action) always sets
+        show_user_team_stages=1, which makes the super() call ALSO unconditionally
+        OR in self.env.user.crm_team_ids regardless of our own default_team_id
+        override. Whenever a CTO/Admin/MD happens to be a member/leader of some
+        team too (crm_team_ids is res_users.py's OWN Many2many, separate from
+        our res.users.x_mz_team_id / _mz_user_own_team), THAT team's stages kept
+        leaking in on top of whichever team was actually selected - reported as
+        an extra "New Lead / Source" (DMT) column bleeding into MIS's own "New
+        Lead" one - this alone wasn't the full story though, see
+        _mz_resolve_stage_team_id_from_domain's own docstring for the other
+        half (an OrderedSet unwrapping bug that made team/salesperson
+        selection silently fall back to DMT every time). Since we're already
+        resolving the correct team ourselves here, that extra OR only ever
+        reintroduces stale/wrong columns.
+
+        Second leak, same symptom, different cause (hit live 2026-09-11, DMT
+        Agent's Pipeline once the 'My Pipeline' filter was removed): DMT keeps
+        READ access to a lead it originated even after it's transferred to
+        another team (rule_crm_lead_dmt_originated_read, x_dmt_originated) -
+        intentional, so the handoff doesn't lock the originating DMT user out
+        entirely. But stock's own _read_group_stage_ids (see its
+        'id in stages.ids' clause below) adds a column for ANY stage that has
+        at least one currently-VISIBLE record, with no team check at all - so
+        the instant one such transferred-out lead is visible, its CURRENT
+        stage (which belongs to the OTHER team, e.g. MIS's own 'New Lead')
+        shows up as an extra column mixed into DMT's kanban. Narrowing the
+        search (the 'My Pipeline' filter) just happened to keep that record
+        out of the read_group's matches; it was never actually team-scoped.
+        Fixed the same way for every user, not just CTO/MD: once the team
+        this Pipeline actually belongs to is known (from context or the
+        viewer's own team), strip the result down to that team's own stages
+        (plus genuinely global, team_ids=False ones) - a stage only present
+        because of some OTHER cross-cutting read grant doesn't belong here."""
+        target_team_id = self.env.context.get('default_team_id')
+        if not target_team_id:
+            user = self.env.user
+            if (
+                user.has_group('mazenet_access_rights.group_mzr_cto_admin')
+                or user.has_group('mazenet_access_rights.group_mzr_md')
+            ):
+                target_team_id = self.sudo()._mz_resolve_stage_team_id_from_domain(domain)
+                if not target_team_id:
+                    dmt_team = self.env.ref('mazenet_crm.team_dmt', raise_if_not_found=False)
+                    target_team_id = dmt_team.id if dmt_team else False
+            else:
+                target_team_id = self._mz_user_own_team(user).id or None
+            if target_team_id:
+                self = self.with_context(
+                    default_team_id=target_team_id, show_user_team_stages=False
+                )
+        result = super()._read_group_stage_ids(stages, domain)
+        if target_team_id:
+            result = result.filtered(lambda s: not s.team_ids or target_team_id in s.team_ids.ids)
+        return result
+
+    def _get_team_id_domain(self):
+        return [("id", "not in", self.env.user.crm_team_ids.ids)]
+
+
+    team_id = fields.Many2one(
+        "crm.team",
+        default=_mz_default_team_id,
+        domain=_get_team_id_domain,)
+
+    x_related_lead_id = fields.Many2one(
+        'crm.lead', string="Related Lead", readonly=True, copy=False,
+        help="The lead this one was spun off from via 'Create New Opportunity' - same "
+             "customer, a different requirement routed to (usually) a different "
+             "Sales Team. Set once at creation by the wizard, never editable "
+             "afterwards."
+    )
+    x_spinoff_lead_ids = fields.One2many(
+        'crm.lead', 'x_related_lead_id', string="Spin-off Leads",
+        help="Leads created FROM this one via 'Create New Opportunity' - same customer, "
+             "a different requirement routed to another team/salesperson."
+    )
+
+    x_dmt_originated = fields.Boolean(
+        string="Originated From DMT", copy=False,
+        help="Set once, at creation, if the lead's team_id was DMT at the time - "
+             "never changed afterwards even if team_id later moves elsewhere. "
+             "Exists purely so rule_crm_lead_dmt_originated_read "
+             "(security/record_rules.xml) can give DMT read-only visibility on a "
+             "lead they originally handled, even after handing it off to another "
+             "team via the 'Team' assign-type radio - DMT's own pipeline has a "
+             "'Follow-up's' stage AFTER 'Transfer to BU', so losing all read "
+             "access the instant team_id changes broke that follow-up step (and "
+             "surfaced as an AccessError on the very save that performed the "
+             "handoff, since the client's own post-write re-read hit the same "
+             "now-out-of-scope domain) - fixed 2026-09-08."
+    )
+
+    @api.model
+    def _default_x_assign_type(self):
+        """Agents can't use 'team' or 'internal' (see x_can_assign_beyond_self), so
+        defaulting everyone to 'team' meant every Agent got bounced back to 'self'
+        with a warning on every single new lead. Pick the default from the current
+        user's own tier instead, so an Agent starts on 'self' - the only option
+        that was ever going to stick for them - and TL/ATL/Manager keep the
+        original 'team' default.
+
+        'Team'/'Internal' default is now ALSO gated on _mz_user_can_use_assign_radio
+        (DMT/CTO/Admin/MD only) - fixed 2026-09-08: a non-DMT Team Lead/Manager
+        (e.g. Tally TL) still qualified for the tier check below on its own, so
+        Kanban quick-create defaulted x_assign_type='team' for them even though
+        _mz_check_assign_type_allowed has rejected 'team' for anyone outside
+        DMT/CTO/Admin for a while now - the create() call then hit that very
+        AccessError on a plain quick-create, before the user ever touched the
+        (correctly readonly-forced-to-self) radio on the full form.
+
+        CTO/Admin and MD always start a brand-new lead on 'Self' (2026-09-12, client
+        instruction, corrected same day from a brief 'Internal' default): checked
+        BEFORE the tier fallback below on purpose - group_mzr_cto_admin's own
+        implied_ids include every team's Manager group, and has_group() (which
+        _mz_user_tier_chain relies on) resolves implied groups transitively even
+        though CTO/Admin never actually gets a real row in that group's membership
+        - so the tier-chain fallback would otherwise misread CTO/Admin as a genuine
+        DMT Manager and default them to 'team' immediately, which is the exact bug
+        that started this whole conversation ("cto tries to create new lead it auto
+        assigns to team"). 'Team' is still reachable for CTO/Admin, just only AFTER
+        the lead is saved (see x_hide_internal_option/x_show_internal_only for what
+        it looks like once picked) - 'Internal', in turn, only ever applies to an
+        EXISTING lead already owned by someone else, never to a brand-new one."""
+        user = self.env.user
+        if not self._mz_user_can_use_assign_radio(user):
+            return 'self'
+        if (
+            user.has_group('mazenet_access_rights.group_mzr_cto_admin')
+            or user.has_group('mazenet_access_rights.group_mzr_md')
+        ):
+            return 'self'
+        tier, _chain = self._mz_user_tier_chain(user)
+        return 'team' if tier in ('atl', 'tl', 'manager') else 'self'
+
+    @api.model
+    def _selection_x_assign_type(self):
+        """Always all three - who may actually USE anything beyond 'Self' is separately
+        gated by x_can_use_assign_radio/x_can_assign_beyond_self, and (2026-09-08) whether
+        CTO/Admin/MD specifically see 'Internal' AT ALL on a given lead is a PER-RECORD
+        question (hidden on their own already-saved lead, shown otherwise) that a
+        Selection field's static, per-environment-only option list can't answer - see
+        x_hide_internal_option and x_assign_type_no_internal for how that's actually
+        done."""
+        return [('self', 'Self'), ('internal', 'Internal'), ('team', 'Team')]
+
+    x_assign_type = fields.Selection(
+        selection='_selection_x_assign_type',
+        string="Assign Type", default=_default_x_assign_type,
+        help="How user_id gets populated:\n"
+             "- Self: always the current user. Available to everyone.\n"
+             "- Team: hand-picked from the selected team's 'Create To' users.\n"
+             "- Internal: hand-picked from whoever's directly in a group ranked below "
+             "yours in the team's configured privilege/group hierarchy (DMT: any team "
+             "member, no restriction). For CTO/Admin/MD specifically, hidden in the view "
+             "(x_assign_type_no_internal shown instead) on a lead they already own - see "
+             "x_hide_internal_option.\n"
+             "'Team' and 'Internal' are only offered to Team Leads, ATLs and BU Managers "
+             "(mazenet_access_rights) - an Agent has no one to delegate to, so both are "
+             "restricted to Self for them."
+    )
+    x_hide_internal_option = fields.Boolean(
+        compute='_compute_x_assignable_user_ids',
+        string="Hide Internal Option",
+        help="CTO/Admin and MD only: True when viewing a lead THEY ALREADY OWN "
+             "(lead.id is set - a genuinely new, unsaved lead is never 'owned' yet even "
+             "though user_id defaults to the creator - and user_id == the current user). "
+             "Drives which of x_assign_type (all 3 options) / x_assign_type_no_internal "
+             "(Self/Team only) is shown in the view - 'Internal' makes sense for CTO/MD "
+             "delegating someone ELSE's lead, not their own. Not stored - reflects "
+             "whoever has the form open."
+    )
+    x_assign_type_no_internal = fields.Selection(
+        [('self', 'Self'), ('team', 'Team')],
+        string="Assign Type", compute='_compute_x_assign_type_no_internal',
+        inverse='_inverse_x_assign_type_no_internal',
+        help="Mirror of x_assign_type with 'Internal' left out entirely (not just hidden -"
+             " a Selection field's option list is per-environment, not per-record, so "
+             "hiding one choice on some leads and not others needs a second field with "
+             "its own static, narrower option list, shown INSTEAD of the real one via "
+             "x_hide_internal_option). Reads/writes the exact same underlying value as "
+             "x_assign_type; exists purely for this view swap, not a separate concept."
+    )
+    x_show_internal_only = fields.Boolean(
+        compute='_compute_x_assignable_user_ids',
+        string="Show Internal Only",
+        help="CTO/Admin only (2026-09-12): True when viewing an EXISTING lead owned by "
+             "someone else - the only sensible action there is 'Internal' (reassigning "
+             "within that lead's own team hierarchy); 'Self' would self-assign someone "
+             "else's lead and 'Team' would re-route it entirely, neither of which is what "
+             "CTO/Admin opening someone else's lead is for. Drives x_assign_type_internal_only "
+             "being shown instead of x_assign_type_no_internal. MD never sees this - MD's "
+             "x_can_assign_beyond_self is always False, so the radio is readonly-forced-to-"
+             "Self for them regardless of which mirror field is technically in the view."
+    )
+    x_assign_type_internal_only = fields.Selection(
+        [('internal', 'Internal')],
+        string="Assign Type", compute='_compute_x_assign_type_internal_only',
+        inverse='_inverse_x_assign_type_internal_only',
+        help="Second mirror of x_assign_type (see x_assign_type_no_internal), shown INSTEAD "
+             "of both other variants when x_show_internal_only is True - CTO/Admin viewing "
+             "an existing lead owned by someone else only ever has one meaningful choice, so "
+             "unlike x_assign_type_no_internal (a real 2-way choice), this one's whole "
+             "option list is just the single value it's already forced to."
+    )
+
+    @api.depends('x_assign_type')
+    def _compute_x_assign_type_no_internal(self):
+        for lead in self:
+            lead.x_assign_type_no_internal = (
+                lead.x_assign_type if lead.x_assign_type != 'internal' else 'self'
+            )
+
+    @api.depends('x_assign_type')
+    def _compute_x_assign_type_internal_only(self):
+        for lead in self:
+            lead.x_assign_type_internal_only = 'internal'
+
+    def _inverse_x_assign_type_internal_only(self):
+        """Guarded on x_show_internal_only too (2026-09-12 fix), not just the
+        recursive-write guard shared with _inverse_x_assign_type_no_internal below:
+        this field's compute ALWAYS returns 'internal' (it's a single-option
+        selection - there's nothing else it COULD return), regardless of whether
+        it's actually the visible one. The web client still dirty-tracks and saves
+        editable computed fields that are merely invisible, not skipped - so
+        without this guard, a CTO/Admin lead saved as Self or Team (where this
+        field is hidden and x_assign_type_no_internal is the real one) got its
+        x_assign_type silently stomped back to 'internal' by THIS field's own
+        inverse firing anyway (hit live 2026-09-12: a CTO's brand-new Self-assigned
+        lead saved with x_assign_type='internal' instead)."""
+        for lead in self:
+            if not lead.x_show_internal_only:
+                continue
+            if lead.x_assign_type != 'internal':
+                lead.x_assign_type = 'internal'
+
+    def _inverse_x_assign_type_no_internal(self):
+        """Guarded to a genuine no-op when the value already matches (2026-09-11 fix):
+        `lead.x_assign_type = ...` on a real record is a plain attribute assignment,
+        but Odoo implements that as `lead.write({'x_assign_type': ...})` under the
+        hood - a full RECURSIVE call back into this model's own write() override,
+        mid-flight, while the OUTER write() that triggered this inverse is still
+        running. The web client sends x_assign_type_no_internal alongside
+        x_assign_type in the SAME vals whenever the real field changes (it's an
+        invisible mirror, but still a dependent compute the client tracks as
+        dirty), both set to the SAME target value - so by the time this inverse
+        fires, x_assign_type has already been applied by the outer write and
+        already equals x_assign_type_no_internal. Without this guard, the
+        recursive write still fired anyway, re-running every access check with
+        team_id/user_id ALREADY updated (uncommitted) by the outer write - so a
+        legitimate team handoff (which moves team_id off DMT) made the recursive
+        write's own _mz_can_edit_owned check fail, and that failure rolled back
+        the ENTIRE transaction, silently undoing the outer write's real change too
+        (hit live 2026-09-11: DMT Agent's team-transfer save always reverted with
+        an AccessError, even though nothing was actually wrong with the transfer
+        itself)."""
+        for lead in self:
+            if lead.x_assign_type != lead.x_assign_type_no_internal:
+                lead.x_assign_type = lead.x_assign_type_no_internal
+    x_can_use_assign_radio = fields.Boolean(
+        compute='_compute_x_assignable_user_ids',
+        string="Can Use Assign Radio",
+        help="Whether the CURRENT user may interact with the Assign Type radio at "
+             "all - DMT team membership, MD, or CTO/Admin (_mz_user_can_use_assign_radio). "
+             "Everyone else gets it readonly, forced to 'Self'. Not stored - reflects "
+             "whoever has the form open."
+    )
+    x_can_assign_beyond_self = fields.Boolean(
+        compute='_compute_x_assignable_user_ids',
+        string="Can Assign Beyond Self",
+        help="Whether the CURRENT user (the one viewing/editing this lead right now) "
+             "may use the 'Team' or 'Internal' assign types: DMT team membership, or "
+             "ATL/TL/Manager tier AND x_can_use_assign_radio (so only CTO/Admin, in "
+             "practice, among non-DMT tiered users - see x_can_use_assign_radio). Not "
+             "stored and not a property of the lead itself - it reflects whoever has "
+             "the form open."
+    )
+    x_assignable_user_ids = fields.Many2many(
+        'res.users', compute='_compute_x_assignable_user_ids',
+        string="Assignable Users",
+        help="The users user_id may be hand-picked from, when the current user is "
+             "allowed to assign beyond Self (see x_can_assign_beyond_self) - otherwise "
+             "empty. For 'Team': the selected team's create_lead_id members. For "
+             "'Internal': whoever's directly in a group ranked below the current "
+             "user's own group, per the team's configured privileges "
+             "(_mz_team_subordinate_group_users) - DMT is exempt from both "
+             "restrictions and always gets the full team roster. Used as user_id's "
+             "domain in the view; not stored, purely a UI helper. An onchange-returned "
+             "domain isn't reliably honored by the web client for Many2one search, so "
+             "the domain lives in the view via this computed field instead."
+    )
+    x_hide_salesperson = fields.Boolean(
+        compute='_compute_x_assignable_user_ids',
+        string="Hide Salesperson Field",
+        help="CTO/Admin and MD only: True on a lead THEY ALREADY OWN (same condition "
+             "as x_hide_internal_option, and for the same reason - 'Internal' is "
+             "meant for delegating someone ELSE's lead, and picking a salesperson "
+             "only means anything alongside that). Shown (and pickable) again the "
+             "moment they're viewing anyone else's lead, or creating a brand-new one. "
+             "Not stored - reflects whoever has the form open."
+    )
+    x_can_create_partner = fields.Boolean(
+        compute='_compute_x_can_create_partner',
+        string="Can Create Partner",
+        help="Whether the CURRENT user (viewing/editing this lead right now) may create "
+             "a new res.partner from this form - Technology's own restriction (M2 sheet: "
+             "'Agents may only SELECT from the existing partner and customer list; "
+             "creating one is restricted to Team Leads and Managers'). True for every "
+             "other BU (no such rule there) and for Technology TL/Manager tier; False "
+             "for a Technology Agent/ATL. Not stored - reflects whoever has the form "
+             "open."
+    )
+
+    @api.depends('team_id')
+    @api.depends_context('uid')
+    def _compute_x_can_create_partner(self):
+        tier, _chain = self._mz_user_tier_chain(self.env.user)
+        for lead in self:
+            if lead.team_id.x_bu_category != 'tech':
+                lead.x_can_create_partner = True
+            else:
+                lead.x_can_create_partner = tier in ('tl', 'manager')
+
+    def _mz_team_subordinate_group_users(self, team, user):
+        """Direct members (group.user_ids, NOT the transitively-implied
+        all_user_ids) of every group ranked below `user`'s own group within
+        `team`'s configured privileges (crm.team.privelege_ids) - i.e. only users
+        under the current user in that team's configured hierarchy. Checked
+        privilege by privilege, since sequence only ranks groups WITHIN one
+        privilege (a Corporate team's several sub-team privileges each restart
+        their own numbering). Empty recordset if the team has no privileges
+        configured, or `user` doesn't hold any of their groups."""
+        if not team or not team.privelege_ids:
+            return self.env['res.users']
+        owner_privilege = None
+        owner_group = None
+        for privilege in team.privelege_ids:
+            for group in privilege.group_ids.sorted('sequence', reverse=True):
+                if user in group.user_ids:
+                    owner_privilege = privilege
+                    owner_group = group
+                    break
+            if owner_group:
+                break
+        if not owner_group:
+            return self.env['res.users']
+        lower_groups = owner_privilege.group_ids.filtered(
+            lambda g: g.sequence < owner_group.sequence
+        )
+        return lower_groups.mapped('user_ids')
+
+    @api.depends('team_id', 'x_assign_type', 'user_id')
+    @api.depends_context('uid')
+    def _compute_x_assignable_user_ids(self):
+        """DMT is a special case: a DMT team member may assign to ANY of the team's
+        users under both 'Team' and 'Internal' - no restriction, and no ATL/TL/
+        Manager tier gate either (DMT membership itself is enough - the
+        Agent-restricted-to-Self rule is entirely waived for DMT). See
+        _mz_check_assign_type_allowed for the matching server-side backstop - it
+        must waive the tier gate for DMT the same way, or a DMT Agent could pick
+        'Team'/'Internal' here and then get rejected on save.
+
+        Everyone else keeps the normal tier-gated behavior: 'Team' restricted to
+        create_lead_id members; 'Internal' restricted to whoever's DIRECTLY in a
+        group ranked below the current user's own group, per the team's
+        configured privileges (_mz_team_subordinate_group_users) - not the whole
+        team roster."""
+        user = self.env.user
+        user_is_dmt = self._mz_user_is_dmt(user)
+        can_use_radio = self._mz_user_can_use_assign_radio(user)
+        is_md = user.has_group('mazenet_access_rights.group_mzr_md')
+        is_cto_admin = user.has_group('mazenet_access_rights.group_mzr_cto_admin')
+        tier, _chain = self._mz_user_tier_chain(user)
+        # is_cto_admin is checked explicitly here, NEVER through the tier chain
+        # (2026-09-12): group_mzr_cto_admin's own implied_ids include every team's
+        # Manager group, and has_group() (which _mz_user_tier_chain relies on)
+        # resolves implied groups transitively even without a real membership row -
+        # so tier would otherwise misread CTO/Admin as a genuine team Manager. MD
+        # is excluded on purpose - MD is hard-restricted to Self-only leads
+        # everywhere else in this module (create()'s own MD gate), so 'beyond self'
+        # would never actually be usable for them regardless of this flag.
+        can_beyond_self = can_use_radio and (user_is_dmt or is_cto_admin or (not is_md and tier in ('atl', 'tl', 'manager')))
+        is_cto_or_md = is_md or is_cto_admin
+        for lead in self:
+            lead.x_can_use_assign_radio = can_use_radio
+            lead.x_can_assign_beyond_self = can_beyond_self
+            # CTO/Admin viewing an EXISTING lead owned by someone else (typically on
+            # another team): the only sensible action is 'Internal' - reassigning
+            # within that lead's own team hierarchy. Self/Team make no sense on a
+            # lead that isn't theirs. Reworked 2026-09-12 (client correction, same
+            # day as the first pass): a brand-new lead, or their own already-saved
+            # one, ALWAYS gets Self/Team only (x_assign_type_no_internal) - Internal
+            # is exclusively for someone else's existing lead, never their own,
+            # including at creation time (the opposite of what the first pass did).
+            is_other_owned_lead = bool(lead.id and lead.user_id and lead.user_id != user)
+            show_internal_only = bool(is_cto_admin and is_other_owned_lead)
+            hide_for_own_lead = bool(is_cto_or_md) and not show_internal_only
+            # DMT hands a lead to the TEAM only when 'Team' is picked - the team lead
+            # assigns the actual salesperson afterwards, so DMT never needs (or should
+            # see) this field for that one combination (client instruction, 2026-09-09).
+            # Mirrors assign_salesperson's onchange, which likewise leaves user_id unset
+            # for DMT+'team' instead of auto-picking create_lead_id. CTO/Admin get the
+            # exact same treatment for 'Team' now (2026-09-12): the salesperson is left
+            # for the receiving team's own TL to pick, not CTO/Admin.
+            hide_for_dmt_team = bool((user_is_dmt or is_cto_admin) and lead.x_assign_type == 'team')
+            lead.x_hide_salesperson = hide_for_own_lead or hide_for_dmt_team
+            lead.x_hide_internal_option = hide_for_own_lead
+            lead.x_show_internal_only = show_internal_only
+            if not can_beyond_self:
+                lead.x_assignable_user_ids = False
+            elif user_is_dmt or (is_cto_admin and show_internal_only):
+                # CTO/Admin's 'internal' pool would otherwise be empty:
+                # _mz_team_subordinate_group_users checks raw, non-transitive group
+                # membership, and CTO/Admin never actually gets a real row in any
+                # team's own privilege groups (only the transitive has_group() result
+                # used above, which doesn't apply here) - give them the same
+                # unrestricted whole-team-roster pool as DMT for this one path.
+                lead.x_assignable_user_ids = lead.team_id.member_ids
+            elif lead.x_assign_type == 'team':
+                lead.x_assignable_user_ids = lead.team_id.create_lead_id
+            else:
+                lead.x_assignable_user_ids = self._mz_team_subordinate_group_users(lead.team_id, user)
+
+    @api.onchange('x_assign_type', 'team_id')
+    def assign_salesperson(self):
+        """x_assign_type drives how user_id gets populated - see the field's help.
+        'Team' and 'Internal' both leave user_id hand-pickable, restricted to
+        x_assignable_user_ids (create_lead_id members for 'Team', full team roster
+        for 'Internal') - create_lead_id is a Many2many now, so there's no longer a
+        single value to auto-assign for 'Team'."""
+        user = self.env.user
+        if self.x_assign_type == 'self':
+            self.user_id = self.env.user
+            self.team_id = self._mz_user_own_team()
+            return
+        if self.x_assign_type == 'team':
+            # DMT only ever hands a lead to the TEAM, never to a specific person - the
+            # team lead picks the actual salesperson afterwards (client instruction,
+            # 2026-09-09). Leave user_id unset rather than auto-picking create_lead_id;
+            # the Salesperson field is hidden for this exact combination in the view
+            # (x_hide_salesperson) so there's nothing for the DMT user to fill in anyway.
+            # CTO/Admin get the same treatment (2026-09-12): 'Team' only ever appears on
+            # their OWN lead (never someone else's - see x_show_internal_only), so this
+            # is always a hand-off to whichever team is picked, salesperson TBD by that
+            # team's own TL.
+            if self._mz_user_is_dmt(user) or user.has_group('mazenet_access_rights.group_mzr_cto_admin'):
+                self.user_id = False
+                return
+            self.user_id = self.team_id.create_lead_id and self.team_id.create_lead_id[0] or False
+        if self.x_assign_type == 'internal':
+            # Only snap team_id to the ACTING user's own team when they have one - a
+            # regular TL/Manager picking 'Internal' is always delegating within their
+            # own team, so this is the normal case. CTO/Admin (and MD) have no
+            # crm_team_ids of their own at all - user.crm_team_ids[0] on an empty
+            # recordset raised IndexError the moment they picked 'Internal' on
+            # someone ELSE's lead (2026-09-08). For them, team_id already correctly
+            # holds whatever team the lead they're viewing belongs to - leave it as
+            # is instead of forcing a team that doesn't exist for this user.
+            if user.crm_team_ids:
+                self.team_id = user.crm_team_ids[0]
+            return
+        if not self.x_can_assign_beyond_self:
+            self.x_assign_type = 'self'
+            self.user_id = user
+            return {'warning': {
+                'title': _("Assignment restricted"),
+                'message': _("Only DMT team members and CTO/Admin can assign to a team "
+                            "or assign internally. Everyone else can only assign to "
+                            "themselves."),
+            }}
+        if self.user_id not in self.x_assignable_user_ids:
+            self.user_id = False
+
+    @api.depends(
+        'activity_ids.date_deadline', 'activity_ids.calendar_event_id.start',
+        'activity_ids.mz_activity_time', 'activity_ids.user_id', 'activity_ids.active',
+    )
     def _compute_x_next_activity_datetime(self):
         for lead in self:
             candidates = []
             for activity in lead.activity_ids.filtered('active'):
-                if activity.calendar_event_id and activity.calendar_event_id.start:
-                    candidates.append(activity.calendar_event_id.start)
-                elif activity.date_deadline:
-                    candidates.append(datetime.combine(activity.date_deadline, datetime.min.time()))
+                candidates.append(activity._mz_resolve_activity_datetime())
+            candidates = [c for c in candidates if c]
             lead.x_next_activity_datetime = min(candidates) if candidates else False
-
-    x_originating_team_id = fields.Many2one(
-        "crm.team",
-        string="Originating Team (DMT)",
-        help="Tracks originating team for leads created by or transferred from DMT."
-    )
-
-    x_owner_role = fields.Selection(
-        related="user_id.x_mz_role",
-        string="Owner Role",
-        store=True,
-        help="The assigned salesperson's Mazenet role - drives the Filters panel's "
-             "Agent/TL/Manager role filters in the Pipeline."
-    )
-
-    x_owner_supervisor_id = fields.Many2one(
-        related="user_id.x_mz_supervisor_id",
-        string="Owner's Supervisor",
-        store=True,
-        help="Who the assigned salesperson reports to - lets the Pipeline be grouped by "
-             "the real reporting chain instead of a flat Salesperson list."
-    )
 
     x_is_locked = fields.Boolean(
         string="RED Lock Active",
@@ -74,186 +779,1024 @@ class CrmLead(models.Model):
         help="Timestamp when RED lock was triggered."
     )
 
-    x_lock_escalated = fields.Boolean(
-        string="RED Lock Escalated",
-        default=False,
-        help="True once the 24h auto-escalation notification has been sent for the current lock."
+    x_content_readonly_for_me = fields.Boolean(
+        compute="_compute_x_content_readonly_for_me",
+        string="Read-Only For Me",
+        help="Whether write() would actually reject a content edit from the CURRENT "
+             "user right now - covers both RED-lock read-only AND the team-transfer "
+             "rule: once a lead's team_id moves off wherever gave someone access "
+             "(_mz_can_edit_owned/_mz_can_edit_by_team), it goes read-only for them, "
+             "locked or not - there is NO owner exemption while unlocked either, "
+             "Sales Team (team_id) is the single source of truth for both the "
+             "transfer action and this check, whether the lead is owned or not (an "
+             "unowned lead just always fails the 'am I the owner' half of "
+             "_mz_can_edit_owned, so it needs ATL/TL/Manager tier same as a non-owner "
+             "editing someone else's lead). CTO/Admin bypass everything. While LOCKED "
+             "specifically, the owner is excluded even on their own team - being "
+             "locked out is the whole point of RED lock for them. Not stored - it "
+             "reflects whoever has the form open, same pattern as "
+             "x_can_assign_beyond_self."
     )
+
+    @api.depends('x_is_locked', 'team_id', 'user_id')
+    @api.depends_context('uid')
+    def _compute_x_content_readonly_for_me(self):
+        u = self.env.user
+        is_cto_admin = u.has_group("mazenet_access_rights.group_mzr_cto_admin")
+        for lead in self:
+            if self.env.su or is_cto_admin:
+                lead.x_content_readonly_for_me = False
+            elif lead.x_is_locked:
+                lead.x_content_readonly_for_me = not lead._mz_can_edit_by_team(u)
+            else:
+                lead.x_content_readonly_for_me = not lead._mz_can_edit_owned(u)
+
+    x_team_transfer_readonly = fields.Boolean(
+        compute="_compute_x_team_transfer_readonly",
+        string="Read-Only (Team Transfer)",
+        help="True specifically when this lead is read-only for the CURRENT user "
+             "because team_id no longer includes them (a genuine transfer to another "
+             "team) - NOT because of a RED lock, and NOT because of the separate "
+             "'need ATL/TL/Manager tier to edit a peer's owned lead' rule that applies "
+             "WITHIN a team you're still a member of (_mz_can_edit_by_team). Kept "
+             "separate from x_content_readonly_for_me (which covers all three reasons)"
+             " so the UI can label each cause correctly: RED lock already gets red "
+             "(ribbon/tint/banner) elsewhere, an actual team transfer gets this grey "
+             "tint/'TRANSFERRED' banner, and the peer-lead-tier case just goes plain "
+             "readonly with no banner at all - conflating that last one with "
+             "'TRANSFERRED' was actively misleading (the lead never left the team;"
+             " hit live 2026-09-11 once DMT stopped being exempt from the tier rule "
+             "and this mislabeling became visible for the first time). Not stored - "
+             "same per-user reasoning as x_content_readonly_for_me."
+    )
+
+    @api.depends('x_is_locked', 'x_content_readonly_for_me', 'team_id')
+    @api.depends_context('uid')
+    def _compute_x_team_transfer_readonly(self):
+        u = self.env.user
+        for lead in self:
+            lead.x_team_transfer_readonly = (
+                lead.x_content_readonly_for_me
+                and not lead.x_is_locked
+                and (not lead.team_id or u not in lead.team_id.member_ids)
+            )
+
+    x_activity_card_state = fields.Selection(
+        [
+            ('purple', 'Activity Today'),
+            ('green', 'Activity Due Now'),
+            ('red', 'Activity Overdue (RED Lock)'),
+        ],
+        string="Activity Card State", compute="_compute_x_activity_card_state", store=True,
+        help="Drives the Pipeline kanban card's colour, for DMT/Tally/Technology leads only "
+             "(MZ_ACTIVITY_CARD_BU_CATEGORIES - Software Dev and MIS have no Follow-up's "
+             "stage, so this doesn't apply to them; False/'Normal' for every other lead "
+             "regardless of team). Client rework spec (2026-09-08), precedence top to "
+             "bottom:\n"
+             "- RED: same signal as x_is_locked (the RED lock) - " + str(MZ_ACTIVITY_WINDOW_MINUTES) + " minutes "
+             "past the activity's real moment with it still open. Deliberately reuses "
+             "x_is_locked rather than its own independent timer, so there's exactly one "
+             "'is this overdue' answer in the whole module.\n"
+             "- GREEN: within " + str(MZ_ACTIVITY_WINDOW_MINUTES) + " minutes either side of "
+             "the activity's real moment (not locked yet).\n"
+             "- PURPLE: the activity falls on TODAY (any time today, in the responsible "
+             "user's own timezone) - not a proximity window, just 'something is due today'.\n"
+             "A plain Selection, NOT the kanban 'color' integer (that's a colour-picker "
+             "index, unrelated to this). Stored, because it needs to be orderable/filterable "
+             "and - critically - a card must repaint purely because TIME has passed even "
+             "when nothing on the record was written, which a stored field can only do via "
+             "an explicit periodic recompute: ir_cron_mz_recompute_activity_card_state "
+             "(data/cron.xml) re-triggers this compute, every 5 minutes, for leads whose "
+             "activity falls within a day of now (a cheap, indexed window - not a full-table "
+             "sweep) - ordinary field writes (a new/edited/completed activity, a fresh RED "
+             "lock) still recompute it immediately via these @api.depends as usual."
+    )
+
+    @api.depends('x_next_activity_datetime', 'x_is_locked', 'team_id.x_bu_category')
+    def _compute_x_activity_card_state(self):
+        now = fields.Datetime.now()
+        for lead in self:
+            if lead.team_id.x_bu_category not in MZ_ACTIVITY_CARD_BU_CATEGORIES:
+                lead.x_activity_card_state = False
+                continue
+            if lead.x_is_locked:
+                lead.x_activity_card_state = 'red'
+                continue
+            if not lead.x_next_activity_datetime:
+                lead.x_activity_card_state = False
+                continue
+            minutes_away = (lead.x_next_activity_datetime - now).total_seconds() / 60
+            if abs(minutes_away) <= MZ_ACTIVITY_WINDOW_MINUTES:
+                lead.x_activity_card_state = 'green'
+                continue
+            tz_name = (lead.user_id.tz if lead.user_id else self.env.user.tz) or 'UTC'
+            activity_local_date = pytz.UTC.localize(
+                lead.x_next_activity_datetime
+            ).astimezone(pytz.timezone(tz_name)).date()
+            today_local_date = pytz.UTC.localize(now).astimezone(pytz.timezone(tz_name)).date()
+            lead.x_activity_card_state = 'purple' if activity_local_date == today_local_date else False
+
+    @api.model
+    def _cron_recompute_activity_card_state(self):
+        """Forces x_activity_card_state (a stored field) to repaint purely because time has
+        passed - see that field's own help text for why a cron is needed at all. Scoped to
+        DMT/Tally/Technology leads whose activity falls within a day of now: wide enough to
+        safely cover every timezone's 'today' without a per-row timezone calculation in SQL
+        (the exact per-user-timezone check happens in the compute itself), but nowhere close
+        to a full-table sweep - x_next_activity_datetime is indexed, and this excludes every
+        lead with a far-future/past/no activity, or in a BU this feature doesn't apply to."""
+        now = fields.Datetime.now()
+        leads = self.sudo().search([
+            ('x_next_activity_datetime', '>=', now - timedelta(days=1)),
+            ('x_next_activity_datetime', '<=', now + timedelta(days=1)),
+            ('team_id.x_bu_category', 'in', list(MZ_ACTIVITY_CARD_BU_CATEGORIES)),
+            ('active', '=', True),
+        ])
+        if leads:
+            leads._compute_x_activity_card_state()
+
+    # ------------------------------------------------------------------
+    # M2 pipeline fields (Mazenet_CRM_M2_Build_Tasks.xlsx)
+    # Shared across two or more of the 5 BU pipelines - same concept, one
+    # field, gated per-team in the view via x_team_bu_category.
+    # ------------------------------------------------------------------
+    x_team_bu_category = fields.Selection(
+        related='team_id.x_bu_category', string="Team BU Category",
+        help="Plain (non-dotted) mirror of team_id.x_bu_category for use in the view's "
+             "invisible attrs - a dotted 'team_id.x_bu_category' expression isn't reliably "
+             "fetched by the web client since x_bu_category otherwise never appears "
+             "anywhere in this view's own field spec, which left every Pipeline Fields "
+             "group permanently invisible."
+    )
+    x_current_stage_gate_fields = fields.Char(
+        compute='_compute_x_current_stage_gate_fields',
+        string="Current Stage Required Fields",
+        help="Comma-delimited (leading/trailing commas included, so 'in' checks in the "
+             "view can match a whole field name and not a substring of a longer one - "
+             "e.g. 'x_feasibility' vs 'x_feasibility_identified') list of the field "
+             "names MZ_STAGE_GATE_RULES requires to move OUT of the lead's CURRENT "
+             "stage - drives the red-asterisk 'required' indicator on those fields in "
+             "the Pipeline Fields page (view can't itself resolve MZ_STAGE_GATE_RULES "
+             "or match against team_id.x_bu_category via a dotted expression, so this "
+             "compute does it server-side). Purely a UI indicator matching what "
+             "_mz_stage_gate_check will actually enforce on the next forward stage "
+             "move - NOT a stored/model-level required=True, so it doesn't block "
+             "saving while just sitting on the current stage, only shows the marker. "
+             "Not stored - reflects the record's own state, recomputed on stage_id/"
+             "team_id change."
+    )
+
+    @api.depends('stage_id', 'team_id')
+    def _compute_x_current_stage_gate_fields(self):
+        for lead in self:
+            team = lead.team_id
+            resolved = lead._mz_stage_gate_rules_resolved(team.x_bu_category) if team else []
+            field_names = next(
+                (names for stage, names in resolved if stage.id == lead.stage_id.id), []
+            )
+            lead.x_current_stage_gate_fields = (
+                ',' + ','.join(field_names) + ',' if field_names else False
+            )
+
+    x_product_service = fields.Char(string="Product / Service")
+    x_feasibility = fields.Char(string="Feasibility")
+    x_timeline = fields.Char(string="Timeline")
+    x_requirements_attachment_ids = fields.Many2many(
+        'ir.attachment', 'mazenet_crm_lead_requirements_attachment_rel',
+        'lead_id', 'attachment_id', string="Requirements Attachment(s)")
+    x_quote_date = fields.Date(string="Quote Date")
+    x_quote_document_ids = fields.Many2many(
+        'ir.attachment', 'mazenet_crm_lead_quote_document_rel',
+        'lead_id', 'attachment_id', string="Quote Document(s)")
+    x_company_turnover = fields.Monetary(string="Company Turnover", currency_field='company_currency')
+    x_project_start_date = fields.Date(string="Project Start Date")
+    x_project_start_attachment_ids = fields.Many2many(
+        'ir.attachment', 'mazenet_crm_lead_project_start_attachment_rel',
+        'lead_id', 'attachment_id', string="Project Start Attachment(s)")
+    x_project_completed_date = fields.Date(string="Project End Date")
+    x_project_completed_attachment_ids = fields.Many2many(
+        'ir.attachment', 'mazenet_crm_lead_project_completed_attachment_rel',
+        'lead_id', 'attachment_id', string="Project Completed Attachment(s)")
+    x_workorder_completion_date = fields.Date(
+        string="Project Actual End Date",
+        help="MANUAL entry only - do not build an auto-fetch or any integration with the "
+             "Work Order app."
+    )
+    x_deviation_days = fields.Integer(
+        string="Deviation Days", compute="_compute_x_deviation_days", store=True,
+        help="Auto-calculated from Project End Date vs Project Actual End Date."
+    )
+    x_demo_completed = fields.Boolean(string="Demo / POC Completed")
+    x_system_study_attachment_ids = fields.Many2many(
+        'ir.attachment', 'mazenet_crm_lead_system_study_attachment_rel',
+        'lead_id', 'attachment_id', string="System Study (PDF)")
+
+    @api.depends('x_project_completed_date', 'x_workorder_completion_date')
+    def _compute_x_deviation_days(self):
+        for lead in self:
+            if lead.x_project_completed_date and lead.x_workorder_completion_date:
+                lead.x_deviation_days = (
+                    lead.x_workorder_completion_date - lead.x_project_completed_date
+                ).days
+            else:
+                lead.x_deviation_days = 0
+
+    @api.constrains('phone', 'email_from')
+    def _mz_check_contact_format(self):
+        """Build-notes: 'Format validation only... Show a placeholder hint. No
+        dummy-number/dummy-email detection.' - just syntax, not a mandatory-field or
+        real-number/real-address check. Scoped to the 5 M2 BUs
+        (MZ_FORMAT_VALIDATED_BU_CATEGORIES); empty values are fine here (mandatory-ness
+        is the stage gate's job, see MZ_STAGE_GATE_RULES) - this only fires once
+        something has actually been typed in."""
+        for lead in self:
+            if lead.team_id.x_bu_category not in MZ_FORMAT_VALIDATED_BU_CATEGORIES:
+                continue
+            if lead.phone:
+                cleaned = re.sub(r'[\s\-().]', '', lead.phone)
+                if not MZ_PHONE_RE.fullmatch(cleaned):
+                    raise ValidationError(_(
+                        "'%(lead)s': Contact Number must be a valid 10-digit number "
+                        "(got '%(value)s')."
+                    ) % {'lead': lead.name, 'value': lead.phone})
+            if lead.email_from and not MZ_EMAIL_RE.fullmatch(lead.email_from.strip()):
+                raise ValidationError(_(
+                    "'%(lead)s': Email must be a valid email address (got '%(value)s')."
+                ) % {'lead': lead.name, 'value': lead.email_from})
+
+    # -- DMT only --
+    x_organic_inorganic = fields.Selection(
+        [('organic', 'Organic'), ('inorganic', 'In-Organic')],
+        string="Organic / In-Organic", help="DMT only. Do not use on any other BU."
+    )
+    x_company_or_individual = fields.Char(string="Company / Individual")
+    x_contact_purpose = fields.Char(string="Contact Purpose")
+    x_employee_count = fields.Integer(string="Employee Count")
+    x_target_team_id = fields.Many2one(
+        'crm.team', string="Target Business Unit",
+        help="The BU this DMT lead is being transferred to."
+    )
+    x_transfer_notes = fields.Text(string="Transfer Notes / Reason")
+
+    # -- Tally only --
+    x_tally_category = fields.Selection(
+        [
+            ('tdl', 'TDL'),
+            ('tally_licence', 'Tally Licence'),
+            ('tally_cloud', 'Tally Cloud (Mazenet / AWS / Oracle)'),
+            ('tally_amc', 'Tally AMC (Online / Direct)'),
+            ('maze_chit', 'Maze Chit'),
+            ('mobile_app', 'Mobile App'),
+            ('renewal', 'Renewal'),
+            ('software_development', 'Software Development'),
+            ('not_tally_or_chit', 'Not Tally or Chit Related'),
+        ],
+        string="Lead Category"
+    )
+    x_company_intro_done = fields.Text(string="Company Intro")
+
+    # -- Technology only --
+    x_customer_status = fields.Char(string="Customer Status")
+    x_customer_need = fields.Char(string="Customer Need")
+    x_feasibility_identified = fields.Boolean(string="Feasibility Evaluation Identified")
+    x_bom_attachment_ids = fields.Many2many(
+        'ir.attachment', 'mazenet_crm_lead_bom_attachment_rel',
+        'lead_id', 'attachment_id', string="BOM Received")
+    x_boq_attachment_ids = fields.Many2many(
+        'ir.attachment', 'mazenet_crm_lead_boq_attachment_rel',
+        'lead_id', 'attachment_id', string="BOQ Received")
+    x_quote_shared_checkbox = fields.Boolean(string="Shared with Customer")
+    x_customer_goods_finalised = fields.Boolean(string="Customer Goods Finalised")
+
+    # -- Software Dev only --
+    x_branch_count = fields.Char(string="No. of Branches")
+    x_sw_employee_count = fields.Char(string="No. of Employees")
+    x_nature_of_business = fields.Char(string="Nature of Business")
+    x_established_year = fields.Char(string="Established Year")
+    x_founder = fields.Char(string="Founder")
+    x_ceo = fields.Char(string="CEO")
+    x_meeting_attendees = fields.Char(string="Client Details (Meeting Attendees)")
+
+    # -- MIS only --
+    x_target_audience = fields.Char(string="Target Audience")
+    x_mis_timelines_estimate = fields.Integer(string="Timelines (Estimate)")
+    x_deliverables = fields.Char(string="Deliverables")
+
+    def _mz_check_assign_type_allowed(self, vals):
+        """Server-side backstop for x_assign_type in ('team', 'internal'): the view
+        only offers those to whoever passes x_can_use_assign_radio (DMT team
+        membership, MD, or CTO/Admin) AND holds ATL/TL/Manager tier
+        (x_can_assign_beyond_self), and the onchange bounces anyone else back to
+        'self' and clears user_id if it falls outside x_assignable_user_ids - but
+        all of that is UI-only, so a direct RPC/API write could still set either.
+        Raises the same way the UI would have refused, instead of silently
+        accepting it. Mirrors _compute_x_assignable_user_ids' DMT waiver (a DMT
+        team member skips the tier gate entirely and gets the full team roster as
+        their pool for both 'team' and 'internal') and its 'internal' pool for
+        everyone else (_mz_team_subordinate_group_users) - keep all three in
+        sync, or a UI selection could get rejected on save."""
+        assign_type = vals.get('x_assign_type')
+        if assign_type not in ('team', 'internal') or self.env.su:
+            return
+        user = self.env.user
+        user_is_dmt = self._mz_user_is_dmt(user)
+        can_use_radio = self._mz_user_can_use_assign_radio(user)
+        is_cto_admin = user.has_group('mazenet_access_rights.group_mzr_cto_admin')
+        tier, _chain = self._mz_user_tier_chain(user)
+        # is_cto_admin added 2026-09-12 alongside _compute_x_assignable_user_ids' own
+        # can_beyond_self - CTO/Admin belong to no crm.team of their own so tier is
+        # always None for them, which used to fail this check even though the UI
+        # error message below (and _mz_user_can_use_assign_radio) already claimed to
+        # allow it. MD is deliberately NOT included - still Self-only everywhere else.
+        if not can_use_radio or not (user_is_dmt or is_cto_admin or tier in ('atl', 'tl', 'manager')):
+            raise AccessError(_(
+                "Only DMT team members and CTO/Admin can assign to a team or assign "
+                "internally. Everyone else - including MD - can only assign to "
+                "themselves."))
+
+        if not vals.get('user_id'):
+            return
+        # Mirrors _compute_x_assignable_user_ids' pool for 'team'/'internal': records
+        # being written each keep their own team_id unless vals overrides it; create()
+        # calls this before any record exists, so there's nothing to fall back to but
+        # vals itself.
+        for record in (self or [self.env['crm.lead']]):
+            team_id = vals['team_id'] if 'team_id' in vals else (record.team_id.id if record else False)
+            team = self.env['crm.team'].browse(team_id) if team_id else self.env['crm.team']
+            if user_is_dmt or is_cto_admin:
+                pool_ids = team.member_ids.ids
+            elif assign_type == 'team':
+                pool_ids = team.create_lead_id.ids
+            else:
+                pool_ids = self._mz_team_subordinate_group_users(team, user).ids
+            if vals['user_id'] not in pool_ids:
+                raise AccessError(_(
+                    "The selected salesperson isn't in the allowed assignment pool for "
+                    "this team under '%s' assignment. Pick from the assignable list."
+                ) % assign_type)
+
+    @api.model
+    def _mz_stage_gate_rules_resolved(self, bu_category):
+        """[(stage record, [mandatory field names]), ...] in sequence order for a BU,
+        resolved from MZ_STAGE_GATE_RULES's xmlids. Empty list for a BU with no rules
+        configured yet, or an xmlid that doesn't (or doesn't yet) resolve."""
+        rules = MZ_STAGE_GATE_RULES.get(bu_category)
+        if not rules:
+            return []
+        resolved = []
+        for xmlid, field_names in rules:
+            stage = self.env.ref(f'mazenet_crm.{xmlid}', raise_if_not_found=False)
+            if stage:
+                resolved.append((stage, field_names))
+        return resolved
+
+    def _mz_resolve_gate_value(self, fname, vals):
+        """The would-be value of `fname` after `vals` is applied, for mandatory-ness
+        purposes. Plain fields: the raw vals entry (or current value if untouched).
+        Many2many (the multi-file attachment fields): raw (6,0,ids)/(4,id)/... write
+        commands aren't truthy/falsy in a way that reflects the resulting record set
+        (e.g. a bare (6,0,[]) command is itself a non-empty list even though it clears
+        the field), so replay the commands against the current ids instead."""
+        if fname not in vals:
+            return self[fname]
+        field = self._fields[fname]
+        if field.type != 'many2many':
+            return vals[fname]
+        ids = set(self[fname].ids)
+        for command in vals[fname]:
+            op = command[0]
+            if op == 6:
+                ids = set(command[2])
+            elif op == 5:
+                ids = set()
+            elif op == 4:
+                ids.add(command[1])
+            elif op in (2, 3):
+                ids.discard(command[1])
+            elif op == 0:
+                ids.add(-1)  # new record being created inline - treat as filled
+        return ids
+
+    def _mz_missing_mandatory_fields(self, field_names, vals):
+        """Names of fields in `field_names` that are still empty, considering `vals`
+        (what's being written in this same call) over the record's current stored value.
+        Special-cased for 'source_id': when the (about-to-be-set) source requires a
+        companion reference text (utm.source.x_requires_reference_text - Referral/Ads/
+        GeM Bid style sources), 'referred' must be filled too even though it isn't its
+        own entry in MZ_STAGE_GATE_RULES (it's conditional on the source, not always
+        mandatory). Also special-cased for MZ_EITHER_OR_MANDATORY_FIELDS pseudo-names
+        (e.g. 'phone_or_email'): satisfied if ANY of the alternative fields is filled,
+        not each one individually."""
+        self.ensure_one()
+        missing = []
+        for fname in field_names:
+            if fname in MZ_EITHER_OR_MANDATORY_FIELDS:
+                alt_fields = MZ_EITHER_OR_MANDATORY_FIELDS[fname]
+                if not any(self._mz_resolve_gate_value(f, vals) for f in alt_fields):
+                    missing.append(fname)
+                continue
+            value = self._mz_resolve_gate_value(fname, vals)
+            if not value:
+                missing.append(fname)
+        if 'source_id' in field_names:
+            source_id = vals['source_id'] if 'source_id' in vals else self.source_id.id
+            if source_id and self.env['utm.source'].browse(source_id).x_requires_reference_text:
+                referred = vals['referred'] if 'referred' in vals else self.referred
+                if not referred:
+                    missing.append('referred')
+        return missing
+
+    def _mz_gate_field_label(self, fname):
+        """Human-readable label for a mandatory-field name in a stage-gate error
+        message - handles MZ_EITHER_OR_MANDATORY_FIELDS pseudo-names (e.g.
+        'phone_or_email' -> 'Phone / Email') as well as real field names."""
+        if fname in MZ_EITHER_OR_MANDATORY_FIELDS:
+            return ' / '.join(self._fields[f].string for f in MZ_EITHER_OR_MANDATORY_FIELDS[fname])
+        return self._fields[fname].string
+
+    def _mz_stage_gate_check(self, new_stage, vals):
+        """Raise UserError if moving to `new_stage` skips past a stage (in this lead's
+        BU) whose own mandatory fields (MZ_STAGE_GATE_RULES) aren't filled yet - "Build
+        the fields in M2, enforce the Mandatory column on stage change in M3" from the
+        pipeline sheets. Only a FORWARD move (to a later stage) is gated; moving
+        backward never is. Jumping straight past several stages checks every stage in
+        between, not just the one immediately before `new_stage`.
+
+        Phone/Email (MZ_EITHER_OR_MANDATORY_FIELDS's 'phone_or_email') is checked
+        separately here, on EVERY forward move regardless of BU or current stage -
+        unlike the rest of MZ_STAGE_GATE_RULES it isn't tied to one specific stage
+        being passed through, since either field can be blanked out again well
+        after the first stage that required it."""
+        self.ensure_one()
+        if not new_stage:
+            return
+        current_stage = self.stage_id
+        is_forward_move = bool(current_stage) and new_stage.sequence > current_stage.sequence
+
+        problems = []
+        if is_forward_move:
+            missing = self._mz_missing_mandatory_fields(['phone_or_email'], vals)
+            if missing:
+                problems.append(_("Every stage: %s") % self._mz_gate_field_label('phone_or_email'))
+
+        team = self.team_id
+        if team:
+            resolved = self._mz_stage_gate_rules_resolved(team.x_bu_category)
+            stage_ids = [s.id for s, _fields in resolved]
+            if new_stage.id in stage_ids:
+                new_index = stage_ids.index(new_stage.id)
+                current_index = stage_ids.index(current_stage.id) if current_stage.id in stage_ids else -1
+                if new_index > current_index:
+                    for stage, field_names in resolved[max(current_index, 0):new_index]:
+                        missing = self._mz_missing_mandatory_fields(field_names, vals)
+                        if missing:
+                            labels = ', '.join(self._mz_gate_field_label(f) for f in missing)
+                            problems.append(f"{stage.name}: {labels}")
+
+        if problems:
+            raise UserError(_(
+                "'%(lead)s' can't move to '%(target)s' yet - required fields are still "
+                "empty:\n%(details)s"
+            ) % {'lead': self.name, 'target': new_stage.name, 'details': '\n'.join(problems)})
+
+    @api.model
+    def _mz_backfill_x_dmt_originated(self):
+        """Data-file hook (data/teams.xml's own <function> call, NOT a
+        post_init_hook - post_init_hook only fires on a fresh install, never on
+        a plain -u upgrade of an already-installed module, which is exactly the
+        upgrade path this fix needed to run through). x_dmt_originated is only
+        ever set going forward, by create() - existing leads already sitting in
+        team_dmt when this field was introduced (2026-09-08, fixing the
+        AccessError a DMT agent hit transferring a lead to another team) would
+        otherwise never get it, and lose all read access the moment they're
+        transferred out, same as before the fix. One-time-in-effect backfill:
+        every lead CURRENTLY in team_dmt originated from DMT by definition.
+        Idempotent (only touches x_dmt_originated=False rows) so re-running it
+        on every future -u upgrade is harmless."""
+        dmt_team = self.env.ref('mazenet_crm.team_dmt', raise_if_not_found=False)
+        if not dmt_team:
+            return
+        leads = self.sudo().with_context(active_test=False).search([
+            ('team_id', '=', dmt_team.id), ('x_dmt_originated', '=', False),
+        ])
+        if leads:
+            leads.write({'x_dmt_originated': True})
 
     @api.model_create_multi
     def create(self, vals_list):
         u = self.env.user
-        if not self.env.su and u.has_group("mazenet_crm.group_mz_md") and not u.has_group("mazenet_crm.group_mz_admin"):
-            raise AccessError(_("MD role is read-only across all CRM models and cannot create leads."))
+        if not self.env.su and u.has_group("mazenet_access_rights.group_mzr_md"):
+            # MD is otherwise read-only (rule_crm_lead_mzr_md/rule_crm_lead_mzr_md_own)
+            # but may create leads for themselves - vals must resolve user_id to MD's
+            # own id (x_assign_type is Self-only for MD anyway, per
+            # _mz_user_can_use_assign_radio, so this is what the form would produce).
+            for vals in vals_list:
+                if (vals.get('user_id') or u.id) != u.id:
+                    raise AccessError(_(
+                        "MD role can only create leads assigned to themselves."))
+        dmt_team = self.env.ref('mazenet_crm.team_dmt', raise_if_not_found=False)
+        for vals in vals_list:
+            self._mz_check_assign_type_allowed(vals)
+            # No-Teamless-Lead Guarantee (2026-09-11, narrowed 2026-09-12): only kicks
+            # in when 'team_id' is entirely ABSENT from vals - a creation path that
+            # never resolved a team at all (an import, an API call, an incoming-email
+            # lead, or a plain Agent creating outside the normal form; hit live on
+            # staging, lead id 1406, "GH 100" - "not assigned to any team" was stock
+            # CRM's OWN chatter message). Every ir.rule, stage domain, and kanban
+            # grouping in this module assumes team_id is always set for THOSE cases,
+            # so falling back to DMT (this module's designated catch-all intake team,
+            # mirroring _mz_default_team_id's own CTO/Admin/MD case) still applies.
+            #
+            # Deliberately NOT applied when 'team_id' is explicitly present as False -
+            # that's the normal, INTENDED shape of a CTO/Admin/MD Self-assigned lead
+            # (own_team is empty for them, and team_id's own required="x_assign_type
+            # != 'self'" in the view already says empty is fine for Self) - silently
+            # overriding that explicit choice with DMT was itself the bug (hit live
+            # 2026-09-12: a CTO's Self-assigned lead saved with Sales Team = DMT even
+            # though nobody ever picked a team).
+            if 'team_id' in vals:
+                team_id = vals['team_id']
+            else:
+                team_id = self._mz_default_team_id()
+                if not team_id and dmt_team:
+                    team_id = dmt_team.id
+                vals['team_id'] = team_id
+            if dmt_team and 'x_dmt_originated' not in vals:
+                vals['x_dmt_originated'] = team_id == dmt_team.id
         return super(CrmLead, self).create(vals_list)
 
     def write(self, vals):
         u = self.env.user
+        is_cto_admin = u.has_group("mazenet_access_rights.group_mzr_cto_admin")
+        self._mz_check_assign_type_allowed(vals)
 
-        # 0. Direct Lead Archiving Restriction (CTO / Admin Only via Wizard)
+        # Assign/Reassign Notification (client instruction, 2026-09-09): capture the
+        # PRE-write owner/team so it can be compared against the post-write value below,
+        # once super().write() actually applies it - vals['user_id']/['team_id'] being
+        # present doesn't guarantee the value actually CHANGED (e.g. re-saving the same
+        # salesperson), so the comparison has to happen after the write, not from vals.
+        track_assign = 'user_id' in vals or 'team_id' in vals
+        if track_assign:
+            pre_assign = {lead.id: (lead.user_id, lead.team_id) for lead in self}
+
+        # Direct Lead Archiving Restriction: leads are archived only via the Archive Lead
+        # Wizard (which stamps mz_archive_wizard on the context), never a raw active=False.
         if "active" in vals and not vals["active"]:
-            if not self.env.su and not u.has_group("mazenet_crm.group_mz_admin") and not self.env.context.get("mz_archive_wizard"):
+            if not self.env.su and not is_cto_admin and not self.env.context.get("mz_archive_wizard"):
                 raise AccessError(_("Leads can only be archived by CTO / Admin via the Archive Lead Wizard."))
 
-        # Track leads currently sitting in a DMT team that this write is about to move to a
-        # different team, so we can stamp x_originating_team_id once the move succeeds.
-        # Section 4's DMT read-only tracking normally gets populated by the transfer wizard
-        # (M2/M3, not built yet) - until then, a plain team reassignment away from DMT
-        # should still mark the lead as DMT-originated automatically, since that's what
-        # flips the read-only-after-transfer restriction below (and the cross-BU tracking
-        # rule in record_rules.xml) on.
-        dmt_origin_map = {}
-        if 'team_id' in vals and vals['team_id']:
-            for lead in self:
-                if (lead.team_id and lead.team_id.x_bu_category == 'dmt'
-                        and lead.team_id.id != vals['team_id']
-                        and not lead.x_originating_team_id):
-                    dmt_origin_map[lead.id] = lead.team_id.id
+        if not self.env.su and not is_cto_admin:
+            # MD Restriction: otherwise read-only, except for leads MD created for
+            # themselves (create() enforces the same "own only" rule) - every other
+            # lead stays read-only for MD. _mz_can_edit_owned carries the matching
+            # waiver so the team-membership check below doesn't also block this
+            # (MD isn't a member of any crm.team by design).
+            if u.has_group("mazenet_access_rights.group_mzr_md"):
+                for lead in self:
+                    if lead.user_id != u:
+                        raise AccessError(_(
+                            "MD role can only edit leads they created themselves; "
+                            "every other lead is read-only."))
 
-        # Bypass checks for sudo / superuser or CTO Admin group
-        if not self.env.su and not u.has_group("mazenet_crm.group_mz_admin"):
+            content_touched = set(vals.keys()) - SYSTEM_FIELDS
 
-            # 1. MD Read-Only Restriction
-            if u.has_group("mazenet_crm.group_mz_md"):
-                raise AccessError(_("MD role is read-only across all CRM models and cannot edit leads."))
+            # RED Lock Enforcement: a locked lead is read-only until released via
+            # action_release_lock() - EXCEPT for whoever is authorized to RELEASE it
+            # (can_user_release_lock: the owner's head group - one tier above the
+            # owner's own tier - or CTO/Admin; a Manager-tier owner self-releases).
+            # Deliberately NOT _mz_can_edit_by_team here: that check only asks "is this
+            # user ATL/TL/Manager on the CURRENT team_id", which doesn't exclude the
+            # locked owner themselves if they happen to hold ATL/TL/Manager tier, and
+            # doesn't require them to be the owner's specific superior either - either
+            # gap would let the very person the lock is meant to freeze (or an unrelated
+            # peer ATL/TL) keep editing. Using can_user_release_lock keeps "who can edit
+            # while locked" and "who can release the lock" the same person, which is the
+            # actual intent (e.g. an ATL who missed a meeting gets RED-locked and can no
+            # longer edit their own lead even though they're ATL-tier; only their TL can
+            # edit/release it). Only bookkeeping/system fields (chatter, activities, and
+            # the lock fields themselves - so the release action can clear them) are
+            # exempt regardless.
+            #
+            # Team-Transfer Enforcement: the SAME team_id-scoping applies even when the
+            # lead isn't locked - stock CRM's own "Sales: All Documents" ir.rule
+            # (granted to every staging user for CRM-menu/team visibility, see
+            # feedback_sales_group_visibility memory) is unrestricted, so
+            # record_rules.xml's team-scoped write rules no longer actually gate
+            # anything on their own. Sales Team (team_id) is the single source of
+            # truth for both the transfer action and this check, same as it is for
+            # RED-lock escalation - there is NO owner exemption here: once team_id
+            # moves off wherever gave someone access, it's read-only for them too,
+            # owner included (_mz_can_edit_owned). That's different from the LOCKED
+            # branch just above, where the owner is deliberately excluded even on
+            # their OWN team - being locked out is the whole point of RED lock for
+            # them specifically.
+            # DMT Reassignment Waiver REMOVED (client instruction, 2026-09-11, same
+            # change as _mz_can_edit_owned above): a transferred/locked lead is now
+            # fully read-only for DMT too, including user_id - no more carve-out for
+            # reassigning the salesperson on a lead DMT no longer has any claim to.
 
-            touched_keys = set(vals.keys())
-
-            # 1.5 RED Lock Enforcement (Section 5): a locked lead is read-only for EVERYONE
-            # (including its own owner, TL, Manager) until the authorized releaser explicitly
-            # releases it via action_release_lock(). Only bookkeeping/system fields (chatter,
-            # activities, and the lock fields themselves - so the release action can clear
-            # them) are exempt.
-            content_touched = touched_keys - SYSTEM_FIELDS
             if content_touched:
                 for lead in self:
                     if lead.x_is_locked:
-                        releaser = lead._get_lock_release_target()
+                        if not lead.can_user_release_lock(u):
+                            raise AccessError(_(
+                                "Lead '%s' is RED-locked and read-only. Use 'Release RED Lock' "
+                                "before it can be edited again."
+                            ) % lead.name)
+                    elif not lead._mz_can_edit_owned(u):
+                        # Same distinction as _compute_x_team_transfer_readonly
+                        # (2026-09-11 fix): "not on this team at all" (a genuine
+                        # transfer) and "on the team but not the owner, without
+                        # ATL/TL/Manager tier" are different problems with different
+                        # fixes - conflating them under one "transferred" message
+                        # was actively misleading (hit live 2026-09-11: a DMT Agent
+                        # got told a peer-owned, never-transferred DMT lead had
+                        # "been transferred to another team").
+                        if not lead.team_id or u not in lead.team_id.member_ids:
+                            raise AccessError(_(
+                                "Lead '%s' has been transferred to another team and is "
+                                "read-only for you now."
+                            ) % lead.name)
                         raise AccessError(_(
-                            "Lead '%s' is RED-locked and read-only. %s (or CTO) must release the "
-                            "lock before it can be edited again."
-                        ) % (lead.name, releaser.name if releaser else _("its supervisor")))
+                            "Lead '%s' is owned by someone else on your team. Only the "
+                            "owner, or an ATL/TL/Manager, can edit it."
+                        ) % lead.name)
 
-            # 1.6 DMT Read-Only-After-Transfer: once a lead has been transferred out of DMT
-            # to another team, DMT members are read-only on it (same restriction MD has
-            # everywhere, scoped here to just that one lead) - they keep tracking visibility
-            # (rule_crm_lead_dmt_tracking) but no further edits, including reassignment.
-            # Checked before the Manager/Agent branches below so a DMT Manager can't use the
-            # reassignment-fields carve-out to touch a lead that's already left DMT.
-            if content_touched and 'dmt' in u.crm_team_ids.mapped('x_bu_category'):
-                for lead in self:
-                    if (lead.x_originating_team_id
-                            and lead.x_originating_team_id.x_bu_category == 'dmt'
-                            and lead.team_id != lead.x_originating_team_id):
-                        raise AccessError(_(
-                            "This lead was transferred out of DMT to '%s'. DMT members have "
-                            "read-only tracking visibility only - further edits go through the "
-                            "receiving team."
-                        ) % lead.team_id.name)
+            # BU Manager Content Lock REMOVED (client instruction, 2026-09-09): the
+            # hierarchy is Manager full rights, TL full rights, ATL full rights - a
+            # Manager editing an Agent's lead directly (e.g. Tally Manager on a Tally
+            # Prime Upgrade Agent's lead) is normal, not something to route through the
+            # TL first. Manager already reaches here via _mz_can_edit_by_team/
+            # _mz_can_edit_owned like any other ATL/TL/Manager on the lead's current
+            # team - no separate content-vs-reassign restriction on top of that.
 
-            # 2. BU Manager Content Lock Restriction
-            if u.has_group("mazenet_crm.group_mz_manager"):
-                for lead in self:
-                    if lead.user_id and lead.user_id != u:
-                        touched_content = touched_keys - SYSTEM_FIELDS
-                        if touched_content - REASSIGN_FIELDS:
-                            raise AccessError(_("Managers view and reassign; content edits go through the Team Lead."))
+        # M3 stage-mandatory-field gate: enforced regardless of role (CTO/Admin included -
+        # this is a data-completeness rule, not an authority one), skipped only for raw
+        # su/system writes (migrations, demo-data seeding) so those aren't forced to
+        # pre-fill every mandatory field for stages they're placing records into directly.
+        if 'stage_id' in vals and not self.env.su:
+            new_stage = self.env['crm.stage'].browse(vals['stage_id'])
+            for lead in self:
+                lead._mz_stage_gate_check(new_stage, vals)
 
-            # 3. Agent Edit Restriction
-            elif u.has_group("mazenet_crm.group_mz_agent") and not u.has_group("mazenet_crm.group_mz_tl"):
-                for lead in self:
-                    if lead.user_id and lead.user_id != u:
-                        touched_content = touched_keys - SYSTEM_FIELDS
-                        if touched_content:
-                            raise AccessError(_("Agents can only edit their own assigned leads."))
+        result = super(CrmLead, self).write(vals)
 
-        res = super(CrmLead, self).write(vals)
+        # DMT Handoff Auto-Advance (client instruction, 2026-09-11): the instant a
+        # lead's team_id moves OFF DMT, park it on DMT's own "Follow-up's" stage
+        # (the last stage in DMT's 4-stage funnel) - both so DMT's Pipeline shows
+        # it as done-from-their-side rather than under whatever foreign stage the
+        # receiving team eventually moves it to (that foreign stage was bleeding
+        # into DMT's kanban as an extra column - the x_dmt_originated read grant
+        # makes the record visible, but nothing previously fixed WHICH stage
+        # column it showed up under), and so "Follow-up's" actually means
+        # something (previously unreachable via this path - DMT's own stage
+        # progression stopped at "Transfer to BU"). sudo() + skip if the caller
+        # already set stage_id explicitly (respects an explicit override, and
+        # this write is a one-time system-driven convenience, not a user stage
+        # change - same reasoning as the x_dmt_originated retire-write below).
+        # The receiving team naturally moves it into one of THEIR OWN stages the
+        # first time they actually work it, which also retires x_dmt_originated
+        # (see below) and ends DMT's visibility into it entirely.
+        if track_assign and 'team_id' in vals and 'stage_id' not in vals:
+            dmt_team = self.env.ref('mazenet_crm.team_dmt', raise_if_not_found=False)
+            stage_dmt_transferred = self.env.ref(
+                'mazenet_crm.stage_dmt_transferred', raise_if_not_found=False
+            )
+            if dmt_team and stage_dmt_transferred:
+                to_advance = self.filtered(
+                    lambda l: pre_assign.get(l.id, (None, l.team_id))[1] == dmt_team
+                    and l.team_id != dmt_team
+                    and l.stage_id != stage_dmt_transferred
+                )
+                if to_advance:
+                    to_advance.sudo().write({'stage_id': stage_dmt_transferred.id})
 
-        for lead_id, origin_team_id in dmt_origin_map.items():
-            self.browse(lead_id).sudo().write({'x_originating_team_id': origin_team_id})
+        # x_dmt_originated self-expiry (2026-09-11): the first time someone OUTSIDE
+        # DMT substantively edits a lead DMT originated, permanently retire the flag
+        # - see record_rules.xml's rule_crm_lead_dmt_originated_read/_write for why a
+        # static ir.rule domain condition (e.g. keyed off stage_id) can't do this
+        # safely instead (stock CRM resets stage_id in the SAME write that changes
+        # team_id, so a stage-based condition would break the handoff write itself).
+        # sudo() here is deliberate and safe: it only ever flips this one flag to
+        # False, and self.env.su on the recursive write() call short-circuits every
+        # guard above keyed on "not self.env.su", so this can't recurse further.
+        if not self.env.su and not self._mz_user_is_dmt(u):
+            if set(vals.keys()) - SYSTEM_FIELDS:
+                to_retire = self.filtered('x_dmt_originated')
+                if to_retire:
+                    to_retire.sudo().write({'x_dmt_originated': False})
 
-        return res
+        if track_assign:
+            for lead in self:
+                old_user, old_team = pre_assign.get(lead.id, (lead.user_id, lead.team_id))
+                if lead.user_id != old_user or lead.team_id != old_team:
+                    lead._notify_assign_reassign(old_user)
+
+        return result
 
     def unlink(self):
         if not self.env.su:
-            raise AccessError(_("Deletion of leads is disabled for all roles, including CTO/Admin. Please use the CTO Archive Lead Wizard to archive leads."))
+            raise AccessError(_("Deletion of leads is disabled for all roles. Please use the Archive Lead Wizard to archive leads."))
         return super(CrmLead, self).unlink()
 
-    def can_user_release_lock(self, target_user=None, lock_duration_hours=0):
-        """
-        Validates if target_user can release RED lock on this lead per Section 7.4 Matrix:
-        - Agent under ATL -> ATL only
-        - Agent under TL -> TL only
-        - Manager-direct agent -> Manager only
-        - ATL's own lead -> TL only
-        - TL's own lead -> Manager only
-        - Manager's own lead -> Manager self-release (popup/notification to MD+CTO)
-        - Fallback 1: CTO override anytime
-        - Fallback 2: 24h escalation -> level 2 supervisor
-        """
+    @api.model
+    def search_panel_select_multi_range(self, field_name, **kwargs):
+        """Core bug workaround: the web client's search panel sends group_domain=None
+        (not omitted) for a select="multi" filter section with no group filters
+        active yet. web.models.Base's own many2one branch does an unconditional
+        AND([extra_domain, kwargs.get('group_domain', [])]) with no None-guard
+        (unlike its many2many branch just above it, which checks 'if group_by and
+        group_domain' first) - so a None here blows up in odoo.orm.domains.Domain()
+        with TypeError: Domain() invalid argument type for domain: None. Only bites
+        a many2one field used with select="multi" + groupby, which is exactly the
+        Pipeline search panel's Salesperson section (views/crm_lead_views.xml -
+        user_id is many2one, grouped under Sales Team) - hit locally 2026-09-04.
+        Normalizing None to [] here, ahead of core, is the minimal fix.
+
+        Must stay decorated @api.model, matching the original exactly - without
+        it the RPC dispatcher's call_kw() no longer binds field_name at all
+        (TypeError: missing 1 required positional argument: 'field_name'),
+        also hit locally 2026-09-04.
+
+        Also scopes the Salesperson section (field_name == 'user_id') to the
+        CURRENT user's own team for everyone except CTO/Admin/MD - 2026-09-04:
+        Salesperson was opened up to every login (previously CTO/Admin/MD
+        only, same as Sales Team), so a DMT member must only ever see DMT
+        members in that list, a Tech member only Tech members, etc., never
+        the whole company. CTO/Admin/MD keep full cross-team visibility
+        (already scoped by whichever team they pick via Sales Team's own
+        groupby, x_mz_team_id on res.users)."""
+        if kwargs.get('group_domain') is None:
+            kwargs['group_domain'] = []
+        if field_name == 'user_id':
+            user = self.env.user
+            if not (
+                user.has_group('mazenet_access_rights.group_mzr_cto_admin')
+                or user.has_group('mazenet_access_rights.group_mzr_md')
+            ):
+                own_team = self._mz_user_own_team(user)
+                team_domain = [('id', 'in', own_team.member_ids.ids)] if own_team else [('id', '=', 0)]
+                kwargs['comodel_domain'] = (kwargs.get('comodel_domain') or []) + team_domain
+            else:
+                # CTO/Admin/MD: the Salesperson section also carries groupby="x_mz_team_id"
+                # (views/crm_lead_views.xml), which routes core's
+                # search_panel_select_multi_range into its many2one+group_by branch - that
+                # branch builds its value list purely from comodel_domain (all res.users
+                # matching it) and only uses category_domain for the __count numbers, NOT
+                # for pruning which users even appear. So selecting "Tally" in the Sales
+                # Team category above had zero effect on which salespeople showed up here
+                # (hit 2026-09-09). Pull the selected team id(s) straight out of the
+                # category_domain leaf core already built for us and fold them into
+                # comodel_domain. Can't filter via x_mz_team_id itself here - it's a
+                # non-stored compute with no search() method, and comodel_domain gets
+                # compiled straight to SQL (ValueError: Cannot convert
+                # res.users.x_mz_team_id to SQL because it is not stored, hit
+                # 2026-09-09) - so resolve the team(s) to their member_ids ourselves and
+                # filter res.users by id instead.
+                team_ids = []
+                for leaf in (kwargs.get('category_domain') or []):
+                    if isinstance(leaf, (list, tuple)) and len(leaf) == 3 and leaf[0] == 'team_id':
+                        value = leaf[2]
+                        team_ids += list(value) if isinstance(value, (list, tuple)) else [value]
+                if team_ids:
+                    member_ids = self.env['crm.team'].sudo().browse(team_ids).exists().member_ids.ids
+                    kwargs['comodel_domain'] = (kwargs.get('comodel_domain') or []) + [
+                        ('id', 'in', member_ids)
+                    ]
+        return super().search_panel_select_multi_range(field_name, **kwargs)
+
+    @api.model
+    def search_panel_select_range(self, field_name, **kwargs):
+        """Hides the Corporate team from the Sales Team search panel section
+        (category type - field_name == 'team_id') without touching the
+        underlying crm.team record: not in use yet, needed again in a future
+        phase. category sections don't accept a view-level domain= attribute
+        (the JS parser only reads attrs.domain for select="multi" filter
+        sections, confirmed in search_arch_parser.js's visitSearchPanel - a
+        category section always calls search_panel_select_range, whose JS
+        caller in search_model.js only ever sends category_domain, never
+        comodel_domain), so this is the only place that exclusion can
+        actually take effect."""
+        if field_name == 'team_id':
+            corporate = self.env.ref('mazenet_crm.team_corporate', raise_if_not_found=False)
+            if corporate:
+                kwargs['comodel_domain'] = (kwargs.get('comodel_domain') or []) + [('id', '!=', corporate.id)]
+        return super().search_panel_select_range(field_name, **kwargs)
+
+    # (Agent-tier, ATL-tier, Team Lead-tier, BU Manager-tier) group chains from
+    # mazenet_access_rights, independent of crm.team. teams.xml consolidates Hunter/
+    # Account Manager/Corporate Training/LMS/TNH into one team_corporate record, and
+    # Tally's Development/Sales branches into one team_tally record - but the
+    # access-rights GROUP hierarchy stays fully separate per sub-team regardless (e.g.
+    # group_mzr_hunter_tl is not the same group as group_mzr_lms_tl). That means a
+    # single crm.team can no longer be mapped to one fixed tier-group tuple, so both
+    # RED-lock release authority (_mz_team_tier_groups) and the "Team"/"Internal" assign-type
+    # gate (_compute_x_assignable_user_ids) resolve tier from a user's actual
+    # group membership instead of from a crm.team: each user can only belong to one of
+    # these chains, so checking which one they hold gives an unambiguous answer
+    # regardless of how teams.xml groups crm.team records.
+    MZR_TIER_GROUP_CHAINS = [
+        ('group_mzr_dmt_agent', 'group_mzr_dmt_atl', 'group_mzr_dmt_tl', 'group_mzr_dmt_manager'),
+        ('group_mzr_technology_agent', 'group_mzr_technology_atl', 'group_mzr_technology_tl', 'group_mzr_technology_manager'),
+        ('group_mzr_software_agent', 'group_mzr_software_atl', 'group_mzr_software_tl', 'group_mzr_software_manager'),
+        ('group_mzr_mis_agent', 'group_mzr_mis_atl', 'group_mzr_mis_tl', 'group_mzr_mis_manager'),
+        ('group_mzr_hunter_agent', 'group_mzr_hunter_atl', 'group_mzr_hunter_tl', 'group_mzr_corporate_manager'),
+        ('group_mzr_account_manager_agent', 'group_mzr_account_manager_atl', 'group_mzr_account_manager_tl', 'group_mzr_corporate_manager'),
+        ('group_mzr_corporate_training_agent', 'group_mzr_corporate_training_atl', 'group_mzr_corporate_training_tl', 'group_mzr_corporate_manager'),
+        ('group_mzr_lms_agent', 'group_mzr_lms_atl', 'group_mzr_lms_tl', 'group_mzr_corporate_manager'),
+        ('group_mzr_tnh_agent', 'group_mzr_tnh_atl', 'group_mzr_tnh_tl', 'group_mzr_corporate_manager'),
+        ('group_mzr_tally_atl_agents_dev', 'group_mzr_tally_atl_dev', 'group_mzr_tally_tl_development', 'group_tally_manager'),
+        ('group_mzr_tally_atl_agents_sales', 'group_mzr_tally_atl_sales', 'group_mzr_tally_tl_sales', 'group_tally_manager'),
+    ]
+    MZR_TIER_RANK = {'agent': 0, 'atl': 1, 'tl': 2, 'manager': 3}
+
+    def _mz_team_tier_groups(self):
+        """(tl_group, manager_group) xmlids (unqualified, mazenet_access_rights module)
+        for this lead's OWNER, resolved from their actual group membership - or None if
+        the owner isn't in any recognized chain."""
+        self.ensure_one()
+        owner = self.user_id
+        if not owner:
+            return None
+        for agent_group, atl_group, tl_group, manager_group in self.MZR_TIER_GROUP_CHAINS:
+            if (owner.has_group(f'mazenet_access_rights.{agent_group}')
+                    or owner.has_group(f'mazenet_access_rights.{atl_group}')
+                    or owner.has_group(f'mazenet_access_rights.{tl_group}')
+                    or owner.has_group(f'mazenet_access_rights.{manager_group}')):
+                return (tl_group, manager_group)
+        return None
+
+    @api.model
+    def _mz_user_tier_chain(self, user):
+        """('agent'|'atl'|'tl'|'manager', chain) for `user`, or (None, None) if they
+        hold no recognized mazenet_access_rights role. `chain` is the matching 4-tuple
+        from MZR_TIER_GROUP_CHAINS (checked highest tier first, since e.g. a Manager
+        also holds the Agent group transitively via implied_ids)."""
+        for chain in self.MZR_TIER_GROUP_CHAINS:
+            agent_g, atl_g, tl_g, manager_g = chain
+            if user.has_group(f'mazenet_access_rights.{manager_g}'):
+                return ('manager', chain)
+            if user.has_group(f'mazenet_access_rights.{tl_g}'):
+                return ('tl', chain)
+            if user.has_group(f'mazenet_access_rights.{atl_g}'):
+                return ('atl', chain)
+            if user.has_group(f'mazenet_access_rights.{agent_g}'):
+                return ('agent', chain)
+        return (None, None)
+
+    def _mz_release_head_group(self):
+        """The mazenet_access_rights group whose members (directly, or via implied_ids from
+        a higher tier) are authorized to release this lead's RED lock - one tier above
+        whichever tier the lead's own owner holds. Returns None if the owner is themselves
+        at Manager-tier (their own lead: self-release, or CTO/Admin - handled by the callers,
+        not by a team group), or if the team/owner aren't recognized."""
+        self.ensure_one()
+        owner = self.user_id
+        chain = self._mz_team_tier_groups()
+        if not owner or not chain:
+            return False
+        tl_group, manager_group = chain
+        if owner.has_group(f'mazenet_access_rights.{manager_group}'):
+            return None
+        if owner.has_group(f'mazenet_access_rights.{tl_group}'):
+            return manager_group
+        return tl_group
+
+    def can_user_release_lock(self, target_user=None):
+        """Per the release policy: CTO/Admin always can; otherwise whoever holds the group
+        one tier above the lead owner's own tier (their "head", which - through implied_ids -
+        also covers anyone further up, their "superior"); a Manager's own lead is releasable
+        by that Manager themselves (self-release) besides CTO/Admin."""
         self.ensure_one()
         u = target_user or self.env.user
         owner = self.user_id
-
         if not owner:
-            return (True, "Unassigned Lead")
+            return True
+        if self.env.su or u.has_group('mazenet_access_rights.group_mzr_cto_admin'):
+            return True
+        head_group = self._mz_release_head_group()
+        if head_group is None:
+            return owner == u
+        if not head_group:
+            return False
+        return u.has_group(f'mazenet_access_rights.{head_group}')
 
-        # Fallback 1: CTO / Admin override anytime
-        if u.has_group("mazenet_crm.group_mz_admin") or u._is_superuser():
-            return (True, "CTO Override")
+    def _mz_can_edit_by_team(self, user):
+        """Whether `user` currently qualifies for team-based edit access to this lead -
+        besides CTO/Admin (checked separately by callers) and the lead's own owner
+        (also checked separately - this method doesn't know or care who owns it),
+        that's the CURRENT team_id's ATL/TL/Manager: a member of team_id.member_ids
+        who holds at least ATL tier (_mz_user_tier_chain). Deliberately gated on
+        team_id/member_ids rather than a fixed group chain (like
+        can_user_release_lock/_mz_team_tier_groups use, keyed off the OWNER's own
+        groups) - a fixed chain wouldn't change just because team_id does, which would
+        defeat the point: the moment someone transfers this lead to a different team
+        via the team_id field, whoever used to qualify here (the old team's ATL/TL/
+        Manager) stops being a member of the NEW team_id and loses this access, same
+        as everyone else not on that new team.
 
-        # Manager self-release
-        if owner == u and u.has_group("mazenet_crm.group_mz_manager"):
-            return (True, "Manager Self-Release")
-
-        # Direct Supervisor check
-        direct_sup = self.env["mz.supervision"].get_approver(owner)
-        if direct_sup and u == direct_sup:
-            return (True, "Direct Supervisor Release")
-
-        # Fallback 2: 24h Auto-escalation check
-        if lock_duration_hours >= 24:
-            escalated_sup = self.env["mz.supervision"].get_escalated_approver(owner)
-            if escalated_sup and u == escalated_sup:
-                return (True, "24h Escalation Release")
-
-        return (False, "Not Authorized")
-
-    def _lock_duration_hours(self):
+        Used by _mz_can_edit_owned for the UNLOCKED case only, for any NON-owner (a
+        TL/ATL/Manager working a lead they don't personally own), OR'd with a
+        separate, tier-agnostic membership check for the owner themselves. NOT used
+        for the RED-locked case in write() - that's can_user_release_lock, which is
+        keyed off the OWNER's specific head group (one tier above them) rather than
+        "any ATL/TL/Manager on the team", so it excludes the locked owner even if
+        they hold ATL/TL/Manager tier themselves, and excludes unrelated peers at
+        that tier too."""
         self.ensure_one()
-        if not self.x_lock_date:
-            return 0.0
-        delta = fields.Datetime.now() - self.x_lock_date
-        return delta.total_seconds() / 3600.0
+        if not self.team_id or user not in self.team_id.member_ids:
+            return False
+        tier, _chain = self._mz_user_tier_chain(user)
+        return tier in ('atl', 'tl', 'manager')
 
-    def _get_lock_release_target(self):
-        """The correct releaser for this lead per the Section 5 matrix, independent of who
-        is asking (used for error messages and for routing the release notification)."""
-        self.ensure_one()
-        owner = self.user_id
-        if not owner:
-            return self.env['res.users']
-        if owner.has_group("mazenet_crm.group_mz_manager"):
-            return owner  # Manager's own lead: manager self-releases
-        return self.env["mz.supervision"].get_approver(owner) or self.env['res.users']
+    def _mz_can_edit_owned(self, user):
+        """Whether `user` may edit this UNLOCKED lead's content - owned or not, name
+        aside this is the general-purpose check for the non-locked case. Sales Team
+        (team_id) is the single source of truth, no owner exemption - `user` must
+        currently be a member of team_id.member_ids, full stop. Within that, two
+        cases: the lead's OWNER (if any) may edit it at ANY tier (an Agent editing
+        their own lead is normal day-to-day CRM use, not something this rule should
+        block) as long as they're still on the team it's filed under; an UNOWNED
+        lead is likewise editable by any tier on the team (nobody's turf to
+        protect yet - includes the Agent who just cleared it themselves via
+        Team/Internal assign-type mid-edit: x_content_readonly_for_me recomputes
+        live off the in-progress user_id, and DMT+Team intentionally sets user_id
+        to False before team_id has even changed, so without this the form went
+        fully read-only the instant 'Team' was picked, before the Agent could
+        even choose a team - hit live 2026-09-11); anyone else editing a lead
+        SOMEONE ELSE owns additionally needs ATL/TL/Manager tier
+        (_mz_can_edit_by_team). Either way, the moment team_id moves elsewhere,
+        whoever isn't a member of the NEW team loses access - owner included -
+        matching how the transfer itself only ever considers Sales Team, nothing
+        else.
 
-    def _get_lock_notify_users(self):
-        """Users notified when the lock triggers (Section 5 'Notified' column). Same as the
-        releaser, except a Manager's own lead notifies MD + CTO instead (never asked to act)."""
+        DMT is NOT exempt from this (client instruction, 2026-09-11, reversing an
+        earlier blanket bypass): a transferred lead greys out for DMT exactly like
+        it does for every other team's team-transfer readonly, including the
+        narrow "reassign salesperson only" waiver this used to preserve - team_id
+        moving off DMT ends DMT's involvement entirely, full read-only, same as
+        anyone else. RED-lock read-only (_mz_can_edit_by_team, used directly in
+        write() while locked) is untouched by this either way.
+
+        MD gets a narrower waiver, scoped to leads they personally own: MD isn't
+        a member of any crm.team at all (by design - global read-only role), so
+        without this they'd fail the team-membership check even on a lead they
+        just created for themselves (write()'s own MD gate already restricts them
+        to owned leads only, so this doesn't widen anything - it just lets that
+        case reach here instead of dead-ending on team membership)."""
         self.ensure_one()
-        owner = self.user_id
-        if not owner:
-            return self.env['res.users']
-        if owner.has_group("mazenet_crm.group_mz_manager"):
-            md_group = self.env.ref('mazenet_crm.group_mz_md', raise_if_not_found=False)
-            admin_group = self.env.ref('mazenet_crm.group_mz_admin', raise_if_not_found=False)
-            users = self.env['res.users']
-            if md_group:
-                users |= md_group.user_ids
-            if admin_group:
-                users |= admin_group.user_ids
-            return users
-        return self._get_lock_release_target()
+        if user == self.user_id and user.has_group('mazenet_access_rights.group_mzr_md'):
+            return True
+        if not self.team_id or user not in self.team_id.member_ids:
+            return False
+        if user == self.user_id or not self.user_id:
+            return True
+        return self._mz_can_edit_by_team(user)
+
+    def action_release_lock(self):
+        """Clears the RED lock, making the lead editable again - only for whoever
+        can_user_release_lock() authorizes (the owner's head/superior, or CTO/Admin)."""
+        for lead in self:
+            if not lead.can_user_release_lock():
+                raise AccessError(_(
+                    "You are not authorized to release the RED lock on lead '%s'. Only "
+                    "the owner's Team Lead/Manager (or CTO/Admin) can release it."
+                ) % lead.name)
+
+            lead.write({'x_is_locked': False, 'x_lock_date': False})
+            lead.message_post(body=_("RED lock released by %s. Lead is editable again.") % self.env.user.name)
+
+            if lead.user_id:
+                lead._push_notification(
+                    lead.user_id,
+                    subject=_("RED Lock Released"),
+                    body=_("Lead '%s' has been released by %s and is editable again.") % (lead.name, self.env.user.name),
+                )
+
+    def action_set_lost(self, **additional_values):
+        """Stock CRM's 'Mark Lost' flow (crm.lead.lost wizard -> here -> action_archive
+        -> write({'active': False})) is a normal, everyday sales action open to
+        whoever owns the lead - NOT the same thing as the Direct Lead Archiving
+        Restriction in write() is guarding against (a raw active=False bypassing
+        the CTO-only Archive Lead Wizard). Without this, every non-CTO/Admin user
+        hit an AccessError just clicking Lost, since action_archive()'s write()
+        never stamps mz_archive_wizard - only mazenet_crm's own wizard does.
+        Stamping it here waives that gate for this one legitimate path, the same
+        way the Archive Lead Wizard does for itself."""
+        return super(
+            CrmLead, self.with_context(mz_archive_wizard=True)
+        ).action_set_lost(**additional_values)
+
+    def action_view_spinoff_leads(self):
+        """Smart-button target: leads created FROM this one via the 'Create New
+        Lead' wizard (x_related_lead_id back-reference)."""
+        self.ensure_one()
+        action = self.env['ir.actions.act_window']._for_xml_id('crm.crm_lead_all_leads')
+        action['domain'] = [('x_related_lead_id', '=', self.id)]
+        action['context'] = {}
+        return action
+
+        return True
 
     def _push_notification(self, users, subject, body):
         """Real-time + persistent notification: files an Inbox (needaction) message for each
@@ -271,142 +1814,172 @@ class CrmLead(models.Model):
             body=body,
         )
 
+    def _mz_assign_notify_recipients(self, new_owner):
+        """CTO/Admin always, plus whichever of the lead's CURRENT team_id's own ATL/TL/
+        Manager members sit strictly ABOVE new_owner's tier (client instruction,
+        2026-09-09: notify 'CTO or Manager or TL or ATL' whenever a lead is assigned/
+        reassigned) - e.g. an Agent getting assigned notifies their team's ATL, TL AND
+        Manager; a lead reassigned straight to a TL only notifies that team's Manager
+        (their ATL peers/subordinates aren't "above" them). If new_owner is empty (DMT+
+        Team bulk hand-off deliberately leaves user_id unset) or holds no recognized
+        tier, every ATL/TL/Manager member of the team is notified instead - there's no
+        specific tier to be "above" yet. Scoped to THIS team only (team_id.member_ids),
+        not company-wide, same reasoning as _mz_can_edit_by_team."""
+        self.ensure_one()
+        cto_group = self.env.ref('mazenet_access_rights.group_mzr_cto_admin', raise_if_not_found=False)
+        # res.groups has no 'users' field in Odoo 19 - it's all_user_ids (also picks up
+        # implied membership, e.g. Admin via a higher-level implied_ids chain), NOT the
+        # non-existent 'users' attribute (AttributeError, hit live 2026-09-10).
+        recipients = cto_group.all_user_ids if cto_group else self.env['res.users']
+        if not self.team_id:
+            return recipients
+        owner_tier, _chain = self._mz_user_tier_chain(new_owner) if new_owner else (None, None)
+        owner_rank = self.MZR_TIER_RANK.get(owner_tier, -1)
+        for member in self.team_id.member_ids:
+            tier, _chain = self._mz_user_tier_chain(member)
+            if tier in ('atl', 'tl', 'manager') and self.MZR_TIER_RANK[tier] > owner_rank:
+                recipients |= member
+        return recipients
+
+    def _notify_assign_reassign(self, old_owner):
+        """Chatter + real-time/persistent Inbox notification whenever a lead's user_id
+        or team_id actually changes (single-lead form, bulk Mass Assign wizard, or any
+        other write() that touches either) - client instruction, 2026-09-09. Fires from
+        write() itself so every path that can change assignment is covered without
+        needing to duplicate this in each wizard/onchange."""
+        self.ensure_one()
+        new_owner_name = self.user_id.name if self.user_id else _("Unassigned")
+        old_owner_name = old_owner.name if old_owner else _("Unassigned")
+        body = _(
+            "Lead reassigned: %(old)s → %(new)s (Team: %(team)s), by %(actor)s."
+        ) % {
+            'old': old_owner_name, 'new': new_owner_name,
+            'team': self.team_id.name or _("None"), 'actor': self.env.user.name,
+        }
+        self.message_post(body=body, subtype_xmlid="mail.mt_note")
+
+        recipients = self._mz_assign_notify_recipients(self.user_id) - self.env.user
+        if recipients:
+            self._push_notification(
+                recipients,
+                subject=_("Lead Assigned/Reassigned: %s") % self.name,
+                body=body,
+            )
+
     def _notify_red_lock_triggered(self):
         """Chatter (audit trail on the lead) + real-time/persistent Inbox notification +
-        a standing activity for the releaser when a lock triggers."""
+        a standing activity for the lead's owner when a lock triggers."""
         self.ensure_one()
-        releaser = self._get_lock_release_target()
-        notify_users = self._get_lock_notify_users()
-        owner_name = self.user_id.name if self.user_id else _("Unassigned")
+        owner = self.user_id
+        owner_name = owner.name if owner else _("Unassigned")
 
         self.message_post(
             body=_("RED LOCK triggered: lead is overdue and now read-only (owner: %s).") % owner_name,
             subtype_xmlid="mail.mt_note",
         )
 
-        self._push_notification(
-            releaser | notify_users,
-            subject=_("RED Lock: Action Required"),
-            body=_("Lead '%s' (owner: %s) is RED-locked and needs your release approval.") % (self.name, owner_name),
-        )
+        if owner:
+            self._push_notification(
+                owner,
+                subject=_("RED Lock: Action Required"),
+                body=_("Lead '%s' is RED-locked and needs 'Release RED Lock' before it can be edited again.") % self.name,
+            )
 
-        if releaser:
             self.activity_schedule(
                 'mail.mail_activity_data_todo',
                 summary=_("Release RED Lock: %s") % self.name,
                 note=_("This lead is overdue and RED-locked. Review it and use 'Release RED Lock' to make it editable again."),
-                user_id=releaser.id,
+                user_id=owner.id,
             )
 
     @api.model
     def _cron_trigger_red_locks(self):
-        """M2: auto-trigger the RED lock on leads that are overdue - either by date (the
-        activity's due date has already passed) or, same-day, by time (a meeting activity
-        whose actual start time has already passed - e.g. a 12:15pm meeting is overdue at
-        12:16pm even though 'today' hasn't changed yet).
-
-        mail.activity.date_deadline is a Date field with no time component (Section 7.7:
-        'do not add parallel date fields' - so no separate timer field is added here
-        either). The time-of-day only exists on the linked calendar.event (via
-        calendar_event_id, added by the 'calendar' module crm already depends on) for
-        activities scheduled as meetings, so that's what the same-day check reads."""
+        """Auto-trigger the RED lock on leads whose next activity's real moment
+        (x_next_activity_datetime - already resolved per-activity-type, see mail_activity.py)
+        is more than MZ_ACTIVITY_WINDOW_MINUTES (20) in the past. A 10:00 AM activity locks
+        at 10:20, not the instant 10:00 passes - gives the owner a short window to still
+        make it before it counts against them. Scoped to MZ_ACTIVITY_CARD_BU_CATEGORIES
+        (DMT/Tally/Technology) - client rework spec (2026-09-08): Software Dev and MIS have
+        no Follow-up's stage, so the RED lock itself no longer applies there, not just its
+        colour. data/cron.xml calls check_red_lock_recods() (right below) immediately after
+        this, in the same cron tick, and that method no longer waits out a second grace
+        period of its own before escalating to the Team Lead - the client wants the TL
+        notified together with RED triggering, not some extra minutes after that."""
         now = fields.Datetime.now()
-        today = fields.Date.context_today(self)
+        cutoff = now - timedelta(minutes=MZ_ACTIVITY_WINDOW_MINUTES)
 
-        overdue_activities = self.env['mail.activity'].sudo().search([
-            ('res_model', '=', 'crm.lead'),
-            '|',
-                ('date_deadline', '<', today),
-                '&', '&',
-                    ('date_deadline', '=', today),
-                    ('calendar_event_id', '!=', False),
-                    ('calendar_event_id.start', '<', now),
+        leads = self.sudo().search([
+            ('x_next_activity_datetime', '!=', False),
+            ('x_next_activity_datetime', '<', cutoff),
+            ('x_is_locked', '=', False),
+            ('active', '=', True),
+            ('user_id', '!=', False),
+            ('team_id.x_bu_category', 'in', list(MZ_ACTIVITY_CARD_BU_CATEGORIES)),
         ])
-        lead_ids = overdue_activities.mapped('res_id')
-
-        leads = self.sudo().browse(lead_ids).exists().filtered(
-            lambda l: not l.x_is_locked and l.active and l.user_id
-        )
         for lead in leads:
             lead.write({
                 'x_is_locked': True,
                 'x_lock_date': now,
-                'x_lock_escalated': False,
             })
             lead._notify_red_lock_triggered()
 
-    @api.model
-    def _cron_escalate_red_locks(self):
-        """Section 5 Fallback 2: a lock unreleased for 24h notifies one level up, who can then
-        ALSO release. Normal routing stays strict - this only adds an extra notified/authorized
-        party, it doesn't change who the primary releaser is."""
-        cutoff = fields.Datetime.now() - timedelta(hours=24)
-        leads = self.sudo().search([
+    def _get_parent_hierarchy(self, group):
+            """Recursively fetch all parent/ancestor groups."""
+            parents = self.env['res.groups'].search([('implied_ids', 'in', group.id)])
+            for parent in parents:
+                parents |= self._get_parent_hierarchy(parent)
+            return parents
+
+    def check_red_lock_recods(self):
+        """Escalate a RED lock to the owner's Team Lead/Manager chain. Runs on every
+        cron tick (data/cron.xml, right after _cron_trigger_red_locks) against every
+        currently-locked lead in scope - no elapsed-since-lock delay of its own anymore
+        (client rework spec, 2026-09-08: the TL should be notified together with RED
+        triggering, not some extra minutes after that - this used to wait out a SECOND
+        grace_time on top of the one that already delayed the lock itself, so a TL
+        wasn't actually notified until ~2x the intended grace period had passed).
+        Idempotent via the existing_activity check below, so running it on every
+        already-escalated lead every 2 minutes is harmless. Scoped to
+        MZ_ACTIVITY_CARD_BU_CATEGORIES the same as the lock itself."""
+        red_lock_rec_vals = self.search([
             ('x_is_locked', '=', True),
-            ('x_lock_escalated', '=', False),
-            ('x_lock_date', '!=', False),
-            ('x_lock_date', '<=', cutoff),
+            ('team_id.x_bu_category', 'in', list(MZ_ACTIVITY_CARD_BU_CATEGORIES)),
         ])
-        for lead in leads:
-            escalated_sup = self.env["mz.supervision"].get_escalated_approver(lead.user_id) if lead.user_id else False
-            lead.x_lock_escalated = True
-            lead.message_post(
-                body=_("RED lock unreleased for 24h+. Escalated to %s.") % (
-                    escalated_sup.name if escalated_sup else _("CTO/Admin")),
-                subtype_xmlid="mail.mt_note",
-            )
-            if escalated_sup:
-                lead._push_notification(
-                    escalated_sup,
-                    subject=_("RED Lock Escalation"),
-                    body=_("Lead '%s' has been locked 24h+ without release. You may now release it too.") % lead.name,
-                )
-                lead.activity_schedule(
-                    'mail.mail_activity_data_todo',
-                    summary=_("[Escalated] Release RED Lock: %s") % lead.name,
-                    note=_("This lead has been RED-locked for 24h+. As the escalation contact, you may release it."),
-                    user_id=escalated_sup.id,
-                )
+        todo_activity_type = self.env.ref('mail.mail_activity_data_todo', raise_if_not_found=False)
+        activity_type_id = todo_activity_type.id if todo_activity_type else False
+        for lead in red_lock_rec_vals:
+            user = lead.user_id
+            if not user:
+                continue
+            target_groups = lead.team_id.privelege_ids.mapped('group_ids')
+            matching_groups = target_groups & user.group_ids
+            parent_users = self.env['res.users']
+            for group in matching_groups:
+                all_parents = self._get_parent_hierarchy(group)
+                for parent in all_parents:
+                    parent_users |= parent.user_ids
+            escalation_users = parent_users - user
+            for parent_user in escalation_users:
+                existing_activity = self.env['mail.activity'].sudo().search([
+                    ('res_model', '=', 'crm.lead'),
+                    ('res_id', '=', lead.id),
+                    ('user_id', '=', parent_user.id),
+                    ('summary', '=', 'Red Lock Release Pending'),
+                ], limit=1)
+                if not existing_activity:
+                    lead.activity_schedule(
+                        activity_type_id=activity_type_id,
+                        summary="Red Lock Release Pending",
+                        note=(
+                            f"<p><strong>Alert:</strong> No one has released the Red Lock on lead "
+                            f"<strong>{lead.name}</strong> assigned to <strong>{user.name}</strong>.</p>"
+                            f"<p>Overdue by more than {MZ_ACTIVITY_WINDOW_MINUTES} minutes.</p>"
+                        ),
+                        user_id=parent_user.id,
+                        date_deadline=fields.Date.context_today(self),)
 
-    def action_release_lock(self):
-        """Action method to release RED lock on lead with chatter & MD/CTO notification"""
-        for lead in self:
-            u = self.env.user
-            lock_duration = lead._lock_duration_hours()
 
-            allowed, reason = lead.can_user_release_lock(u, lock_duration_hours=lock_duration)
-            if not allowed:
-                raise AccessError(_("You are not authorized to release the RED lock on lead '%s'. Direct supervisor or CTO authorization required.") % lead.name)
 
-            # Manager self-release notification to MD & CTO
-            if reason == "Manager Self-Release":
-                msg = _("Manager %s self-released RED lock on lead '%s'. Notification sent to MD & CTO.") % (u.name, lead.name)
-                lead.message_post(body=msg, subtype_xmlid="mail.mt_note")
-                lead._push_notification(
-                    lead._get_lock_notify_users(),
-                    subject=_("Manager Self-Release"),
-                    body=_("Manager %s self-released the RED lock on lead '%s'.") % (u.name, lead.name),
-                )
-
-            lead.write({
-                'x_is_locked': False,
-                'x_lock_date': False,
-                'x_lock_escalated': False,
-            })
-            lead.message_post(body=_("RED lock released by %s (%s). Lead is editable again.") % (u.name, reason))
-
-            if lead.user_id:
-                lead._push_notification(
-                    lead.user_id,
-                    subject=_("RED Lock Released"),
-                    body=_("Lead '%s' has been released by %s and is editable again.") % (lead.name, u.name),
-                )
-
-        return True
-
-    # Team xmlid -> (company name pool, lead-name template). Corp category is split per
-    # actual team (Hunter/AM/LMS/TNH), not lumped by x_bu_category, since they represent
-    # different lines of business despite sharing the "corp" category.
     _MZ_TEAM_LEAD_POOLS = {
         'mazenet_crm.team_dmt': (
             ["Rajesh Traders", "Sunrise Textiles", "Om Sai Enterprises", "Kaveri Foods Pvt Ltd",
@@ -416,34 +1989,23 @@ class CrmLead(models.Model):
         'mazenet_crm.team_tally': (
             ["Sharma & Sons Traders", "Golden Textiles Mills", "Anand Auto Spares", "Krishna Rice Mill",
              "Vishal Electricals", "Om Enterprises", "Patel Hardware Store", "Laxmi Garments"],
-            "Tally License - %s", 25000,
+            "Tally Deal - %s", 25000,
         ),
-        'mazenet_crm.team_corp_hunter': (
+        'mazenet_crm.team_corporate': (
             ["Meridian Logistics Pvt Ltd", "Zenith Manufacturing Corp", "Apex Infrastructure Ltd", "Orion Retail Chain",
-             "Falcon Energy Solutions", "Skyline Constructions", "Prime Steel Industries", "Coastal Shipping Corp"],
-            "New Business - %s", 150000,
-        ),
-        'mazenet_crm.team_corp_am': (
-            ["Meridian Logistics Pvt Ltd", "Zenith Manufacturing Corp", "Apex Infrastructure Ltd", "Orion Retail Chain",
-             "Falcon Energy Solutions", "Skyline Constructions", "Prime Steel Industries", "Coastal Shipping Corp"],
-            "Account Renewal - %s", 100000,
-        ),
-        'mazenet_crm.team_corp_lms': (
-            ["Bright Future Public School", "Global Institute of Technology", "Sunrise Degree College",
-             "National Skill Academy", "Everest Public School", "Coastal Management Institute"],
-            "LMS Deal - %s", 60000,
-        ),
-        'mazenet_crm.team_corp_tnh': (
-            ["Blue Orchid Resorts", "Grand Palace Hotels", "Coastal Getaway Resorts", "Heritage Inn Group",
+             "Falcon Energy Solutions", "Skyline Constructions", "Prime Steel Industries", "Coastal Shipping Corp",
+             "Bright Future Public School", "Global Institute of Technology", "Sunrise Degree College",
+             "National Skill Academy", "Everest Public School", "Coastal Management Institute",
+             "Blue Orchid Resorts", "Grand Palace Hotels", "Coastal Getaway Resorts", "Heritage Inn Group",
              "Emerald Beach Resort", "Silver Sands Hotel"],
-            "TNH Deal - %s", 80000,
+            "Corporate Deal - %s", 90000,
         ),
-        'mazenet_crm.team_tech': (
+        'mazenet_crm.team_technology': (
             ["NextGen Solutions", "Skyline Systems", "Vertex Apps", "Quantum Labs",
              "Bluewave Technologies", "Ironclad Networks"],
             "Tech Project - %s", 90000,
         ),
-        'mazenet_crm.team_swdev': (
+        'mazenet_crm.team_software': (
             ["Om Industries", "Shree Traders", "Metro Retail", "Apex Corp",
              "Vertex Pharma", "Nova Logistics"],
             "Custom Dev - %s", 120000,
@@ -457,11 +2019,11 @@ class CrmLead(models.Model):
 
     @api.model
     def _mz_seed_business_leads(self, leads_per_user=4):
-        """Demo-data generator: gives every @test.mazenet user (except CTO/MD, who don't own
-        leads per their role) `leads_per_user` business-appropriate leads, spread across
-        their own team's real stages. Idempotent - re-running this (it's called from
-        demo_data.xml on every install/update) tops a user up to the target count rather
-        than creating duplicates on top of what they already have."""
+        """Demo-data generator: gives every @test.mazenet user (except CTO/MD, who are
+        read-only demo accounts and don't own leads) `leads_per_user` business-appropriate
+        leads, spread across their own team's real stages. Idempotent - re-running this
+        (it's called from demo_data.xml on every install/update) tops a user up to the
+        target count rather than creating duplicates on top of what they already have."""
         CrmLead = self.env['crm.lead'].sudo()
         ResUsers = self.env['res.users'].sudo()
         CrmStage = self.env['crm.stage'].sudo()

@@ -1,8 +1,10 @@
-/* Mazenet CRM - RED Lock Kanban Card Styling.
-   Subtle by design: a soft red tint + a slim left accent border, card content stays fully
+/* Mazenet CRM - Kanban Card State Styling (RED Lock, pre-lock warnings, team transfer).
+   Subtle by design: a soft tint + a slim left accent border, card content stays fully
    visible and legible (no full-card color fill, no forced white text). A corner ribbon
-   ("Overdue", from the kanban view's web_ribbon widget) is the primary attention-getter;
-   this tint is the secondary at-a-glance signal when scanning a column of cards.
+   ("Overdue", from the kanban view's web_ribbon widget) is the primary attention-getter
+   for the RED-lock case; the tint is the secondary at-a-glance signal when scanning a
+   column of cards - and the only signal for states (like a team transfer) that aren't
+   "overdue" at all and so don't get a ribbon.
 
    Scoped strictly to the individual overdue/locked card (.o_kanban_record that directly
    contains .mz-red-locked-card) - NOT to any ancestor. A previous version used
@@ -21,5 +23,60 @@
     .o_kanban_record_has_image:has(> .mz-red-locked-card) {
         background-color: rgba(224, 122, 99, 0.12) !important;
         border-left-color: rgba(224, 122, 99, 0.6) !important;
+    }
+}
+
+/* Activity card state (client rework spec, 2026-09-08) - same subtle tint/border
+   treatment as the RED lock above, one stage earlier: PURPLE = the lead's next activity
+   falls today, GREEN = within 20 minutes either side of it (crm_lead.py
+   x_activity_card_state / MZ_ACTIVITY_WINDOW_MINUTES). Stored and cron-recomputed, so -
+   unlike the old per-viewer pre-lock warning this replaces - every viewer browsing the
+   Pipeline sees the same colour, not just the lead's owner. Only ever set for
+   DMT/Tally/Technology leads (Software Dev and MIS have no Follow-up's stage). */
+.o_kanban_record:has(> .mz-activity-purple-card),
+.o_kanban_record_has_image:has(> .mz-activity-purple-card) {
+    background-color: rgba(142, 68, 173, 0.06) !important;
+    border-left: 3px solid rgba(142, 68, 173, 0.55) !important;
+    border-radius: 4px;
+}
+
+.o_kanban_record:has(> .mz-activity-green-card),
+.o_kanban_record_has_image:has(> .mz-activity-green-card) {
+    background-color: rgba(39, 174, 96, 0.08) !important;
+    border-left: 3px solid rgba(39, 174, 96, 0.6) !important;
+    border-radius: 4px;
+}
+
+@media (prefers-color-scheme: dark) {
+    .o_kanban_record:has(> .mz-activity-purple-card),
+    .o_kanban_record_has_image:has(> .mz-activity-purple-card) {
+        background-color: rgba(187, 143, 206, 0.14) !important;
+        border-left-color: rgba(187, 143, 206, 0.6) !important;
+    }
+
+    .o_kanban_record:has(> .mz-activity-green-card),
+    .o_kanban_record_has_image:has(> .mz-activity-green-card) {
+        background-color: rgba(122, 224, 163, 0.16) !important;
+        border-left-color: rgba(122, 224, 163, 0.65) !important;
+    }
+}
+
+/* Team-transfer readonly - grey, not red: this isn't overdue or locked, it's simply a
+   lead that moved to another Sales Team and is read-only for whoever's currently
+   browsing (crm_lead.py x_team_transfer_readonly / _mz_can_edit_owned). Mutually
+   exclusive with the RED-lock tint above by construction (x_team_transfer_readonly is
+   explicitly False whenever x_is_locked is True). */
+.o_kanban_record:has(> .mz-team-transferred-card),
+.o_kanban_record_has_image:has(> .mz-team-transferred-card) {
+    background-color: rgba(120, 120, 120, 0.08) !important;
+    border-left: 3px solid rgba(120, 120, 120, 0.5) !important;
+    border-radius: 4px;
+}
+
+@media (prefers-color-scheme: dark) {
+    .o_kanban_record:has(> .mz-team-transferred-card),
+    .o_kanban_record_has_image:has(> .mz-team-transferred-card) {
+        background-color: rgba(180, 180, 180, 0.12) !important;
+        border-left-color: rgba(180, 180, 180, 0.55) !important;
     }
 }

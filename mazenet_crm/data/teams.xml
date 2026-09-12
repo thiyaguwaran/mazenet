@@ -1,71 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <data noupdate="1">
-        <!-- 1. DMT -->
         <record id="team_dmt" model="crm.team">
             <field name="name">DMT</field>
             <field name="x_bu_category">dmt</field>
             <field name="use_leads">True</field>
             <field name="use_opportunities">True</field>
         </record>
-
-        <!-- 2. Tally -->
+        <record id="team_corporate" model="crm.team">
+            <field name="name">Corporate</field>
+            <field name="x_bu_category">corp</field>
+            <field name="use_leads">True</field>
+            <field name="use_opportunities">True</field>
+        </record>
         <record id="team_tally" model="crm.team">
             <field name="name">Tally</field>
             <field name="x_bu_category">tally</field>
             <field name="use_leads">True</field>
             <field name="use_opportunities">True</field>
         </record>
-
-        <!-- 3. Corp - Hunter -->
-        <record id="team_corp_hunter" model="crm.team">
-            <field name="name">Corp - Hunter</field>
-            <field name="x_bu_category">corp</field>
-            <field name="use_leads">True</field>
-            <field name="use_opportunities">True</field>
-        </record>
-
-        <!-- 4. Corp - Account Manager -->
-        <record id="team_corp_am" model="crm.team">
-            <field name="name">Corp - Account Manager</field>
-            <field name="x_bu_category">corp</field>
-            <field name="use_leads">True</field>
-            <field name="use_opportunities">True</field>
-        </record>
-
-        <!-- 5. Corp - LMS -->
-        <record id="team_corp_lms" model="crm.team">
-            <field name="name">Corp - LMS</field>
-            <field name="x_bu_category">corp</field>
-            <field name="use_leads">True</field>
-            <field name="use_opportunities">True</field>
-        </record>
-
-        <!-- 6. Corp - TNH -->
-        <record id="team_corp_tnh" model="crm.team">
-            <field name="name">Corp - TNH</field>
-            <field name="x_bu_category">corp</field>
-            <field name="use_leads">True</field>
-            <field name="use_opportunities">True</field>
-        </record>
-
-        <!-- 7. Technology -->
-        <record id="team_tech" model="crm.team">
+        <record id="team_technology" model="crm.team">
             <field name="name">Technology</field>
             <field name="x_bu_category">tech</field>
             <field name="use_leads">True</field>
             <field name="use_opportunities">True</field>
         </record>
-
-        <!-- 8. Software Dev -->
-        <record id="team_swdev" model="crm.team">
-            <field name="name">Software Dev</field>
+        <record id="team_software" model="crm.team">
+            <field name="name">Software</field>
             <field name="x_bu_category">swdev</field>
             <field name="use_leads">True</field>
             <field name="use_opportunities">True</field>
         </record>
-
-        <!-- 9. MIS -->
         <record id="team_mis" model="crm.team">
             <field name="name">MIS</field>
             <field name="x_bu_category">mis</field>
