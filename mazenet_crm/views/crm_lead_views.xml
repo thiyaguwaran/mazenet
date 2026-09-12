@@ -617,6 +617,14 @@
                      bottom for free - PostgreSQL puts NULLs last on ASC. -->
                 <xpath expr="//kanban" position="attributes">
                     <attribute name="default_order">x_next_activity_datetime asc, id asc</attribute>
+                    <!-- "New" opens the full lead form instead of the inline quick-create
+                         card (client instruction, 2026-09-12) - stock's own kanban sets
+                         on_create="quick_create" + quick_create_view, which is what
+                         renders that small in-column card in the first place. Dropping
+                         both falls back to the web client's normal "no quick-create
+                         configured" behavior: opening the real form view in a dialog. -->
+                    <attribute name="on_create"></attribute>
+                    <attribute name="quick_create_view"></attribute>
                 </xpath>
                 <xpath expr="//kanban" position="inside">
                     <field name="x_is_locked"/>
