@@ -679,6 +679,20 @@ class CrmLead(models.Model):
              "moment they're viewing anyone else's lead, or creating a brand-new one. "
              "Not stored - reflects whoever has the form open."
     )
+    x_can_assign_salesperson_direct = fields.Boolean(
+        compute='_compute_x_assignable_user_ids',
+        string="Can Assign Salesperson (Own Team)",
+        help="True for an ATL/TL/Manager viewing a lead already on THEIR OWN team -"
+             " lets them directly edit Salesperson even though x_assign_type stays "
+             "'self' for them (2026-09-13: the Team/Internal radio itself is DMT/CTO/"
+             "Admin/MD-only, per _mz_user_can_use_assign_radio - this is a SEPARATE, "
+             "tier-based capability for assigning WITHIN their own team, most commonly "
+             "right after a cross-team handoff lands an unowned lead there, not "
+             "routing across teams). Mirrors can_assign_within_own_team, the same "
+             "condition x_assignable_user_ids' own pool uses - an Agent on the same "
+             "team gets neither the pool nor this. Not stored - reflects whoever has "
+             "the form open."
+    )
     x_can_create_partner = fields.Boolean(
         compute='_compute_x_can_create_partner',
         string="Can Create Partner",
@@ -690,6 +704,28 @@ class CrmLead(models.Model):
              "for a Technology Agent/ATL. Not stored - reflects whoever has the form "
              "open."
     )
+    x_hide_create_new_opportunity = fields.Boolean(
+        compute='_compute_x_hide_create_new_opportunity',
+        string="Hide Create New Opportunity",
+        help="True for DMT, CTO/Admin and MD (client instruction, 2026-09-13) - 'Create "
+             "New Opportunity' spins off a new lead for the SAME customer, routed to "
+             "another team, which only makes sense for someone actually working a "
+             "specific team's pipeline day-to-day. DMT already routes leads via the "
+             "Team/Internal assign-type radio instead; CTO/Admin/MD have no team of "
+             "their own to spin off FROM in the first place. Not per-record - reflects "
+             "whoever has the form open, same as x_hide_internal_option."
+    )
+
+    @api.depends_context('uid')
+    def _compute_x_hide_create_new_opportunity(self):
+        user = self.env.user
+        hide = (
+            self._mz_user_is_dmt(user)
+            or user.has_group('mazenet_access_rights.group_mzr_cto_admin')
+            or user.has_group('mazenet_access_rights.group_mzr_md')
+        )
+        for lead in self:
+            lead.x_hide_create_new_opportunity = hide
 
     @api.depends('team_id')
     @api.depends_context('uid')
@@ -832,6 +868,7 @@ class CrmLead(models.Model):
                 tier in ('atl', 'tl', 'manager') and lead.team_id
                 and self._mz_user_own_team(user) == lead.team_id
             )
+            lead.x_can_assign_salesperson_direct = can_assign_within_own_team
             if not can_beyond_self and not can_assign_within_own_team:
                 lead.x_assignable_user_ids = False
             elif user_is_dmt or (is_cto_admin and show_internal_only):
@@ -878,6 +915,14 @@ class CrmLead(models.Model):
             # team's own TL.
             if self._mz_user_is_dmt(user) or user.has_group('mazenet_access_rights.group_mzr_cto_admin'):
                 self.user_id = False
+                # Keep Stage 3's own x_target_team_id in sync when the transfer
+                # happens via the radio instead of that field directly (2026-09-13)
+                # - x_target_team_id IS the official transfer now (see its own
+                # onchange below), so whichever side the user actually used, both
+                # should end up agreeing - otherwise the Transfer Completeness Gate
+                # would reject the save for a field that's arguably already answered.
+                if self._mz_user_is_dmt(user):
+                    self.x_target_team_id = self.team_id
                 return
             self.user_id = self.team_id.create_lead_id and self.team_id.create_lead_id[0] or False
         if self.x_assign_type == 'internal':
@@ -903,6 +948,22 @@ class CrmLead(models.Model):
             }}
         if self.user_id not in self.x_assignable_user_ids:
             self.user_id = False
+
+    @api.onchange('x_target_team_id')
+    def _onchange_x_target_team_id(self):
+        """Stage 3 (Transfer to BU)'s own x_target_team_id IS the official transfer
+        now (client instruction, 2026-09-13) - picking a team there sets the REAL
+        team_id/x_assign_type the exact same way the Team radio would, instead of
+        being a separate, purely informational field that then needed a SECOND,
+        redundant action via the radio to actually route the lead anywhere. Setting
+        x_assign_type here cascades into assign_salesperson's own 'team' branch
+        (standard Odoo onchange chaining), which clears user_id and syncs
+        x_target_team_id back from team_id - a no-op in that direction since
+        they're already equal at that point. Only meaningful while still on DMT -
+        x_target_team_id only appears in the view then anyway (x_team_bu_category)."""
+        if self.x_target_team_id and self._mz_user_is_dmt(self.env.user):
+            self.team_id = self.x_target_team_id
+            self.x_assign_type = 'team'
 
     @api.depends(
         'activity_ids.date_deadline', 'activity_ids.calendar_event_id.start',
@@ -1185,6 +1246,34 @@ class CrmLead(models.Model):
         help="The BU this DMT lead is being transferred to."
     )
     x_transfer_notes = fields.Text(string="Transfer Notes / Reason")
+
+    # -- DMT Details snapshot (client instruction, 2026-09-13) --
+    # Frozen copies of DMT's own Pipeline Fields tab, captured ONCE at the moment a
+    # DMT-originated lead's team_id first moves off DMT (write()'s "DMT Details
+    # Snapshot" block below) - NOT because the live fields above lose their data (a
+    # view's invisible="x_team_bu_category != 'dmt'" only hides them, never erases
+    # anything), but because two of them (source_id, x_product_service) are genuinely
+    # SHARED with the receiving team's own M2/M3 stage-gate fields and get
+    # overwritten for real once that team starts working the lead - without a
+    # separate copy, DMT's own original answer there would be gone for good. Shown
+    # in a dedicated, always-read-only "DMT Details" tab (views/crm_lead_views.xml)
+    # next to Pipeline Fields, visible once x_dmt_snap_captured is set - i.e. once
+    # there's actually something to show.
+    x_dmt_snap_captured = fields.Boolean(copy=False, help="Guards the one-time snapshot write below against firing again on a LATER handoff between two other teams.")
+    x_dmt_snap_organic_inorganic = fields.Selection(
+        [('organic', 'Organic'), ('inorganic', 'In-Organic')], string="Organic / In-Organic (at handoff)"
+    )
+    x_dmt_snap_source_id = fields.Many2one('utm.source', string="Source (at handoff)")
+    x_dmt_snap_referred = fields.Char(string="Source Reference (at handoff)")
+    x_dmt_snap_company_or_individual = fields.Char(string="Company / Individual (at handoff)")
+    x_dmt_snap_contact_purpose = fields.Char(string="Contact Purpose (at handoff)")
+    x_dmt_snap_product_service = fields.Char(string="Product / Service (at handoff)")
+    x_dmt_snap_employee_count = fields.Integer(string="Employee Count (at handoff)")
+    x_dmt_snap_company_turnover = fields.Monetary(
+        string="Company Turnover (at handoff)", currency_field='company_currency'
+    )
+    x_dmt_snap_target_team_id = fields.Many2one('crm.team', string="Target Business Unit (at handoff)")
+    x_dmt_snap_transfer_notes = fields.Text(string="Transfer Notes / Reason (at handoff)")
 
     # -- Tally only --
     x_tally_category = fields.Selection(
@@ -1575,6 +1664,32 @@ class CrmLead(models.Model):
                             "owner, or an ATL/TL/Manager, can edit it."
                         ) % lead.name)
 
+            # Salesperson Assignment Restriction (client instruction, 2026-09-13):
+            # assigning a salesperson to an UNOWNED lead within one's own team -
+            # most commonly right after a cross-team handoff lands it there with no
+            # owner yet - is an ATL/TL/Manager-only action, the same tier
+            # _mz_check_assign_type_allowed already requires for Team/Internal. A
+            # plain Agent can still edit an unowned lead's OTHER fields
+            # (_mz_can_edit_owned's own "not self.user_id" branch lets any team
+            # member through for that), just not decide who gets it. Skipped
+            # whenever 'x_assign_type' is ALSO in vals - that's DMT/CTO/Admin/MD's
+            # own assign-type flow, already validated by _mz_check_assign_type_
+            # allowed above; this only targets a DIRECT user_id edit outside that
+            # flow (e.g. a Tally TL picking a Salesperson via the plain field once
+            # DMT's handed them a lead). DMT is exempt entirely - membership alone
+            # already waives every tier gate for DMT elsewhere in this file
+            # (_compute_x_assignable_user_ids), and a non-member wouldn't have
+            # reached this point at all (_mz_can_edit_owned already checked that).
+            if 'user_id' in vals and 'x_assign_type' not in vals and not self._mz_user_is_dmt(u):
+                tier, _chain = self._mz_user_tier_chain(u)
+                if tier not in ('atl', 'tl', 'manager'):
+                    for lead in self:
+                        if not lead.user_id and lead.team_id:
+                            raise AccessError(_(
+                                "Only an ATL/TL/Manager can assign a Salesperson to "
+                                "'%s'."
+                            ) % lead.name)
+
             # BU Manager Content Lock REMOVED (client instruction, 2026-09-09): the
             # hierarchy is Manager full rights, TL full rights, ATL full rights - a
             # Manager editing an Agent's lead directly (e.g. Tally Manager on a Tally
@@ -1591,6 +1706,30 @@ class CrmLead(models.Model):
             new_stage = self.env['crm.stage'].browse(vals['stage_id'])
             for lead in self:
                 lead._mz_stage_gate_check(new_stage, vals)
+
+        # DMT Transfer Completeness Gate (client instruction, 2026-09-13): before a
+        # DMT-owned lead's team_id moves away from DMT, verify every mandatory field
+        # across DMT's OWN pipeline (New Lead, Lead Validation, Transfer to BU) is
+        # actually filled. The M3 gate just above only fires when 'stage_id' is
+        # explicitly in vals - a plain team handoff never sets that itself (the
+        # Cross-Team Handoff Stage Advance below sets stage_id AFTERWARD, by which
+        # point team_id already belongs to the RECEIVING team, so
+        # _mz_stage_gate_check would validate against THEIR rules instead of DMT's -
+        # completely missing DMT's own requirements). Checked against
+        # stage_dmt_transferred as the notional target - DMT's own last real stage -
+        # so every stage before it gets validated, same as actually progressing
+        # through DMT's funnel normally would have enforced. Same "regardless of
+        # role" reasoning as the M3 gate above - a data-completeness rule, not an
+        # authority one, so CTO/Admin isn't exempt either, only raw su/system writes.
+        if 'team_id' in vals and not self.env.su:
+            dmt_team = self.env.ref('mazenet_crm.team_dmt', raise_if_not_found=False)
+            stage_dmt_transferred = self.env.ref(
+                'mazenet_crm.stage_dmt_transferred', raise_if_not_found=False
+            )
+            if dmt_team and stage_dmt_transferred:
+                for lead in self:
+                    if lead.team_id == dmt_team and vals['team_id'] != dmt_team.id:
+                        lead._mz_stage_gate_check(stage_dmt_transferred, vals)
 
         result = super(CrmLead, self).write(vals)
 
@@ -1632,6 +1771,39 @@ class CrmLead(models.Model):
                     by_stage[entry_stage.id] |= lead
             for entry_stage_id, leads in by_stage.items():
                 leads.sudo().write({'stage_id': entry_stage_id})
+
+        # DMT Details Snapshot (client instruction, 2026-09-13): the instant a
+        # DMT-originated lead's team_id first moves OFF DMT, freeze a copy of DMT's
+        # own Pipeline Fields tab into the x_dmt_snap_* fields above - see their own
+        # comment for why (source_id/x_product_service are shared with the
+        # receiving team's own stage-gate fields and get overwritten for real once
+        # that team starts working the lead). Guarded by x_dmt_snap_captured so a
+        # LATER handoff between two other teams never overwrites DMT's original
+        # answers with whatever the first receiving team has since put in those
+        # shared fields. Per-lead (each one's own field values differ), but this is
+        # a single-handoff action in practice, never a bulk one.
+        if track_assign and 'team_id' in vals:
+            dmt_team = self.env.ref('mazenet_crm.team_dmt', raise_if_not_found=False)
+            if dmt_team:
+                to_snapshot = self.filtered(
+                    lambda l: pre_assign.get(l.id, (None, l.team_id))[1] == dmt_team
+                    and l.team_id != dmt_team
+                    and not l.x_dmt_snap_captured
+                )
+                for lead in to_snapshot:
+                    lead.sudo().write({
+                        'x_dmt_snap_organic_inorganic': lead.x_organic_inorganic,
+                        'x_dmt_snap_source_id': lead.source_id.id,
+                        'x_dmt_snap_referred': lead.referred,
+                        'x_dmt_snap_company_or_individual': lead.x_company_or_individual,
+                        'x_dmt_snap_contact_purpose': lead.x_contact_purpose,
+                        'x_dmt_snap_product_service': lead.x_product_service,
+                        'x_dmt_snap_employee_count': lead.x_employee_count,
+                        'x_dmt_snap_company_turnover': lead.x_company_turnover,
+                        'x_dmt_snap_target_team_id': lead.x_target_team_id.id,
+                        'x_dmt_snap_transfer_notes': lead.x_transfer_notes,
+                        'x_dmt_snap_captured': True,
+                    })
 
         # x_dmt_originated self-expiry (2026-09-11): the first time someone OUTSIDE
         # DMT substantively edits a lead DMT originated, permanently retire the flag

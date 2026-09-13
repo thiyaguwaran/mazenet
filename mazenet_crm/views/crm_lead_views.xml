@@ -17,7 +17,8 @@
                          another team - opens mz.lead.spinoff.wizard pre-filled with this
                          lead's customer/contact info. Only makes sense on a saved lead. -->
                     <button name="%(action_mz_lead_spinoff_wizard)d" string="Create New Opportunity"
-                            type="action" class="btn-secondary" invisible="not id"/>
+                            type="action" class="btn-secondary"
+                            invisible="not id or x_hide_create_new_opportunity"/>
                 </xpath>
 
                 <xpath expr="//div[@name='button_box']" position="inside">
@@ -35,7 +36,13 @@
                     <attribute name="readonly">x_content_readonly_for_me</attribute>
                 </xpath>
                 <xpath expr="//field[@name='user_id']" position="attributes">
-                    <attribute name="readonly">x_content_readonly_for_me or x_assign_type == 'self'</attribute>
+                    <!-- x_can_assign_salesperson_direct (2026-09-13): an ATL/TL/Manager
+                         on their OWN team can edit Salesperson even though
+                         x_assign_type stays 'self' for them (the Team/Internal radio
+                         itself is DMT/CTO/Admin/MD-only) - a plain Agent on the same
+                         team can't, most commonly the case right after a cross-team
+                         handoff lands an unowned lead on their team. -->
+                    <attribute name="readonly">x_content_readonly_for_me or (x_assign_type == 'self' and not x_can_assign_salesperson_direct)</attribute>
                     <attribute name="domain">[('id', 'in', x_assignable_user_ids)]</attribute>
                     <!-- MD and CTO/Admin get Salesperson hidden entirely, alongside the
                          'Internal' assign-type option (_selection_x_assign_type). -->
@@ -74,6 +81,8 @@
                     <field name="x_hide_salesperson" invisible="1"/>
                     <field name="x_hide_internal_option" invisible="1"/>
                     <field name="x_show_internal_only" invisible="1"/>
+                    <field name="x_can_assign_salesperson_direct" invisible="1"/>
+                    <field name="x_hide_create_new_opportunity" invisible="1"/>
                 </xpath>
 
                 <!-- Phone/Email either-or indicator (MZ_EITHER_OR_MANDATORY_FIELDS,
@@ -223,15 +232,15 @@
                                 <field name="priority" widget="priority" string="Lead Fit"/>
                             </group>
                             <group string="Stage 3 - Transfer to BU">
-                                <label for="x_target_team_id"/>
-                                <div class="o_row">
-                                    <field name="x_target_team_id"/>
-                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_target_team_id,' in x_current_stage_gate_fields)">*</span>
-                                </div>
                                 <label for="x_transfer_notes"/>
                                 <div class="o_row">
                                     <field name="x_transfer_notes"/>
                                     <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_transfer_notes,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_target_team_id"/>
+                                <div class="o_row">
+                                    <field name="x_target_team_id"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_target_team_id,' in x_current_stage_gate_fields)">*</span>
                                 </div>
                             </group>
                             <group string="Stage 4 - Follow-up's">
@@ -585,6 +594,38 @@
                                 <field name="x_deviation_days"/>
                             </group>
                         </div>
+                    </page>
+                    <!-- DMT Details snapshot tab (client instruction, 2026-09-13): once a
+                         DMT-originated lead is handed off, its "Pipeline Fields" tab above
+                         switches to whichever OTHER team now owns it - x_team_bu_category
+                         drives which of that page's divs shows, so DMT's own answers stop
+                         being visible there (still on the record, just hidden - a view's
+                         invisible= never deletes anything) the instant team_id changes. Two
+                         of those fields (source_id, x_product_service) are ALSO reused by
+                         the receiving team's own stage-gate rules and get genuinely
+                         overwritten once they start working the lead. This tab shows a
+                         frozen COPY instead (x_dmt_snap_*, captured once at handoff time by
+                         write()'s own DMT Details Snapshot block) - always read-only, and
+                         only appears once there's actually something in it. -->
+                    <page name="mz_dmt_details" string="DMT Details" invisible="not x_dmt_snap_captured">
+                        <group>
+                            <group string="Stage 1 - New Lead / Source">
+                                <field name="x_dmt_snap_organic_inorganic" readonly="1"/>
+                                <field name="x_dmt_snap_source_id" readonly="1"/>
+                                <field name="x_dmt_snap_referred" readonly="1"/>
+                            </group>
+                            <group string="Stage 2 - Lead Validation">
+                                <field name="x_dmt_snap_company_or_individual" readonly="1"/>
+                                <field name="x_dmt_snap_contact_purpose" readonly="1"/>
+                                <field name="x_dmt_snap_product_service" readonly="1"/>
+                                <field name="x_dmt_snap_employee_count" readonly="1"/>
+                                <field name="x_dmt_snap_company_turnover" readonly="1"/>
+                            </group>
+                            <group string="Stage 3 - Transfer to BU">
+                                <field name="x_dmt_snap_transfer_notes" readonly="1"/>
+                                <field name="x_dmt_snap_target_team_id" readonly="1"/>
+                            </group>
+                        </group>
                     </page>
                 </xpath>
 

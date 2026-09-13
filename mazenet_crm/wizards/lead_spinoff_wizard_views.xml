@@ -33,14 +33,17 @@
                     <group string="Route To">
                         <field name="team_id"/>
                     </group>
-                    <group string="Marketing" groups="base.group_no_one">
-                        <field name="campaign_id"/>
-                        <field name="medium_id"/>
-                        <field name="source_id"/>
-                        <field name="referred"/>
-                        <field name="company_id" groups="base.group_multi_company"/>
-                        <field name="lang_id"/>
-                    </group>
+                    <!-- Marketing section removed from the view (client instruction,
+                         2026-09-13) - campaign_id/medium_id/source_id/referred/
+                         company_id/lang_id are still copied over from the source lead
+                         automatically (DETAIL_FIELDS in lead_spinoff_wizard.py), just
+                         no longer shown/editable on this wizard. -->
+                    <field name="campaign_id" invisible="1"/>
+                    <field name="medium_id" invisible="1"/>
+                    <field name="source_id" invisible="1"/>
+                    <field name="referred" invisible="1"/>
+                    <field name="company_id" invisible="1"/>
+                    <field name="lang_id" invisible="1"/>
                     <group>
                         <field name="description" nolabel="1" placeholder="What are they asking for this time?"/>
                     </group>

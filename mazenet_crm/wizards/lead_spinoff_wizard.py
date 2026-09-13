@@ -54,10 +54,12 @@ class MzLeadSpinoffWizard(models.TransientModel):
     lang_id = fields.Many2one("res.lang", string="Language")
     team_id = fields.Many2one("crm.team", string="Sales Team", required=True)
     description = fields.Text(
-        string="New Requirement",
+        string="New Requirement", required=True,
         help="What the customer is asking for THIS time - left blank rather than "
              "copied from the source lead, since it's a new ask, not a repeat of "
-             "the old one."
+             "the old one. Required (client instruction, 2026-09-13) - a spin-off "
+             "with no stated requirement gives the receiving team nothing to work "
+             "from."
     )
 
     @api.model
