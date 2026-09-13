@@ -219,6 +219,23 @@ class CrmLead(models.Model):
         own_team = self._mz_user_own_team()
         return own_team.id if own_team else False
 
+    @api.model
+    def _mz_team_entry_stage(self, team):
+        """The first (lowest-sequence) real stage scoped to `team` - used to advance a
+        handed-off lead's REAL stage_id into the RECEIVING team's own pipeline at the
+        moment of a cross-team handoff (2026-09-12, write()'s Cross-Team Handoff Stage
+        Advance), instead of leaving it parked on whichever stage it came from - which,
+        being scoped to the OLD team, would leak in as a phantom column on the new
+        team's kanban the instant a real record sits in it (_read_group_stage_ids's own
+        team-filter below only hides EMPTY foreign columns, never ones with a real
+        record already in them - see its own docstring). Empty recordset if the team
+        has no stages of its own at all."""
+        if not team:
+            return self.env['crm.stage']
+        return self.env['crm.stage'].search(
+            [('team_ids', 'in', team.id)], order='sequence asc', limit=1
+        )
+
     def _mz_resolve_stage_team_id_from_domain(self, domain):
         """Sales Team AND Salesperson search panel selections should both drive
         the Pipeline kanban's stage columns the same way (2026-09-04: "the same
@@ -339,6 +356,39 @@ class CrmLead(models.Model):
             result = result.filtered(lambda s: not s.team_ids or target_team_id in s.team_ids.ids)
         return result
 
+    def _read_group(self, domain, groupby=(), aggregates=(), having=(), offset=0, limit=None, order=None):
+        """Excludes a lead visible ONLY via a cross-team read grant like
+        x_dmt_originated from being counted under its own real, FOREIGN stage when
+        grouping the generic Pipeline by the real stage_id (2026-09-12, hit live: a
+        lead DMT handed off to Tally showed up as a stray "New Lead" column - Tally's
+        own real stage - on DMT's OWN generic Pipeline, right alongside DMT's own real
+        stages). group_expand (_read_group_stage_ids above) can only hide EMPTY
+        foreign columns, never one a real, currently-visible record is actually
+        sitting in - so the only way to keep such a record out of THIS kanban/pivot/
+        graph grouping is to keep it out of the read_group's own domain entirely.
+        DMT's OWN dedicated Pipeline groups by x_dmt_pipeline_stage_id instead (a
+        different field - see that field's help text) and is unaffected; a lead only
+        stays excluded here until the receiving team's first edit self-expires
+        x_dmt_originated (see write()), after which it was never going to be DMT's
+        concern in either view anyway.
+
+        Skipped for CTO/Admin/MD - their whole-company overview legitimately needs to
+        see every team's records regardless of who "owns" them."""
+        if (
+            groupby and groupby[0] == 'stage_id'
+            and not self.env.su
+            and not self.env.user.has_group('mazenet_access_rights.group_mzr_cto_admin')
+            and not self.env.user.has_group('mazenet_access_rights.group_mzr_md')
+        ):
+            target_team_id = self.env.context.get('default_team_id') or self._mz_user_own_team().id
+            if target_team_id:
+                from odoo.orm.domains import Domain
+                domain = Domain.AND([
+                    domain,
+                    Domain(['|', ('x_dmt_originated', '=', False), ('team_id', '=', target_team_id)]),
+                ])
+        return super()._read_group(domain, groupby, aggregates, having, offset, limit, order)
+
     def _get_team_id_domain(self):
         return [("id", "not in", self.env.user.crm_team_ids.ids)]
 
@@ -375,6 +425,51 @@ class CrmLead(models.Model):
              "handoff, since the client's own post-write re-read hit the same "
              "now-out-of-scope domain) - fixed 2026-09-08."
     )
+    x_dmt_pipeline_stage_id = fields.Many2one(
+        'crm.stage', string="DMT Pipeline Stage",
+        compute='_compute_x_dmt_pipeline_stage_id', store=True,
+        inverse='_inverse_x_dmt_pipeline_stage_id',
+        group_expand='_read_group_stage_ids',
+        help="DMT's OWN dedicated Pipeline kanban (view_crm_lead_kanban_dmt_pipeline / "
+             "crm_lead_action_pipeline_dmt) groups AND drags by THIS field instead of "
+             "the real stage_id (2026-09-12) - mirrors stage_id normally, but pins to "
+             "DMT's own 'Follow-up's' stage (stage_dmt_transferred) once "
+             "x_dmt_originated is set and the lead has moved to another team's real "
+             "pipeline. Dragging a card in that kanban writes here (whatever field a "
+             "kanban is grouped by is what drag-and-drop writes to), and the inverse "
+             "(guarded the same way _inverse_x_assign_type_no_internal is, against the "
+             "same recursive-write footgun) converts that into a real stage_id write -"
+             " so for a lead STILL on DMT (this field mirrors stage_id 1:1 there),  "
+             "dragging genuinely progresses it, M3 gate and all, same as the standard "
+             "Pipeline. Dragging a lead that's ALREADY been handed off (this field "
+             "pinned to Follow-up's) still can't actually move it anywhere - write()'s "
+             "own existing 'transferred, read-only' guard rejects it before the "
+             "inverse ever runs, since team_id is no longer DMT's. Reuses "
+             "_read_group_stage_ids as its own group_expand so DMT's real stage "
+             "columns (including the otherwise-unreachable-by-handoff 'Follow-up's' "
+             "one) still show up empty rather than only appearing once a lead happens "
+             "to land there."
+    )
+
+    @api.depends('stage_id', 'team_id', 'x_dmt_originated')
+    def _compute_x_dmt_pipeline_stage_id(self):
+        dmt_team = self.env.ref('mazenet_crm.team_dmt', raise_if_not_found=False)
+        stage_followup = self.env.ref('mazenet_crm.stage_dmt_transferred', raise_if_not_found=False)
+        for lead in self:
+            if dmt_team and stage_followup and lead.x_dmt_originated and lead.team_id != dmt_team:
+                lead.x_dmt_pipeline_stage_id = stage_followup
+            else:
+                lead.x_dmt_pipeline_stage_id = lead.stage_id
+
+    def _inverse_x_dmt_pipeline_stage_id(self):
+        """See the field's own help text for the full drag-and-drop mechanics. Guarded
+        to a genuine no-op when the value already matches, same as
+        _inverse_x_assign_type_no_internal - without this guard, EVERY write touching
+        this field (not just a drag) would trigger a needless recursive stage_id
+        write."""
+        for lead in self:
+            if lead.stage_id != lead.x_dmt_pipeline_stage_id:
+                lead.stage_id = lead.x_dmt_pipeline_stage_id
 
     @api.model
     def _default_x_assign_type(self):
@@ -634,6 +729,37 @@ class CrmLead(models.Model):
         )
         return lower_groups.mapped('user_ids')
 
+    def _mz_team_tier_subordinate_users(self, team, user):
+        """Fallback pool for assigning a salesperson WITHIN a team, independent of
+        crm.team.privelege_ids (2026-09-12) - _mz_team_subordinate_group_users above
+        relies on that being configured per team, and NO team in this deployment
+        actually has any privilege configured yet (mazenet_crm_team_privilege_rel is
+        empty for every single team, confirmed live) - so that method always silently
+        returned an empty pool, no matter who was asking or which team. Hit live
+        2026-09-12: a CTO handed a lead to MIS via 'Team', and MIS's own TL then had
+        an empty Salesperson dropdown for it - not because of the can_beyond_self gate
+        (already fixed separately), but because the pool computation it fell through
+        to was ALSO always empty.
+
+        Uses the SAME MZR_TIER_GROUP_CHAINS/MZR_TIER_RANK tiering _mz_user_tier_chain
+        already relies on instead of crm.team.privelege_ids: every team.member_ids
+        user whose own tier ranks STRICTLY below `user`'s tier. Only a genuine
+        fallback - _mz_team_subordinate_group_users is tried first wherever both are
+        used, so a team that DOES eventually get real privileges configured keeps
+        using that finer-grained ranking instead."""
+        if not team:
+            return self.env['res.users']
+        tier, _chain = self._mz_user_tier_chain(user)
+        if not tier:
+            return self.env['res.users']
+        rank = self.MZR_TIER_RANK[tier]
+        result = self.env['res.users']
+        for member in team.member_ids:
+            member_tier, _m_chain = self._mz_user_tier_chain(member)
+            if member_tier and self.MZR_TIER_RANK[member_tier] < rank:
+                result |= member
+        return result
+
     @api.depends('team_id', 'x_assign_type', 'user_id')
     @api.depends_context('uid')
     def _compute_x_assignable_user_ids(self):
@@ -691,7 +817,22 @@ class CrmLead(models.Model):
             lead.x_hide_salesperson = hide_for_own_lead or hide_for_dmt_team
             lead.x_hide_internal_option = hide_for_own_lead
             lead.x_show_internal_only = show_internal_only
-            if not can_beyond_self:
+            # A regular team's own ATL/TL/Manager reassigning the SALESPERSON on an
+            # already-team-owned lead (2026-09-12 fix): can_beyond_self/can_use_radio
+            # gate the CROSS-TEAM routing radio (DMT/CTO/Admin/MD only, per
+            # _mz_user_can_use_assign_radio) - they were ALSO wrongly gating this pool,
+            # leaving a plain team TL with an empty Salesperson dropdown on a lead
+            # already sitting in their own team (hit live 2026-09-12, staging: a CTO
+            # handed a lead to MIS via 'Team', and MIS's own TL then couldn't pick a
+            # salesperson for it at all). _mz_can_edit_owned already lets an ATL/TL/
+            # Manager edit any unowned (or peer-owned) lead within their own team
+            # regardless of this radio - the assignable pool needs to match that same
+            # permission, independently of can_beyond_self.
+            can_assign_within_own_team = bool(
+                tier in ('atl', 'tl', 'manager') and lead.team_id
+                and self._mz_user_own_team(user) == lead.team_id
+            )
+            if not can_beyond_self and not can_assign_within_own_team:
                 lead.x_assignable_user_ids = False
             elif user_is_dmt or (is_cto_admin and show_internal_only):
                 # CTO/Admin's 'internal' pool would otherwise be empty:
@@ -701,10 +842,17 @@ class CrmLead(models.Model):
                 # used above, which doesn't apply here) - give them the same
                 # unrestricted whole-team-roster pool as DMT for this one path.
                 lead.x_assignable_user_ids = lead.team_id.member_ids
-            elif lead.x_assign_type == 'team':
+            elif can_use_radio and lead.x_assign_type == 'team':
+                # 'Team' pool (create_lead_id) only applies to whoever can actually
+                # DRIVE the radio (DMT/CTO/Admin/MD) - a regular team's own ATL/TL/
+                # Manager reassigning an already-team-owned lead's salesperson always
+                # uses the subordinate-hierarchy pool below instead, regardless of the
+                # record's residual stored x_assign_type (e.g. still 'team' from
+                # whoever routed it here in the first place).
                 lead.x_assignable_user_ids = lead.team_id.create_lead_id
             else:
-                lead.x_assignable_user_ids = self._mz_team_subordinate_group_users(lead.team_id, user)
+                pool = self._mz_team_subordinate_group_users(lead.team_id, user)
+                lead.x_assignable_user_ids = pool if pool else self._mz_team_tier_subordinate_users(lead.team_id, user)
 
     @api.onchange('x_assign_type', 'team_id')
     def assign_salesperson(self):
@@ -1129,6 +1277,11 @@ class CrmLead(models.Model):
                 pool_ids = team.create_lead_id.ids
             else:
                 pool_ids = self._mz_team_subordinate_group_users(team, user).ids
+                if not pool_ids:
+                    # Same crm.team.privelege_ids-is-never-configured fallback as
+                    # _compute_x_assignable_user_ids (see _mz_team_tier_subordinate_
+                    # users' own docstring) - keep both in sync.
+                    pool_ids = self._mz_team_tier_subordinate_users(team, user).ids
             if vals['user_id'] not in pool_ids:
                 raise AccessError(_(
                     "The selected salesperson isn't in the allowed assignment pool for "
@@ -1441,35 +1594,44 @@ class CrmLead(models.Model):
 
         result = super(CrmLead, self).write(vals)
 
-        # DMT Handoff Auto-Advance (client instruction, 2026-09-11): the instant a
-        # lead's team_id moves OFF DMT, park it on DMT's own "Follow-up's" stage
-        # (the last stage in DMT's 4-stage funnel) - both so DMT's Pipeline shows
-        # it as done-from-their-side rather than under whatever foreign stage the
-        # receiving team eventually moves it to (that foreign stage was bleeding
-        # into DMT's kanban as an extra column - the x_dmt_originated read grant
-        # makes the record visible, but nothing previously fixed WHICH stage
-        # column it showed up under), and so "Follow-up's" actually means
-        # something (previously unreachable via this path - DMT's own stage
-        # progression stopped at "Transfer to BU"). sudo() + skip if the caller
-        # already set stage_id explicitly (respects an explicit override, and
-        # this write is a one-time system-driven convenience, not a user stage
-        # change - same reasoning as the x_dmt_originated retire-write below).
-        # The receiving team naturally moves it into one of THEIR OWN stages the
-        # first time they actually work it, which also retires x_dmt_originated
-        # (see below) and ends DMT's visibility into it entirely.
+        # Cross-Team Handoff Stage Advance (2026-09-12, REPLACES the DMT-only
+        # "Handoff Auto-Advance" from 2026-09-11): whenever a lead's team_id
+        # changes to a DIFFERENT team (without an explicit accompanying stage_id
+        # in the same write), advance the REAL stage_id to the RECEIVING team's
+        # own entry stage (_mz_team_entry_stage) - keeps stage_id itself always
+        # meaning "real progress within the lead's CURRENT team", the single
+        # source of truth every ir.rule/kanban/stage-gate/report in this module
+        # already assumes it is.
+        #
+        # The previous version only fired for leads coming FROM DMT and forced
+        # them onto DMT's OWN "Follow-up's" stage instead - that correctly made
+        # DMT's kanban show it as done-from-their-side, but the same real
+        # stage_id change leaked right back in as a phantom foreign column on
+        # the RECEIVING team's OWN kanban the instant they could see the record
+        # (_read_group_stage_ids's team-filter only hides EMPTY foreign columns,
+        # never one a real record is actually sitting in - see its docstring).
+        # DMT's "Follow-up's" display is now handled separately and per-viewer,
+        # via x_dmt_pipeline_stage_id and DMT's own dedicated Pipeline view/
+        # action - it no longer needs to touch the real stage_id at all, so the
+        # receiving team is free to get a real, correctly-scoped entry stage
+        # here instead.
+        #
+        # sudo() + batched by target stage; skip if the caller already set
+        # stage_id explicitly (respects an explicit override - this write is a
+        # one-time system-driven convenience, not a user stage change, same
+        # reasoning as the x_dmt_originated retire-write below).
         if track_assign and 'team_id' in vals and 'stage_id' not in vals:
-            dmt_team = self.env.ref('mazenet_crm.team_dmt', raise_if_not_found=False)
-            stage_dmt_transferred = self.env.ref(
-                'mazenet_crm.stage_dmt_transferred', raise_if_not_found=False
+            moved = self.filtered(
+                lambda l: l.team_id and pre_assign.get(l.id, (None, l.team_id))[1] != l.team_id
             )
-            if dmt_team and stage_dmt_transferred:
-                to_advance = self.filtered(
-                    lambda l: pre_assign.get(l.id, (None, l.team_id))[1] == dmt_team
-                    and l.team_id != dmt_team
-                    and l.stage_id != stage_dmt_transferred
-                )
-                if to_advance:
-                    to_advance.sudo().write({'stage_id': stage_dmt_transferred.id})
+            by_stage = {}
+            for lead in moved:
+                entry_stage = self._mz_team_entry_stage(lead.team_id)
+                if entry_stage and lead.stage_id != entry_stage:
+                    by_stage.setdefault(entry_stage.id, self.env['crm.lead'])
+                    by_stage[entry_stage.id] |= lead
+            for entry_stage_id, leads in by_stage.items():
+                leads.sudo().write({'stage_id': entry_stage_id})
 
         # x_dmt_originated self-expiry (2026-09-11): the first time someone OUTSIDE
         # DMT substantively edits a lead DMT originated, permanently retire the flag

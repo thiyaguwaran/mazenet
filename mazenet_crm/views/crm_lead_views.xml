@@ -742,5 +742,82 @@
                 </xpath>
             </field>
         </record>
+
+        <!-- DMT's OWN dedicated Pipeline (2026-09-12, client instruction): groups by
+             x_dmt_pipeline_stage_id instead of the real stage_id, so a lead DMT handed
+             off to another team still shows up under DMT's own "Follow-up's" column -
+             without touching the real stage_id everyone else's kanban/reporting/
+             stage-gates rely on (see crm_lead.py's x_dmt_pipeline_stage_id and the
+             Cross-Team Handoff Stage Advance in write() for the full mechanics).
+             Inherits view_crm_lead_kanban_inherit_mz (not the stock view directly) so
+             every existing kanban customization - "New" opening the full form, the
+             activity-time ordering, RED lock ribbon, etc. - carries over unchanged. -->
+        <record id="view_crm_lead_kanban_dmt_pipeline" model="ir.ui.view">
+            <field name="name">crm.lead.kanban.dmt.pipeline</field>
+            <field name="model">crm.lead</field>
+            <field name="inherit_id" ref="view_crm_lead_kanban_inherit_mz"/>
+            <!-- mode="primary" is essential here (2026-09-12 fix, found live: Tally's
+                 OWN standard Pipeline started grouping by x_dmt_pipeline_stage_id too,
+                 showing a real Tally lead under DMT's "Follow-up's" column even though
+                 its real stage_id/statusbar correctly said "New Lead") - an ordinary
+                 (mode="extension", the default) inheriting view merges into EVERY
+                 action that resolves the same base view id, including the standard
+                 Pipeline that also descends from crm.crm_case_kanban_view_leads via
+                 view_crm_lead_kanban_inherit_mz. primary mode seeds this view ONCE from
+                 the combined mz-customized base arch, then makes it a genuinely
+                 separate, standalone view from then on - used only by whichever action
+                 explicitly references THIS view id (crm_lead_action_pipeline_dmt), and
+                 no longer part of the shared inheritance chain everyone else resolves. -->
+            <field name="mode">primary</field>
+            <field name="arch" type="xml">
+                <xpath expr="//kanban" position="attributes">
+                    <attribute name="default_group_by">x_dmt_pipeline_stage_id</attribute>
+                    <!-- Drag-and-drop works here same as the standard Pipeline
+                         (2026-09-12) - x_dmt_pipeline_stage_id has its own guarded
+                         inverse that converts a drag into a real stage_id write for a
+                         lead still on DMT; dragging an already-handed-off lead (pinned
+                         to Follow-up's) still can't move it anywhere - write()'s
+                         existing "transferred, read-only" guard rejects that before
+                         the inverse even runs. See the field's own help text. -->
+                </xpath>
+                <xpath expr="//field[@name='stage_id']" position="after">
+                    <field name="x_dmt_pipeline_stage_id" options='{"group_by_tooltip": {"requirements": "Description"}}'/>
+                </xpath>
+            </field>
+        </record>
+
+        <record id="crm_lead_action_pipeline_dmt" model="ir.actions.act_window">
+            <field name="name">DMT Pipeline</field>
+            <field name="res_model">crm.lead</field>
+            <field name="view_mode">kanban,list,form,calendar,graph,pivot</field>
+            <field name="domain">[('type', '=', 'opportunity')]</field>
+            <field name="context" eval="{
+                    'default_type': 'opportunity',
+                    'default_team_id': ref('team_dmt'),
+                }"/>
+            <field name="search_view_id" ref="crm.view_crm_case_opportunities_filter"/>
+        </record>
+        <record id="crm_lead_action_pipeline_dmt_view_kanban" model="ir.actions.act_window.view">
+            <field name="sequence" eval="0"/>
+            <field name="view_mode">kanban</field>
+            <field name="view_id" ref="view_crm_lead_kanban_dmt_pipeline"/>
+            <field name="act_window_id" ref="crm_lead_action_pipeline_dmt"/>
+        </record>
+
+        <!-- Every DMT group variant listed explicitly (2026-09-12 fix, found live: demo
+             user "DMT Agent 1" holds group_mzr_dmt_manager_direct_agent, a separate
+             "reports straight to the Manager" branch that does NOT imply
+             group_mzr_dmt_agent - this module's own DMT-ness check (_mz_user_is_dmt)
+             is based on crm.team membership, not any one specific group, so the menu
+             needs the same breadth: both "direct agent" branches plus the regular
+             agent/atl/tl/manager chain, or a DMT member on one of the direct-agent
+             branches never saw this menu at all). -->
+        <menuitem
+            id="menu_crm_opportunities_dmt_pipeline"
+            name="DMT Pipeline"
+            parent="crm.crm_menu_sales"
+            action="crm_lead_action_pipeline_dmt"
+            groups="mazenet_access_rights.group_mzr_dmt_agent,mazenet_access_rights.group_mzr_dmt_tl_direct_agent,mazenet_access_rights.group_mzr_dmt_manager_direct_agent"
+            sequence="3"/>
     </data>
 </odoo>
