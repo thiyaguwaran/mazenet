@@ -13,5 +13,16 @@
              get x_dmt_originated set at create() time now, but leads already
              sitting in team_dmt before this fix need a one-time backfill. -->
         <function model="crm.lead" name="_mz_backfill_x_dmt_originated" eval="()"/>
+
+        <!-- "Unassigned" stage per team (crm_stage.py) - client instruction,
+             2026-09-15, "important": a lead transferred from DMT/CTO/MD/another
+             team, or one freshly created directly on a team, should land in an
+             "Unassigned" stage until someone actually picks it up, and this
+             should be the genuine FIRST stage for every team, before "New
+             Lead". Idempotent (checks by name+team before creating), and kept
+             here rather than as hardcoded records in the noupdate stages.xml so
+             it always matches whatever teams actually exist now, not a
+             possibly-stale team list. -->
+        <function model="crm.stage" name="_mz_ensure_unassigned_stages" eval="()"/>
     </data>
 </odoo>

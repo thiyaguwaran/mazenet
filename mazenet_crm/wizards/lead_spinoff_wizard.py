@@ -120,19 +120,23 @@ class MzLeadSpinoffWizard(models.TransientModel):
 
         # Each team's own ir.rule create-domain restricts creation to leads with
         # team_id = that user's own team (e.g. "Mazenet CRM Lead: dmt (Team View/
-        # Create)") - correct for the normal case, but a spin-off is specifically
-        # meant to let DMT (and CTO/Admin/MD, same cross-team authority as everywhere
-        # else - _mz_user_can_use_assign_radio) route a brand-new opportunity to a
-        # DIFFERENT team than their own. Without sudo() here, that legitimate cross-
-        # team create hits the SAME AccessError a raw unauthorized cross-team create
-        # would (hit live 2026-09-11: DMT Agent blocked creating a Tally-routed
-        # opportunity by rule_crm_lead_dmt_base). Anyone else keeps the normal,
-        # non-sudo create - if they're not authorized to route outside their own
-        # team, the ir.rule should still stop them, same as it always has.
-        crm_lead = self.env['crm.lead']
-        if crm_lead._mz_user_can_use_assign_radio(self.env.user):
-            crm_lead = crm_lead.sudo()
-        new_lead = crm_lead.create(vals)
+        # Create)") - correct for a plain create, but a spin-off is SPECIFICALLY
+        # meant to route a brand-new opportunity to a DIFFERENT team than the
+        # user's own (hit live 2026-09-11: DMT Agent blocked creating a Tally-
+        # routed opportunity by rule_crm_lead_dmt_base). Always sudo() here
+        # regardless of who's using the wizard (2026-09-15 fix, "create access
+        # error for all login... give access only if they create from the
+        # wizard") - previously this only applied to DMT/CTO/Admin/MD
+        # (_mz_user_can_use_assign_radio), but "Create New Opportunity" is now
+        # HIDDEN for exactly those roles (x_hide_create_new_opportunity), so the
+        # only users who can still see and click this button are regular team
+        # ATL/TL/Manager/Agents - who never got the sudo() and hit the SAME
+        # cross-team AccessError. The wizard itself is the trusted gate now:
+        # opening it already required real read access to the SOURCE lead
+        # (the button lives on that lead's own form), so the resulting create
+        # is authorized by having gone through this action, not by the acting
+        # user's own team membership.
+        new_lead = self.env['crm.lead'].sudo().create(vals)
 
         self.source_lead_id.message_post(body=_(
             "Spun off a new opportunity for a different requirement: %(link)s "
@@ -171,5 +175,12 @@ class MzLeadSpinoffWizard(models.TransientModel):
                     "New opportunity '%(name)s' created and routed to %(team)s."
                 ) % {'name': new_lead.name, 'team': self.team_id.name},
                 'type': 'success',
+                # A plain display_notification doesn't close the wizard dialog on
+                # its own (2026-09-15 fix, "wizard should close, its still open
+                # even after creating") - it just shows a toast on top of whatever
+                # is already displayed. 'next' chains a follow-up action once the
+                # notification is shown; act_window_close is what actually closes
+                # this modal.
+                'next': {'type': 'ir.actions.act_window_close'},
             },
         }

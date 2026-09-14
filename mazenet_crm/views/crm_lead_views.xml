@@ -55,22 +55,25 @@
                     <!-- Only DMT team members, MD and CTO/Admin may touch this radio at
                          all (_mz_user_can_use_assign_radio) - everyone else is forced to
                          Self and can't even click through to Team/Internal.
-                         Three fields, mutually exclusive via x_hide_internal_option /
-                         x_show_internal_only: a Selection's option list is per-environment,
-                         not per-record, so CTO/Admin needing Self+Team on their OWN lead
-                         (new or already-saved) but ONLY Internal on someone ELSE's existing
-                         lead needs two narrower mirror fields swapped in for the real one -
-                         see x_assign_type_no_internal / x_assign_type_internal_only's own
-                         help text. -->
+                         Four fields, mutually exclusive via x_hide_internal_option /
+                         x_show_internal_only / x_hide_team_option: a Selection's option
+                         list is per-environment, not per-record, so different roles
+                         needing different subsets of Self/Internal/Team each need their
+                         own narrower mirror field swapped in for the real one - see
+                         x_assign_type_no_internal / x_assign_type_internal_only /
+                         x_assign_type_no_team's own help text. -->
                     <field name="x_assign_type" widget="radio" options="{'horizontal': true}"
                            readonly="not x_can_use_assign_radio"
-                           invisible="x_hide_internal_option or x_show_internal_only"/>
+                           invisible="x_hide_internal_option or x_show_internal_only or x_hide_team_option"/>
                     <field name="x_assign_type_no_internal" widget="radio" options="{'horizontal': true}"
                            readonly="not x_can_use_assign_radio"
                            invisible="not x_hide_internal_option or x_show_internal_only"/>
                     <field name="x_assign_type_internal_only" widget="radio" options="{'horizontal': true}"
                            readonly="not x_can_use_assign_radio"
                            invisible="not x_show_internal_only"/>
+                    <field name="x_assign_type_no_team" widget="radio" options="{'horizontal': true}"
+                           readonly="not x_can_use_assign_radio"
+                           invisible="not x_hide_team_option"/>
                     <field name="team_id"
                            readonly="x_content_readonly_for_me or x_assign_type == 'self'"
                            required="x_assign_type != 'self'"
@@ -83,6 +86,7 @@
                     <field name="x_show_internal_only" invisible="1"/>
                     <field name="x_can_assign_salesperson_direct" invisible="1"/>
                     <field name="x_hide_create_new_opportunity" invisible="1"/>
+                    <field name="x_hide_team_option" invisible="1"/>
                 </xpath>
 
                 <!-- Phone/Email either-or indicator (MZ_EITHER_OR_MANDATORY_FIELDS,
@@ -172,6 +176,19 @@
                 </xpath>
                 <xpath expr="//group[@name='opportunity_partner']//field[@name='phone']" position="attributes">
                     <attribute name="placeholder">e.g. 9876543210</attribute>
+                    <!-- Drop the stock phone widget entirely (2026-09-15 fix, hit live:
+                         typing a plain 10-digit number like "9843371611" saved as "+1
+                         984-337-1611", then failed _mz_check_contact_format's own
+                         10-digit check) - the phone widget auto-formats and prepends a
+                         country code using the record's/company's country, and this
+                         company's own country_id is set to United States (its currency
+                         is correctly INR, but country_id was never fixed to match) -
+                         every lead with no country picked fell back to that. The
+                         business wants a plain 10-digit number here, not international
+                         formatting, so remove the widget rather than depend on company
+                         data being right - a plain Char input just stores exactly what's
+                         typed. -->
+                    <attribute name="widget"></attribute>
                 </xpath>
                 <xpath expr="//group[@name='opportunity_partner']//field[@name='email_from']" position="attributes">
                     <attribute name="placeholder">e.g. name@example.com</attribute>
@@ -633,15 +650,30 @@
                      Agents (and ATLs) may only SELECT from the existing list. Two field tags
                      over the same partner_id, toggled by x_can_create_partner, since a
                      Many2one's no_create/no_create_edit widget options are static per tag,
-                     not expression-evaluable. -->
-                <xpath expr="//field[@name='partner_id'][1]" position="before">
+                     not expression-evaluable.
+
+                     Scoped to group[@name='opportunity_partner'] specifically (2026-09-14
+                     fix) - stock's own form has TWO partner_id fields (the other one lives in
+                     group[@name='lead_partner'], invisible="type == 'opportunity'" - i.e.
+                     never shown at all, since every lead in this module is always type
+                     'opportunity'). The old //field[@name='partner_id'][1]/[no index] xpaths
+                     were ambiguous across both and landed this whole customization - Company
+                     rename, required, and the tech-only swap - inside the ALWAYS-INVISIBLE
+                     group, so none of it ever actually rendered. -->
+                <xpath expr="//group[@name='opportunity_partner']/field[@name='partner_id']" position="before">
                     <field name="x_can_create_partner" invisible="1"/>
                 </xpath>
-                <xpath expr="//field[@name='partner_id']" position="attributes">
+                <xpath expr="//group[@name='opportunity_partner']/field[@name='partner_id']" position="attributes">
                     <attribute name="invisible" add="x_team_bu_category == 'tech' and not x_can_create_partner" separator="or"/>
+                    <!-- Renamed Contact -> Company and made mandatory (client instruction,
+                         2026-09-14). Applied to both partner_id tags below, toggled by
+                         x_team_bu_category == 'tech' - only one is ever visible at a time,
+                         but both need it since either could be the one on screen. -->
+                    <attribute name="string">Company</attribute>
+                    <attribute name="required">1</attribute>
                 </xpath>
-                <xpath expr="//field[@name='partner_id'][1]" position="after">
-                    <field name="partner_id" widget="res_partner_many2one"
+                <xpath expr="//group[@name='opportunity_partner']/field[@name='partner_id']" position="after">
+                    <field name="partner_id" widget="res_partner_many2one" string="Company" required="1"
                            options="{'no_create': True, 'no_create_edit': True}"
                            invisible="not (x_team_bu_category == 'tech' and not x_can_create_partner)"/>
                 </xpath>

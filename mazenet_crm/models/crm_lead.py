@@ -219,6 +219,24 @@ class CrmLead(models.Model):
         own_team = self._mz_user_own_team()
         return own_team.id if own_team else False
 
+    @api.depends('team_id', 'type')
+    def _compute_stage_id(self):
+        """Stock's own version (addons/crm/models/crm_lead.py) always assigns a
+        fallback stage via _stage_find even with NO team_id at all - _stage_find
+        with team_id=False still matches whatever globally-unscoped (or just the
+        first) crm.stage row exists, misleadingly showing a real Stage on the
+        statusbar for a lead that doesn't actually belong to any team's pipeline
+        yet. CTO/Admin's own team_id now genuinely starts (and can stay) empty
+        (2026-09-12/2026-09-14 client instruction: "no pipeline for CTO, keep
+        empty") - stage_id should match that until a real team is actually
+        picked, same as team_id itself already does. Only skips the stock
+        fallback for leads with NO team_id; every other lead behaves exactly as
+        stock CRM already did."""
+        with_team = self.filtered('team_id')
+        super(CrmLead, with_team)._compute_stage_id()
+        for lead in self - with_team:
+            lead.stage_id = lead.stage_id or False
+
     @api.model
     def _mz_team_entry_stage(self, team):
         """The first (lowest-sequence) real stage scoped to `team` - used to advance a
@@ -342,6 +360,18 @@ class CrmLead(models.Model):
                 or user.has_group('mazenet_access_rights.group_mzr_md')
             ):
                 target_team_id = self.sudo()._mz_resolve_stage_team_id_from_domain(domain)
+                if not target_team_id and user.has_group('mazenet_access_rights.group_mzr_cto_admin'):
+                    # CTO/Admin: no fallback team for the "All" view for now
+                    # (client instruction, 2026-09-14, "no pipeline for CTO, keep
+                    # empty") - CTO owns no team of their own, and defaulting to
+                    # DMT's stage columns implied they were a DMT member, the
+                    # same reasoning that already stopped team_id/x_assign_type
+                    # from defaulting to DMT for them elsewhere in this file.
+                    # Real records still group by their own actual stage
+                    # regardless (group_expand can't suppress that) - this only
+                    # drops the synthetic EMPTY DMT columns. MD keeps the DMT
+                    # fallback below untouched - not part of this instruction.
+                    return self.env['crm.stage']
                 if not target_team_id:
                     dmt_team = self.env.ref('mazenet_crm.team_dmt', raise_if_not_found=False)
                     target_team_id = dmt_team.id if dmt_team else False
@@ -390,7 +420,14 @@ class CrmLead(models.Model):
         return super()._read_group(domain, groupby, aggregates, having, offset, limit, order)
 
     def _get_team_id_domain(self):
-        return [("id", "not in", self.env.user.crm_team_ids.ids)]
+        """Exclude the lead's OWN current team from its own picker (2026-09-15 fix:
+        "when transfering lead to other team from dmt in dropdown dmt team also
+        showing, which should not happen" - you can't "transfer" a lead to the team
+        it's already sitting on). Previously excluded self.env.user.crm_team_ids -
+        stock's own team-membership field, which this project never populates (see
+        _mz_user_own_team's own docstring: "demo data never populates here") - so
+        that domain silently excluded nothing, ever, for anyone."""
+        return [("id", "not in", self.team_id.ids)]
 
 
     team_id = fields.Many2one(
@@ -583,6 +620,31 @@ class CrmLead(models.Model):
              "unlike x_assign_type_no_internal (a real 2-way choice), this one's whole "
              "option list is just the single value it's already forced to."
     )
+    x_hide_team_option = fields.Boolean(
+        compute='_compute_x_assignable_user_ids',
+        string="Hide Team Option",
+        help="True for a regular team's Agent/ATL/TL/Manager - anyone who is NOT DMT, "
+             "CTO/Admin or MD (2026-09-15, client instruction: 'team radio button hide "
+             "for all teams except dmt/md/cto'). The 'Team' option only ever meant "
+             "cross-team routing, which _mz_user_can_use_assign_radio already restricts "
+             "to DMT/CTO/Admin/MD - a regular team member's radio was already readonly-"
+             "locked to Self either way, but 'Team' (and 'Internal', neither ever usable "
+             "for them) still showed as a visible-but-disabled option, which just looked "
+             "like a broken/pointless control. Drives x_assign_type_no_team being shown "
+             "instead of the real x_assign_type."
+    )
+    x_assign_type_no_team = fields.Selection(
+        [('self', 'Self'), ('internal', 'Internal')],
+        string="Assign Type", compute='_compute_x_assign_type_no_team',
+        inverse='_inverse_x_assign_type_no_team',
+        help="Third mirror of x_assign_type (see x_assign_type_no_internal), shown INSTEAD "
+             "of the real one for a regular team's Agent/ATL/TL/Manager - see "
+             "x_hide_team_option. 'Internal' still shows (matches DMT/CTO/Admin/MD's own "
+             "field having it too) even though the radio itself stays readonly-locked to "
+             "Self for them regardless - x_can_assign_salesperson_direct is the SEPARATE, "
+             "real mechanism an ATL/TL/Manager actually uses to assign within their own "
+             "team, straight on the Salesperson field, not through this radio at all."
+    )
 
     @api.depends('x_assign_type')
     def _compute_x_assign_type_no_internal(self):
@@ -595,6 +657,28 @@ class CrmLead(models.Model):
     def _compute_x_assign_type_internal_only(self):
         for lead in self:
             lead.x_assign_type_internal_only = 'internal'
+
+    @api.depends('x_assign_type')
+    def _compute_x_assign_type_no_team(self):
+        for lead in self:
+            lead.x_assign_type_no_team = (
+                lead.x_assign_type if lead.x_assign_type != 'team' else 'self'
+            )
+
+    def _inverse_x_assign_type_no_team(self):
+        """Guarded on x_hide_team_option too, same reasoning as
+        _inverse_x_assign_type_internal_only's own guard on x_show_internal_only -
+        this field's compute always returns a value regardless of whether it's
+        actually the visible one, and the web client still dirty-tracks/saves
+        editable computed fields that are merely invisible. Without this guard a
+        DMT/CTO/Admin/MD lead (where x_assign_type is the real, visible field)
+        would get silently stomped back through this mirror's own narrower
+        Self/Internal-only view of the value."""
+        for lead in self:
+            if not lead.x_hide_team_option:
+                continue
+            if lead.x_assign_type != lead.x_assign_type_no_team:
+                lead.x_assign_type = lead.x_assign_type_no_team
 
     def _inverse_x_assign_type_internal_only(self):
         """Guarded on x_show_internal_only too (2026-09-12 fix), not just the
@@ -829,8 +913,23 @@ class CrmLead(models.Model):
         can_beyond_self = can_use_radio and (user_is_dmt or is_cto_admin or (not is_md and tier in ('atl', 'tl', 'manager')))
         is_cto_or_md = is_md or is_cto_admin
         for lead in self:
-            lead.x_can_use_assign_radio = can_use_radio
-            lead.x_can_assign_beyond_self = can_beyond_self
+            # A regular team's own ATL/TL/Manager may use 'Internal' within their OWN
+            # team (2026-09-15, client instruction: "internal radio button should be
+            # selecteable in order to assign salesperson inside their team, that is
+            # only for managers, tl's and atl's") - partially reverses the 2026-09-08
+            # "Team/Internal is DMT+CTO/Admin+MD only" rule, but ONLY for 'Internal'
+            # and ONLY on a lead already on their own team (most commonly an unowned
+            # lead just handed off from DMT). 'Team' itself (cross-team routing)
+            # stays DMT/CTO/Admin/MD-only - x_hide_team_option below still hides it
+            # for them regardless of this. Computed per-lead (depends on lead.team_id
+            # matching the user's own team) - moved ahead of x_can_use_assign_radio/
+            # x_can_assign_beyond_self below so both can fold it in.
+            can_assign_within_own_team = bool(
+                tier in ('atl', 'tl', 'manager') and lead.team_id
+                and self._mz_user_own_team(user) == lead.team_id
+            )
+            lead.x_can_use_assign_radio = can_use_radio or can_assign_within_own_team
+            lead.x_can_assign_beyond_self = can_beyond_self or can_assign_within_own_team
             # CTO/Admin viewing an EXISTING lead owned by someone else (typically on
             # another team): the only sensible action is 'Internal' - reassigning
             # within that lead's own team hierarchy. Self/Team make no sense on a
@@ -853,21 +952,7 @@ class CrmLead(models.Model):
             lead.x_hide_salesperson = hide_for_own_lead or hide_for_dmt_team
             lead.x_hide_internal_option = hide_for_own_lead
             lead.x_show_internal_only = show_internal_only
-            # A regular team's own ATL/TL/Manager reassigning the SALESPERSON on an
-            # already-team-owned lead (2026-09-12 fix): can_beyond_self/can_use_radio
-            # gate the CROSS-TEAM routing radio (DMT/CTO/Admin/MD only, per
-            # _mz_user_can_use_assign_radio) - they were ALSO wrongly gating this pool,
-            # leaving a plain team TL with an empty Salesperson dropdown on a lead
-            # already sitting in their own team (hit live 2026-09-12, staging: a CTO
-            # handed a lead to MIS via 'Team', and MIS's own TL then couldn't pick a
-            # salesperson for it at all). _mz_can_edit_owned already lets an ATL/TL/
-            # Manager edit any unowned (or peer-owned) lead within their own team
-            # regardless of this radio - the assignable pool needs to match that same
-            # permission, independently of can_beyond_self.
-            can_assign_within_own_team = bool(
-                tier in ('atl', 'tl', 'manager') and lead.team_id
-                and self._mz_user_own_team(user) == lead.team_id
-            )
+            lead.x_hide_team_option = not is_cto_or_md and not user_is_dmt
             lead.x_can_assign_salesperson_direct = can_assign_within_own_team
             if not can_beyond_self and not can_assign_within_own_team:
                 lead.x_assignable_user_ids = False
@@ -1243,6 +1328,7 @@ class CrmLead(models.Model):
     x_employee_count = fields.Integer(string="Employee Count")
     x_target_team_id = fields.Many2one(
         'crm.team', string="Target Business Unit",
+        domain=_get_team_id_domain,
         help="The BU this DMT lead is being transferred to."
     )
     x_transfer_notes = fields.Text(string="Transfer Notes / Reason")
@@ -1331,7 +1417,19 @@ class CrmLead(models.Model):
         team member skips the tier gate entirely and gets the full team roster as
         their pool for both 'team' and 'internal') and its 'internal' pool for
         everyone else (_mz_team_subordinate_group_users) - keep all three in
-        sync, or a UI selection could get rejected on save."""
+        sync, or a UI selection could get rejected on save.
+
+        Own-team ATL/TL/Manager exception (2026-09-15, client instruction:
+        "internal radio button should be selecteable in order to assign
+        salesperson inside their team, that is only for managers, tl's and
+        atl's") - partially reverses the 2026-09-08 "Team/Internal is DMT+CTO/
+        Admin+MD only" rule, but ONLY for 'Internal', and ONLY within their own
+        team: an ATL/TL/Manager may now use Internal to assign a salesperson on
+        a lead that's already on their OWN team (most commonly an unowned lead
+        just handed off from DMT), without needing x_can_use_assign_radio at
+        all. 'Team' itself (cross-team routing) stays DMT/CTO/Admin/MD-only -
+        unaffected. Checked per-record below (team_id might differ per lead in
+        a bulk write, though in practice this is always a single lead)."""
         assign_type = vals.get('x_assign_type')
         if assign_type not in ('team', 'internal') or self.env.su:
             return
@@ -1340,25 +1438,29 @@ class CrmLead(models.Model):
         can_use_radio = self._mz_user_can_use_assign_radio(user)
         is_cto_admin = user.has_group('mazenet_access_rights.group_mzr_cto_admin')
         tier, _chain = self._mz_user_tier_chain(user)
+        own_team = self._mz_user_own_team(user)
         # is_cto_admin added 2026-09-12 alongside _compute_x_assignable_user_ids' own
         # can_beyond_self - CTO/Admin belong to no crm.team of their own so tier is
         # always None for them, which used to fail this check even though the UI
         # error message below (and _mz_user_can_use_assign_radio) already claimed to
         # allow it. MD is deliberately NOT included - still Self-only everywhere else.
-        if not can_use_radio or not (user_is_dmt or is_cto_admin or tier in ('atl', 'tl', 'manager')):
-            raise AccessError(_(
-                "Only DMT team members and CTO/Admin can assign to a team or assign "
-                "internally. Everyone else - including MD - can only assign to "
-                "themselves."))
-
-        if not vals.get('user_id'):
-            return
-        # Mirrors _compute_x_assignable_user_ids' pool for 'team'/'internal': records
-        # being written each keep their own team_id unless vals overrides it; create()
-        # calls this before any record exists, so there's nothing to fall back to but
-        # vals itself.
         for record in (self or [self.env['crm.lead']]):
             team_id = vals['team_id'] if 'team_id' in vals else (record.team_id.id if record else False)
+            own_team_internal_ok = bool(
+                assign_type == 'internal' and tier in ('atl', 'tl', 'manager')
+                and own_team and team_id == own_team.id
+            )
+            if not own_team_internal_ok and (
+                not can_use_radio or not (user_is_dmt or is_cto_admin or tier in ('atl', 'tl', 'manager'))
+            ):
+                raise AccessError(_(
+                    "Only DMT team members, CTO/Admin, or an ATL/TL/Manager on this "
+                    "lead's own team (Internal only) can assign to a team or assign "
+                    "internally. Everyone else - including MD - can only assign to "
+                    "themselves."))
+
+            if not vals.get('user_id'):
+                continue
             team = self.env['crm.team'].browse(team_id) if team_id else self.env['crm.team']
             if user_is_dmt or is_cto_admin:
                 pool_ids = team.member_ids.ids
@@ -1771,6 +1873,29 @@ class CrmLead(models.Model):
                     by_stage[entry_stage.id] |= lead
             for entry_stage_id, leads in by_stage.items():
                 leads.sudo().write({'stage_id': entry_stage_id})
+
+            # Post-Handoff Assign-Type Reset (2026-09-15 fix: "when selecting self
+            # radio button salesperson automatically should be as logged in user" -
+            # reported broken for a regular team's own TL/ATL/Manager on a lead just
+            # handed off to them). The real x_assign_type stays 'team' after a
+            # handoff (that's what triggered the move) - but 'Team' isn't even a
+            # selectable option once the lead lands on a REGULAR (non-DMT) team;
+            # x_assign_type_no_team's own compute maps 'team' to 'self' for DISPLAY
+            # ONLY, so the radio visually shows Self already selected without the
+            # viewer ever having to click it - meaning its inverse (the thing that
+            # actually triggers assign_salesperson's onchange and sets user_id) never
+            # fires, and Salesperson silently stays unset instead of auto-filling to
+            # whoever opens it. Reset the REAL x_assign_type to 'self' here instead -
+            # a one-time handoff convenience, same as the stage advance just above -
+            # so the stored value actually matches what's displayed from the start.
+            # DMT is exempt: a lead moving TO DMT still shows the full 3-option field
+            # there, so no display/reality mismatch exists in that direction.
+            reset_dmt_team = self.env.ref('mazenet_crm.team_dmt', raise_if_not_found=False)
+            to_reset_assign_type = moved.filtered(
+                lambda l: l.x_assign_type == 'team' and l.team_id != reset_dmt_team
+            )
+            if to_reset_assign_type:
+                to_reset_assign_type.sudo().write({'x_assign_type': 'self'})
 
         # DMT Details Snapshot (client instruction, 2026-09-13): the instant a
         # DMT-originated lead's team_id first moves OFF DMT, freeze a copy of DMT's
