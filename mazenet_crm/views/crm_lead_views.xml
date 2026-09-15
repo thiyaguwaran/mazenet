@@ -74,9 +74,19 @@
                     <field name="x_assign_type_no_team" widget="radio" options="{'horizontal': true}"
                            readonly="not x_can_use_assign_radio"
                            invisible="not x_hide_team_option"/>
+                    <!-- Sales Team hidden entirely for Self/Internal (2026-09-15, client
+                         instruction: "if internal radio or self selected, salez team
+                         field should be hidden") - only 'Team' actually means picking a
+                         DIFFERENT team; for Self/Internal, team_id is already fixed to
+                         wherever the lead already sits (unchanged by either), so there's
+                         nothing for the user to see or fill in. required= narrowed to
+                         match - it can no longer stay "required whenever not self" once
+                         Internal also hides the field, or a required-but-invisible field
+                         would block saving with nothing the user could actually fill in. -->
                     <field name="team_id"
-                           readonly="x_content_readonly_for_me or x_assign_type == 'self'"
-                           required="x_assign_type != 'self'"
+                           readonly="x_content_readonly_for_me"
+                           required="x_assign_type == 'team'"
+                           invisible="x_assign_type != 'team'"
                            options="{'no_open': True}"/>
                     <field name="x_can_use_assign_radio" invisible="1"/>
                     <field name="x_can_assign_beyond_self" invisible="1"/>
@@ -120,8 +130,18 @@
                 <xpath expr="//field[@name='stage_id']" position="attributes">
                     <attribute name="readonly">won_status == 'lost' or not active or x_content_readonly_for_me</attribute>
                 </xpath>
+                <!-- Won/Lost hidden for DMT (2026-09-15, client instruction) - DMT was
+                     deliberately built with NO Won/Lost stage at all (it routes leads to
+                     other teams, never closes them itself). Stock CRM's "Won" button
+                     looks for a stage with is_won=True on the CURRENT team and silently
+                     sets stage_id to EMPTY when none exists (addons/crm's
+                     action_set_won: `next(..., won_stages)` on an empty won_stages
+                     recordset returns that same empty recordset, whose .id is False) -
+                     hit live, a DMT lead marked Won ended up with a null stage_id,
+                     invisible in every kanban column. x_team_bu_category is already
+                     loaded elsewhere on this form (Pipeline Fields tab). -->
                 <xpath expr="//button[@name='action_set_won_rainbowman']" position="attributes">
-                    <attribute name="invisible" add="x_content_readonly_for_me" separator="or"/>
+                    <attribute name="invisible" add="x_content_readonly_for_me or x_team_bu_category == 'dmt'" separator="or"/>
                 </xpath>
                 <xpath expr="//button[@name='%(crm.action_crm_lead2opportunity_partner)d']" position="attributes">
                     <attribute name="invisible" add="x_content_readonly_for_me" separator="or"/>
@@ -130,7 +150,7 @@
                     <attribute name="invisible" add="x_content_readonly_for_me" separator="or"/>
                 </xpath>
                 <xpath expr="//button[@name='%(crm.crm_lead_lost_action)d']" position="attributes">
-                    <attribute name="invisible" add="x_content_readonly_for_me" separator="or"/>
+                    <attribute name="invisible" add="x_content_readonly_for_me or x_team_bu_category == 'dmt'" separator="or"/>
                 </xpath>
 
                 <xpath expr="//field[@name='won_status']" position="before">

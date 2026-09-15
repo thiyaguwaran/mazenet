@@ -254,6 +254,27 @@ class CrmLead(models.Model):
             [('team_ids', 'in', team.id)], order='sequence asc', limit=1
         )
 
+    def action_set_lost(self, **additional_values):
+        """Stock's own version (addons/crm/models/crm_lead.py) only sets active=False
+        + probability=0 - it never touches stage_id at all, leaving a Lost lead
+        parked on whatever stage it happened to be on (hit live 2026-09-15: a
+        Tally lead marked Lost stayed on "New Lead", invisible under the "Won /
+        Lost" stage the team actually expected to find it in). This module's OWN
+        stage design already documents Lost as belonging on that same combined
+        stage as Won (data/stages.xml's own comments, e.g. Tally's: "Lost is NOT
+        its own stage - handled via active=False + lost_reason on the Won/Lost
+        stage") - so move it there too, mirroring stock's own action_set_won
+        stage-finding logic. sudo() + skip the M3 gate deliberately: closing a
+        lead as Lost is exactly the moment its earlier-stage mandatory fields may
+        never get filled in, and shouldn't block the close. Teams with no is_won
+        stage at all (DMT) are unaffected - nothing to move to."""
+        res = super().action_set_lost(**additional_values)
+        for lead in self:
+            won_stage = lead._stage_find(domain=[('is_won', '=', True)], limit=1)
+            if won_stage and lead.stage_id != won_stage:
+                lead.sudo().write({'stage_id': won_stage.id})
+        return res
+
     def _mz_resolve_stage_team_id_from_domain(self, domain):
         """Sales Team AND Salesperson search panel selections should both drive
         the Pipeline kanban's stage columns the same way (2026-09-04: "the same
@@ -360,21 +381,19 @@ class CrmLead(models.Model):
                 or user.has_group('mazenet_access_rights.group_mzr_md')
             ):
                 target_team_id = self.sudo()._mz_resolve_stage_team_id_from_domain(domain)
-                if not target_team_id and user.has_group('mazenet_access_rights.group_mzr_cto_admin'):
-                    # CTO/Admin: no fallback team for the "All" view for now
-                    # (client instruction, 2026-09-14, "no pipeline for CTO, keep
-                    # empty") - CTO owns no team of their own, and defaulting to
-                    # DMT's stage columns implied they were a DMT member, the
-                    # same reasoning that already stopped team_id/x_assign_type
-                    # from defaulting to DMT for them elsewhere in this file.
-                    # Real records still group by their own actual stage
-                    # regardless (group_expand can't suppress that) - this only
-                    # drops the synthetic EMPTY DMT columns. MD keeps the DMT
-                    # fallback below untouched - not part of this instruction.
-                    return self.env['crm.stage']
                 if not target_team_id:
-                    dmt_team = self.env.ref('mazenet_crm.team_dmt', raise_if_not_found=False)
-                    target_team_id = dmt_team.id if dmt_team else False
+                    # CTO/Admin and MD: no fallback team for the "All" view for now
+                    # (client instruction, 2026-09-14 for CTO, extended 2026-09-15
+                    # to MD: "for cto we removed pipeline right, same remove
+                    # pipeline stages stage_id for md as well") - neither owns a
+                    # team of their own, and defaulting to DMT's stage columns
+                    # implied they were a DMT member, the same reasoning that
+                    # already stopped team_id/x_assign_type from defaulting to
+                    # DMT for them elsewhere in this file. Real records still
+                    # group by their own actual stage regardless (group_expand
+                    # can't suppress that) - this only drops the synthetic EMPTY
+                    # DMT columns.
+                    return self.env['crm.stage']
             else:
                 target_team_id = self._mz_user_own_team(user).id or None
             if target_team_id:
