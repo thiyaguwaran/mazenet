@@ -1325,13 +1325,13 @@ class CrmLead(models.Model):
         for lead in self:
             if lead.team_id.x_bu_category not in MZ_FORMAT_VALIDATED_BU_CATEGORIES:
                 continue
-            if lead.phone:
-                cleaned = re.sub(r'[\s\-().]', '', lead.phone)
-                if not MZ_PHONE_RE.fullmatch(cleaned):
-                    raise ValidationError(_(
-                        "'%(lead)s': Contact Number must be a valid 10-digit number "
-                        "(got '%(value)s')."
-                    ) % {'lead': lead.name, 'value': lead.phone})
+            # 10-digit phone format check removed for now (client instruction,
+            # 2026-09-16) - the phone widget's own auto-formatting (removed
+            # 2026-09-15, see the "Contact Number" field's own view comment) was
+            # only ONE way a number could end up not matching this pattern; rather
+            # than keep chasing every input path that could produce a differently-
+            # formatted-but-legitimate number, the format check itself is dropped.
+            # Email format validation is unaffected, still enforced below.
             if lead.email_from and not MZ_EMAIL_RE.fullmatch(lead.email_from.strip()):
                 raise ValidationError(_(
                     "'%(lead)s': Email must be a valid email address (got '%(value)s')."
