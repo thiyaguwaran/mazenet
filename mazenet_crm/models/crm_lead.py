@@ -154,6 +154,19 @@ class CrmLead(models.Model):
              "(not a plain compute) specifically so it CAN be used to order a kanban at all."
     )
 
+    is_show_redlock_btn = fields.Boolean('show red lock btn',
+                       default=False,copy=False,store=False,
+                      compute="_compute_show_redlock",) #note:keep store flse for dynamic condition show btn
+
+    def _compute_show_redlock(self):
+        current_user = self.env.user
+        for lead in self:
+            if current_user:
+                lead.is_show_redlock_btn = lead.team_id.user_id == current_user or current_user.has_groups(
+                    'mazenet_access_rights.group_mzr_cto_admin,mazenet_access_rights.group_mzr_md')
+            # lead.is_show_redlock_btn = lead.team_id.user_id == current_user
+
+
     @api.model
     def _mz_user_own_team(self, user=None):
         """The crm.team `user` is a direct member of, resolved from

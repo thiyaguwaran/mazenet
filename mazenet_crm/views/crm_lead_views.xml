@@ -10,8 +10,9 @@
                 <!-- Release button lives in the header, next to the (now hidden-while-locked)
                      stage statusbar and Won/Lost/Convert buttons - see below. -->
                 <xpath expr="//header" position="inside">
+                    <field name="is_show_redlock_btn" invisible="1"/>
                     <button name="action_release_lock" string="Release RED Lock" type="object"
-                            class="btn-danger" invisible="not x_is_locked"
+                            class="btn-danger" invisible="not is_show_redlock_btn"
                             confirm="Release the RED lock on this lead? It will become editable again."/>
                     <!-- Spin-off: same customer, a new/different requirement, routed to
                          another team - opens mz.lead.spinoff.wizard pre-filled with this
