@@ -632,6 +632,582 @@
                                 <field name="x_deviation_days"/>
                             </group>
                         </div>
+
+                        <!-- Corporate Pipeline: identical field layout for all 3 teams (Hunter,
+                             Account Manager, Corp Training Delivery) - only x_team_bu_category
+                             differs, so this block is copy-pasted 3x rather than shared, matching
+                             how every other BU above gets its own div. Stage 7 "Project State"
+                             includes the old Stage 7 "Training Status" fields folded in per
+                             client instruction (2026-09-19) - see data/stages.xml. -->
+                        <div invisible="x_team_bu_category != 'corp_hunter'">
+                            <group string="Stage 1 - New Lead / Source">
+                                <label for="source_id"/>
+                                <div class="o_row">
+                                    <field name="source_id" domain="[('team_ids', 'in', team_id)]"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',source_id,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <field name="referred" string="Source Reference (Referral)"/>
+                            </group>
+                            <group string="Stage 2 - Lead Validation">
+                                <label for="x_client_expectations_attachment_ids"/>
+                                <div class="o_row">
+                                    <field name="x_client_expectations_attachment_ids" widget="many2many_binary"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_client_expectations_attachment_ids,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_product_service"/>
+                                <div class="o_row">
+                                    <field name="x_product_service"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_product_service,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_target_audience"/>
+                                <div class="o_row">
+                                    <field name="x_target_audience"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_target_audience,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_lead_timelines_days"/>
+                                <div class="o_row">
+                                    <field name="x_lead_timelines_days"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_lead_timelines_days,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_deliverables"/>
+                                <div class="o_row">
+                                    <field name="x_deliverables"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_deliverables,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                            </group>
+                            <group string="Stage 3 - Deck Presentation">
+                                <label for="x_presentation_completed_datetime"/>
+                                <div class="o_row">
+                                    <field name="x_presentation_completed_datetime"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_presentation_completed_datetime,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                            </group>
+                            <group string="Stage 4 - Proposal &amp; Follow-up's">
+                                <label for="x_quote_document_ids"/>
+                                <div class="o_row">
+                                    <field name="x_quote_document_ids" widget="many2many_binary" string="Quote Shared (Tagged Quotation)"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_quote_document_ids,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <div class="text-muted" colspan="2">
+                                    No colour timer / RED lock in this stage - Corporate is not one of
+                                    the 4 BUs with the colour spec (DMT, Tally, Technology, TNH).
+                                </div>
+                            </group>
+                            <group string="Stage 5 - Evaluation">
+                                <label for="x_training_content_eval_start_date"/>
+                                <div class="o_row">
+                                    <field name="x_training_content_eval_start_date"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_training_content_eval_start_date,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <field name="x_training_content_preapproved"/>
+                                <label for="x_training_content_finalized_date"/>
+                                <div class="o_row">
+                                    <field name="x_training_content_finalized_date" invisible="x_training_content_preapproved"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="x_training_content_preapproved or not (x_current_stage_gate_fields and ',x_training_content_finalized_date,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_trainer_eval_start_date"/>
+                                <div class="o_row">
+                                    <field name="x_trainer_eval_start_date"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_trainer_eval_start_date,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <field name="x_trainer_mazenet_validated"/>
+                                <label for="x_trainer_eval_finalized_date"/>
+                                <div class="o_row">
+                                    <field name="x_trainer_eval_finalized_date" invisible="x_trainer_mazenet_validated"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="x_trainer_mazenet_validated or not (x_current_stage_gate_fields and ',x_trainer_eval_finalized_date,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_training_dates_finalized"/>
+                                <div class="o_row">
+                                    <field name="x_training_dates_finalized"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_training_dates_finalized,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                            </group>
+                            <group string="Stage 6 - Won / Lost">
+                                <label for="x_po_received_date"/>
+                                <div class="o_row">
+                                    <field name="x_po_received_date"/>
+                                </div>
+                                <field name="x_po_received_attachment_ids" widget="many2many_binary"/>
+                                <label for="x_po_issued_trainer_date"/>
+                                <div class="o_row">
+                                    <field name="x_po_issued_trainer_date"/>
+                                </div>
+                                <field name="x_po_issued_trainer_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_lost_reason_text"/>
+                                <div class="text-muted" colspan="2">
+                                    Won is blocked (action_set_won) unless Quote Shared above AND both PO
+                                    documents here are present - the project's only three-document gate.
+                                </div>
+                            </group>
+                            <group string="Stage 7 - Project State">
+                                <field name="x_training_commenced_date"/>
+                                <field name="x_training_commenced_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_training_completed_date"/>
+                                <field name="x_training_completed_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_project_start_date"/>
+                                <field name="x_project_start_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_project_completed_date"/>
+                                <field name="x_project_completed_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_workorder_completion_date"/>
+                                <field name="x_deviation_days"/>
+                            </group>
+                        </div>
+
+                        <div invisible="x_team_bu_category != 'corp_am'">
+                            <group string="Stage 1 - New Lead / Source">
+                                <label for="source_id"/>
+                                <div class="o_row">
+                                    <field name="source_id" domain="[('team_ids', 'in', team_id)]"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',source_id,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <field name="referred" string="Source Reference (Referral)"/>
+                            </group>
+                            <group string="Stage 2 - Lead Validation">
+                                <label for="x_client_expectations_attachment_ids"/>
+                                <div class="o_row">
+                                    <field name="x_client_expectations_attachment_ids" widget="many2many_binary"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_client_expectations_attachment_ids,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_product_service"/>
+                                <div class="o_row">
+                                    <field name="x_product_service"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_product_service,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_target_audience"/>
+                                <div class="o_row">
+                                    <field name="x_target_audience"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_target_audience,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_lead_timelines_days"/>
+                                <div class="o_row">
+                                    <field name="x_lead_timelines_days"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_lead_timelines_days,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_deliverables"/>
+                                <div class="o_row">
+                                    <field name="x_deliverables"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_deliverables,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                            </group>
+                            <group string="Stage 3 - Deck Presentation">
+                                <label for="x_presentation_completed_datetime"/>
+                                <div class="o_row">
+                                    <field name="x_presentation_completed_datetime"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_presentation_completed_datetime,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                            </group>
+                            <group string="Stage 4 - Proposal &amp; Follow-up's">
+                                <label for="x_quote_document_ids"/>
+                                <div class="o_row">
+                                    <field name="x_quote_document_ids" widget="many2many_binary" string="Quote Shared (Tagged Quotation)"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_quote_document_ids,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <div class="text-muted" colspan="2">
+                                    No colour timer / RED lock in this stage - Corporate is not one of
+                                    the 4 BUs with the colour spec (DMT, Tally, Technology, TNH).
+                                </div>
+                            </group>
+                            <group string="Stage 5 - Evaluation">
+                                <label for="x_training_content_eval_start_date"/>
+                                <div class="o_row">
+                                    <field name="x_training_content_eval_start_date"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_training_content_eval_start_date,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <field name="x_training_content_preapproved"/>
+                                <label for="x_training_content_finalized_date"/>
+                                <div class="o_row">
+                                    <field name="x_training_content_finalized_date" invisible="x_training_content_preapproved"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="x_training_content_preapproved or not (x_current_stage_gate_fields and ',x_training_content_finalized_date,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_trainer_eval_start_date"/>
+                                <div class="o_row">
+                                    <field name="x_trainer_eval_start_date"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_trainer_eval_start_date,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <field name="x_trainer_mazenet_validated"/>
+                                <label for="x_trainer_eval_finalized_date"/>
+                                <div class="o_row">
+                                    <field name="x_trainer_eval_finalized_date" invisible="x_trainer_mazenet_validated"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="x_trainer_mazenet_validated or not (x_current_stage_gate_fields and ',x_trainer_eval_finalized_date,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_training_dates_finalized"/>
+                                <div class="o_row">
+                                    <field name="x_training_dates_finalized"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_training_dates_finalized,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                            </group>
+                            <group string="Stage 6 - Won / Lost">
+                                <label for="x_po_received_date"/>
+                                <div class="o_row">
+                                    <field name="x_po_received_date"/>
+                                </div>
+                                <field name="x_po_received_attachment_ids" widget="many2many_binary"/>
+                                <label for="x_po_issued_trainer_date"/>
+                                <div class="o_row">
+                                    <field name="x_po_issued_trainer_date"/>
+                                </div>
+                                <field name="x_po_issued_trainer_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_lost_reason_text"/>
+                                <div class="text-muted" colspan="2">
+                                    Won is blocked (action_set_won) unless Quote Shared above AND both PO
+                                    documents here are present - the project's only three-document gate.
+                                </div>
+                            </group>
+                            <group string="Stage 7 - Project State">
+                                <field name="x_training_commenced_date"/>
+                                <field name="x_training_commenced_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_training_completed_date"/>
+                                <field name="x_training_completed_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_project_start_date"/>
+                                <field name="x_project_start_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_project_completed_date"/>
+                                <field name="x_project_completed_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_workorder_completion_date"/>
+                                <field name="x_deviation_days"/>
+                            </group>
+                        </div>
+
+                        <div invisible="x_team_bu_category != 'corp_training'">
+                            <group string="Stage 1 - New Lead / Source">
+                                <label for="source_id"/>
+                                <div class="o_row">
+                                    <field name="source_id" domain="[('team_ids', 'in', team_id)]"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',source_id,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <field name="referred" string="Source Reference (Referral)"/>
+                            </group>
+                            <group string="Stage 2 - Lead Validation">
+                                <label for="x_client_expectations_attachment_ids"/>
+                                <div class="o_row">
+                                    <field name="x_client_expectations_attachment_ids" widget="many2many_binary"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_client_expectations_attachment_ids,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_product_service"/>
+                                <div class="o_row">
+                                    <field name="x_product_service"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_product_service,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_target_audience"/>
+                                <div class="o_row">
+                                    <field name="x_target_audience"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_target_audience,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_lead_timelines_days"/>
+                                <div class="o_row">
+                                    <field name="x_lead_timelines_days"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_lead_timelines_days,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_deliverables"/>
+                                <div class="o_row">
+                                    <field name="x_deliverables"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_deliverables,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                            </group>
+                            <group string="Stage 3 - Deck Presentation">
+                                <label for="x_presentation_completed_datetime"/>
+                                <div class="o_row">
+                                    <field name="x_presentation_completed_datetime"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_presentation_completed_datetime,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                            </group>
+                            <group string="Stage 4 - Proposal &amp; Follow-up's">
+                                <label for="x_quote_document_ids"/>
+                                <div class="o_row">
+                                    <field name="x_quote_document_ids" widget="many2many_binary" string="Quote Shared (Tagged Quotation)"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_quote_document_ids,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <div class="text-muted" colspan="2">
+                                    No colour timer / RED lock in this stage - Corporate is not one of
+                                    the 4 BUs with the colour spec (DMT, Tally, Technology, TNH).
+                                </div>
+                            </group>
+                            <group string="Stage 5 - Evaluation">
+                                <label for="x_training_content_eval_start_date"/>
+                                <div class="o_row">
+                                    <field name="x_training_content_eval_start_date"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_training_content_eval_start_date,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <field name="x_training_content_preapproved"/>
+                                <label for="x_training_content_finalized_date"/>
+                                <div class="o_row">
+                                    <field name="x_training_content_finalized_date" invisible="x_training_content_preapproved"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="x_training_content_preapproved or not (x_current_stage_gate_fields and ',x_training_content_finalized_date,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_trainer_eval_start_date"/>
+                                <div class="o_row">
+                                    <field name="x_trainer_eval_start_date"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_trainer_eval_start_date,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <field name="x_trainer_mazenet_validated"/>
+                                <label for="x_trainer_eval_finalized_date"/>
+                                <div class="o_row">
+                                    <field name="x_trainer_eval_finalized_date" invisible="x_trainer_mazenet_validated"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="x_trainer_mazenet_validated or not (x_current_stage_gate_fields and ',x_trainer_eval_finalized_date,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_training_dates_finalized"/>
+                                <div class="o_row">
+                                    <field name="x_training_dates_finalized"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_training_dates_finalized,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                            </group>
+                            <group string="Stage 6 - Won / Lost">
+                                <label for="x_po_received_date"/>
+                                <div class="o_row">
+                                    <field name="x_po_received_date"/>
+                                </div>
+                                <field name="x_po_received_attachment_ids" widget="many2many_binary"/>
+                                <label for="x_po_issued_trainer_date"/>
+                                <div class="o_row">
+                                    <field name="x_po_issued_trainer_date"/>
+                                </div>
+                                <field name="x_po_issued_trainer_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_lost_reason_text"/>
+                                <div class="text-muted" colspan="2">
+                                    Won is blocked (action_set_won) unless Quote Shared above AND both PO
+                                    documents here are present - the project's only three-document gate.
+                                </div>
+                            </group>
+                            <group string="Stage 7 - Project State">
+                                <field name="x_training_commenced_date"/>
+                                <field name="x_training_commenced_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_training_completed_date"/>
+                                <field name="x_training_completed_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_project_start_date"/>
+                                <field name="x_project_start_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_project_completed_date"/>
+                                <field name="x_project_completed_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_workorder_completion_date"/>
+                                <field name="x_deviation_days"/>
+                            </group>
+                        </div>
+
+                        <!-- LMS Pipeline: Won/Lost is Stage 5 here, with Delivery and Content
+                             Availability AFTER it - unlike every other pipeline. Stage 7's
+                             weekly KT/Skill tracking is a real child model (x_lms_week_ids),
+                             not fixed fields - see crm_lead_lms_week.py / _mz_sync_lms_weeks. -->
+                        <div invisible="x_team_bu_category != 'lms'">
+                            <group string="Stage 1 - New Lead / Source">
+                                <label for="source_id"/>
+                                <div class="o_row">
+                                    <field name="source_id" domain="[('team_ids', 'in', team_id)]"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',source_id,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <field name="referred" string="Source Reference (Referral)"/>
+                            </group>
+                            <group string="Stage 2 - Lead Validation">
+                                <label for="x_client_expectations_attachment_ids"/>
+                                <div class="o_row">
+                                    <field name="x_client_expectations_attachment_ids" widget="many2many_binary"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_client_expectations_attachment_ids,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_product_service"/>
+                                <div class="o_row">
+                                    <field name="x_product_service"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_product_service,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_target_audience"/>
+                                <div class="o_row">
+                                    <field name="x_target_audience"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_target_audience,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_lead_timelines_days"/>
+                                <div class="o_row">
+                                    <field name="x_lead_timelines_days"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_lead_timelines_days,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_deliverables"/>
+                                <div class="o_row">
+                                    <field name="x_deliverables"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_deliverables,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                            </group>
+                            <group string="Stage 3 - Deck Presentation">
+                                <label for="x_presentation_completed_datetime"/>
+                                <div class="o_row">
+                                    <field name="x_presentation_completed_datetime"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_presentation_completed_datetime,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                            </group>
+                            <group string="Stage 4 - Proposal &amp; Follow-up's">
+                                <label for="x_quote_document_ids"/>
+                                <div class="o_row">
+                                    <field name="x_quote_document_ids" widget="many2many_binary" string="Quote Shared (Tagged Quotation)"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_quote_document_ids,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <div class="text-muted" colspan="2">
+                                    No colour timer / RED lock in this stage - LMS is not one of
+                                    the 4 BUs with the colour spec (DMT, Tally, Technology, TNH).
+                                </div>
+                            </group>
+                            <group string="Stage 5 - Won / Lost">
+                                <field name="x_lost_reason_text"/>
+                                <div class="text-muted" colspan="2">
+                                    Won gate: Quote Shared above must be present (proposed default for
+                                    an open client question - confirm before go-live). Unlike every
+                                    other pipeline, Delivery and Content Availability stages come
+                                    AFTER Won/Lost, not before it.
+                                </div>
+                            </group>
+                            <group string="Stage 6 - Delivery">
+                                <label for="x_lms_training_content"/>
+                                <div class="o_row">
+                                    <field name="x_lms_training_content"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_lms_training_content,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_lms_toc_by"/>
+                                <div class="o_row">
+                                    <field name="x_lms_toc_by" invisible="x_lms_training_content != 'new_content'"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="x_lms_training_content != 'new_content' or not (x_current_stage_gate_fields and ',x_lms_toc_by,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_lms_content_availability"/>
+                                <div class="o_row">
+                                    <field name="x_lms_content_availability"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_lms_content_availability,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_lms_training_start_date"/>
+                                <div class="o_row">
+                                    <field name="x_lms_training_start_date"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_lms_training_start_date,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_lms_training_end_date"/>
+                                <div class="o_row">
+                                    <field name="x_lms_training_end_date"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_lms_training_end_date,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                            </group>
+                            <group string="Stage 7 - Content Availability in LMS">
+                                <field name="x_lms_training_weeks"/>
+                            </group>
+                            <field name="x_lms_week_ids" nolabel="1" colspan="2">
+                                <list editable="bottom">
+                                    <field name="week_number" readonly="1" string="Week"/>
+                                    <field name="kt_uploaded"/>
+                                    <field name="skill_uploaded"/>
+                                </list>
+                            </field>
+                            <group string="Stage 8 - Project State">
+                                <field name="x_training_commenced_date"/>
+                                <field name="x_training_commenced_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_training_completed_date"/>
+                                <field name="x_training_completed_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_project_start_date"/>
+                                <field name="x_project_start_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_project_completed_date"/>
+                                <field name="x_project_completed_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_workorder_completion_date"/>
+                                <field name="x_deviation_days"/>
+                            </group>
+                        </div>
+
+                        <!-- TNH Pipeline: the only Corporate-side pipeline with the colour
+                             timer/RED lock (Stage 6, Follow-up's) and a genuinely standalone
+                             Project State (no Training Status stage to fold it into). -->
+                        <div invisible="x_team_bu_category != 'tnh'">
+                            <group string="Stage 1 - New Lead / Source">
+                                <label for="source_id"/>
+                                <div class="o_row">
+                                    <field name="source_id" domain="[('team_ids', 'in', team_id)]"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',source_id,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <field name="referred" string="Source Reference (Referral)"/>
+                            </group>
+                            <group string="Stage 2 - Lead Validation">
+                                <label for="x_company_turnover"/>
+                                <div class="o_row">
+                                    <field name="x_company_turnover" string="Revenue"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_company_turnover,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_employee_count"/>
+                                <div class="o_row">
+                                    <field name="x_employee_count" string="Employee Head Count"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_employee_count,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_nature_of_business"/>
+                                <div class="o_row">
+                                    <field name="x_nature_of_business"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_nature_of_business,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                            </group>
+                            <group string="Stage 3 - Request Understanding / Scope">
+                                <label for="x_tnh_meeting_held"/>
+                                <div class="o_row">
+                                    <field name="x_tnh_meeting_held"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_tnh_meeting_held,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_tnh_meeting_attachment_ids"/>
+                                <div class="o_row">
+                                    <field name="x_tnh_meeting_attachment_ids" widget="many2many_binary"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_tnh_meeting_attachment_ids,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_tnh_service_fte" string="Service"/>
+                                <div class="o_row">
+                                    <field name="x_tnh_service_fte"/><label for="x_tnh_service_fte" string="FTE" class="ms-1 me-3"/>
+                                    <field name="x_tnh_service_cwr"/><label for="x_tnh_service_cwr" string="CWR" class="ms-1 me-3"/>
+                                    <field name="x_tnh_service_iaas"/><label for="x_tnh_service_iaas" string="IaaS" class="ms-1 me-3"/>
+                                    <field name="x_tnh_service_htd"/><label for="x_tnh_service_htd" string="HTD" class="ms-1 me-3"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_tnh_service_any,' in x_current_stage_gate_fields)">* (any one)</span>
+                                </div>
+                            </group>
+                            <group string="Stage 4 - Deck">
+                                <label for="x_presentation_completed_datetime"/>
+                                <div class="o_row">
+                                    <field name="x_presentation_completed_datetime"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_presentation_completed_datetime,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                            </group>
+                            <group string="Stage 5 - Proposal">
+                                <label for="x_tnh_proposal_fte" string="Proposal For"/>
+                                <div class="o_row">
+                                    <field name="x_tnh_proposal_fte"/><label for="x_tnh_proposal_fte" string="FTE" class="ms-1 me-3"/>
+                                    <field name="x_tnh_proposal_cwr"/><label for="x_tnh_proposal_cwr" string="CWR" class="ms-1 me-3"/>
+                                    <field name="x_tnh_proposal_iaas"/><label for="x_tnh_proposal_iaas" string="IaaS" class="ms-1 me-3"/>
+                                    <field name="x_tnh_proposal_htd"/><label for="x_tnh_proposal_htd" string="HTD" class="ms-1 me-3"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_tnh_proposal_any,' in x_current_stage_gate_fields)">* (any one)</span>
+                                </div>
+                                <field name="x_tnh_deviation"/>
+                                <label for="x_tnh_deviation_text"/>
+                                <div class="o_row">
+                                    <field name="x_tnh_deviation_text" invisible="not x_tnh_deviation"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not x_tnh_deviation or not (x_current_stage_gate_fields and ',x_tnh_deviation_text,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_quote_document_ids"/>
+                                <div class="o_row">
+                                    <field name="x_quote_document_ids" widget="many2many_binary" string="Quote / Proposal Attachment (Tagged)"/>
+                                </div>
+                            </group>
+                            <group string="Stage 6 - Follow-up's">
+                                <div class="text-muted" colspan="2">
+                                    Follow-up activities live in the Activities/Chatter area below -
+                                    colour timer and RED lock apply here, same as DMT/Tally/Technology
+                                    (TNH is the only Corporate-side pipeline with this).
+                                </div>
+                            </group>
+                            <group string="Stage 7 - Agreement">
+                                <label for="x_tnh_agreement_doc_ids"/>
+                                <div class="o_row">
+                                    <field name="x_tnh_agreement_doc_ids" widget="many2many_binary"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_tnh_agreement_doc_ids,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <field name="x_tnh_msa_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_tnh_sow_attachment_ids" widget="many2many_binary"/>
+                            </group>
+                            <group string="Stage 8 - Won / Lost">
+                                <field name="x_lost_reason_text"/>
+                                <div class="text-muted" colspan="2">
+                                    Won is blocked (action_set_won) unless the Quote/Proposal attachment
+                                    above AND the Agreement document above are both present - the
+                                    project's only two-document gate.
+                                </div>
+                            </group>
+                            <group string="Stage 9 - Project State">
+                                <field name="x_project_start_date"/>
+                                <field name="x_project_start_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_project_completed_date"/>
+                                <field name="x_project_completed_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_workorder_completion_date"/>
+                                <field name="x_deviation_days"/>
+                            </group>
+                        </div>
                     </page>
                     <!-- DMT Details snapshot tab (client instruction, 2026-09-13): once a
                          DMT-originated lead is handed off, its "Pipeline Fields" tab above

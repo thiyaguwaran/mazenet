@@ -30,6 +30,14 @@ class CrmTeam(models.Model):
         ('tech', 'Technology'),
         ('swdev', 'Software Dev'),
         ('mis', 'MIS'),
+        # Corporate Pipeline build (Mazenet_CRM_Corporate_LMS_TNH_Pipelines.xlsx):
+        # team_corporate's own 'corp' category above stays for LMS/TNH/Training,
+        # still parked there until their own build turns - see teams.xml.
+        ('corp_hunter', 'Corporate - Hunter'),
+        ('corp_am', 'Corporate - Account Manager'),
+        ('corp_training', 'Corporate - Training Delivery'),
+        ('lms', 'LMS'),
+        ('tnh', 'TNH'),
     ], string="BU Category", default='corp')
 
     create_lead_id = fields.Many2many('res.users',

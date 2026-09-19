@@ -254,7 +254,7 @@
         <record id="rule_crm_lead_hunter_base" model="ir.rule">
             <field name="name">Mazenet CRM Lead: hunter (Team View/Create)</field>
             <field name="model_id" ref="crm.model_crm_lead"/>
-            <field name="domain_force" eval="[('team_id', '=', ref('team_corporate'))]"/>
+            <field name="domain_force" eval="[('team_id', '=', ref('team_hunter'))]"/>
             <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_hunter_agent')), (4, ref('mazenet_access_rights.group_mzr_hunter_tl_direct_agent'))]"/>
             <field name="perm_read" eval="True"/>
             <field name="perm_write" eval="False"/>
@@ -276,7 +276,7 @@
         <record id="rule_crm_lead_hunter_tl" model="ir.rule">
             <field name="name">Mazenet CRM Lead: hunter (Team Lead - Full Team)</field>
             <field name="model_id" ref="crm.model_crm_lead"/>
-            <field name="domain_force" eval="[('team_id', '=', ref('team_corporate'))]"/>
+            <field name="domain_force" eval="[('team_id', '=', ref('team_hunter'))]"/>
             <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_hunter_tl'))]"/>
             <field name="perm_read" eval="True"/>
             <field name="perm_write" eval="True"/>
@@ -288,7 +288,7 @@
         <record id="rule_crm_lead_account_manager_base" model="ir.rule">
             <field name="name">Mazenet CRM Lead: account_manager (Team View/Create)</field>
             <field name="model_id" ref="crm.model_crm_lead"/>
-            <field name="domain_force" eval="[('team_id', '=', ref('team_corporate'))]"/>
+            <field name="domain_force" eval="[('team_id', '=', ref('team_account_manager'))]"/>
             <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_account_manager_agent')), (4, ref('mazenet_access_rights.group_mzr_account_manager_tl_direct_agent'))]"/>
             <field name="perm_read" eval="True"/>
             <field name="perm_write" eval="False"/>
@@ -310,7 +310,7 @@
         <record id="rule_crm_lead_account_manager_tl" model="ir.rule">
             <field name="name">Mazenet CRM Lead: account_manager (Team Lead - Full Team)</field>
             <field name="model_id" ref="crm.model_crm_lead"/>
-            <field name="domain_force" eval="[('team_id', '=', ref('team_corporate'))]"/>
+            <field name="domain_force" eval="[('team_id', '=', ref('team_account_manager'))]"/>
             <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_account_manager_tl'))]"/>
             <field name="perm_read" eval="True"/>
             <field name="perm_write" eval="True"/>
@@ -322,7 +322,7 @@
         <record id="rule_crm_lead_corporate_training_base" model="ir.rule">
             <field name="name">Mazenet CRM Lead: corporate_training (Team View/Create)</field>
             <field name="model_id" ref="crm.model_crm_lead"/>
-            <field name="domain_force" eval="[('team_id', '=', ref('team_corporate'))]"/>
+            <field name="domain_force" eval="[('team_id', '=', ref('team_corp_training_delivery'))]"/>
             <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_corporate_training_agent')), (4, ref('mazenet_access_rights.group_mzr_corporate_training_tl_direct_agent'))]"/>
             <field name="perm_read" eval="True"/>
             <field name="perm_write" eval="False"/>
@@ -344,7 +344,7 @@
         <record id="rule_crm_lead_corporate_training_tl" model="ir.rule">
             <field name="name">Mazenet CRM Lead: corporate_training (Team Lead - Full Team)</field>
             <field name="model_id" ref="crm.model_crm_lead"/>
-            <field name="domain_force" eval="[('team_id', '=', ref('team_corporate'))]"/>
+            <field name="domain_force" eval="[('team_id', '=', ref('team_corp_training_delivery'))]"/>
             <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_corporate_training_tl'))]"/>
             <field name="perm_read" eval="True"/>
             <field name="perm_write" eval="True"/>
@@ -356,7 +356,7 @@
         <record id="rule_crm_lead_lms_base" model="ir.rule">
             <field name="name">Mazenet CRM Lead: lms (Team View/Create)</field>
             <field name="model_id" ref="crm.model_crm_lead"/>
-            <field name="domain_force" eval="[('team_id', '=', ref('team_corporate'))]"/>
+            <field name="domain_force" eval="[('team_id', '=', ref('team_lms'))]"/>
             <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_lms_agent')), (4, ref('mazenet_access_rights.group_mzr_lms_tl_direct_agent'))]"/>
             <field name="perm_read" eval="True"/>
             <field name="perm_write" eval="False"/>
@@ -378,7 +378,7 @@
         <record id="rule_crm_lead_lms_tl" model="ir.rule">
             <field name="name">Mazenet CRM Lead: lms (Team Lead - Full Team)</field>
             <field name="model_id" ref="crm.model_crm_lead"/>
-            <field name="domain_force" eval="[('team_id', '=', ref('team_corporate'))]"/>
+            <field name="domain_force" eval="[('team_id', '=', ref('team_lms'))]"/>
             <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_lms_tl'))]"/>
             <field name="perm_read" eval="True"/>
             <field name="perm_write" eval="True"/>
@@ -390,7 +390,7 @@
         <record id="rule_crm_lead_tnh_base" model="ir.rule">
             <field name="name">Mazenet CRM Lead: tnh (Team View/Create)</field>
             <field name="model_id" ref="crm.model_crm_lead"/>
-            <field name="domain_force" eval="[('team_id', '=', ref('team_corporate'))]"/>
+            <field name="domain_force" eval="[('team_id', '=', ref('team_tnh'))]"/>
             <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_tnh_agent')), (4, ref('mazenet_access_rights.group_mzr_tnh_tl_direct_agent'))]"/>
             <field name="perm_read" eval="True"/>
             <field name="perm_write" eval="False"/>
@@ -412,7 +412,7 @@
         <record id="rule_crm_lead_tnh_tl" model="ir.rule">
             <field name="name">Mazenet CRM Lead: tnh (Team Lead - Full Team)</field>
             <field name="model_id" ref="crm.model_crm_lead"/>
-            <field name="domain_force" eval="[('team_id', '=', ref('team_corporate'))]"/>
+            <field name="domain_force" eval="[('team_id', '=', ref('team_tnh'))]"/>
             <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_tnh_tl'))]"/>
             <field name="perm_read" eval="True"/>
             <field name="perm_write" eval="True"/>
@@ -420,15 +420,15 @@
             <field name="perm_unlink" eval="False"/>
         </record>
 
-        <!-- Corporate BU manager-direct agents: Hunter/Account Manager/Corporate -->
-        <!-- Training/LMS/TNH were consolidated into the single team_corporate    -->
-        <!-- crm.team (mazenet_access_rights' groups stay isolated per sub-team;  -->
-        <!-- only crm.team-level lead visibility was collapsed) - this is now the -->
-        <!-- same team_corporate every other Corporate rule below already uses.   -->
+        <!-- Corporate BU manager-direct agents: not tied to one sub-team (they report -->
+        <!-- straight to corp_mgr), so their visibility spans all 5 Corporate-family   -->
+        <!-- teams, now that all 5 are split out of the old placeholder team_corporate -->
+        <!-- (Hunter/Account Manager/Corp Training Delivery/LMS/TNH). team_corporate   -->
+        <!-- itself no longer needs to be in this list - nothing else lives there.     -->
         <record id="rule_crm_lead_corporate_manager_direct_base" model="ir.rule">
             <field name="name">Mazenet CRM Lead: Corporate Manager-Direct (Team View/Create)</field>
             <field name="model_id" ref="crm.model_crm_lead"/>
-            <field name="domain_force" eval="[('team_id', '=', ref('team_corporate'))]"/>
+            <field name="domain_force" eval="[('team_id', 'in', [ref('team_hunter'), ref('team_account_manager'), ref('team_corp_training_delivery'), ref('team_lms'), ref('team_tnh')])]"/>
             <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_corporate_manager_direct_agent'))]"/>
             <field name="perm_read" eval="True"/>
             <field name="perm_write" eval="False"/>

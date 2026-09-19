@@ -7,25 +7,46 @@
              which sources show up per team_id in the lead form's source_id domain. Shared
              across teams wherever the sheets literally repeat the same source concept. -->
 
-        <!-- Shared across all 5 BUs -->
+        <!-- Shared across all 5 BUs, plus Corporate's Hunter/Account Manager/Corp
+             Training Delivery (Corporate Pipeline sheet Stage 1: Email, Existing
+             Client) -->
         <record id="utm_source_mz_email" model="utm.source">
             <field name="name">Email</field>
             <field name="team_ids" eval="[(6, 0, [
                 ref('team_dmt'), ref('team_tally'), ref('team_technology'),
-                ref('team_software'), ref('team_mis')])]"/>
+                ref('team_software'), ref('team_mis'),
+                ref('team_hunter'), ref('team_account_manager'), ref('team_corp_training_delivery'),
+                ref('team_lms'), ref('team_tnh')])]"/>
         </record>
+        <!-- NOT shared with team_lms: the LMS sheet requires mandatory reference text on
+             Existing Client ("LMS differs from Corporate: existing client and other
+             referral BOTH carry a text box here") - every other team's Existing Client
+             has no such requirement, so LMS gets its own x_requires_reference_text=True
+             record below instead of this one. -->
         <record id="utm_source_mz_existing_client" model="utm.source">
             <field name="name">Existing Client</field>
             <field name="team_ids" eval="[(6, 0, [
                 ref('team_dmt'), ref('team_tally'), ref('team_technology'),
-                ref('team_software'), ref('team_mis')])]"/>
+                ref('team_software'), ref('team_mis'),
+                ref('team_hunter'), ref('team_account_manager'), ref('team_corp_training_delivery'),
+                ref('team_tnh')])]"/>
+        </record>
+        <record id="utm_source_mz_existing_client_lms" model="utm.source">
+            <field name="name">Existing Client</field>
+            <field name="team_ids" eval="[(6, 0, [ref('team_lms')])]"/>
+            <field name="x_requires_reference_text">True</field>
         </record>
 
-        <!-- Shared across Tally, Technology, Software Dev, MIS -->
+        <!-- Shared across Tally, Technology, Software Dev, MIS, plus Corporate's
+             3 new teams (Call, Partner/Customer Referral, Other Referral,
+             Transferred from Other BU all appear on the Corporate Pipeline sheet
+             too; "Direct Sales" does not, so it's left off the 3 new teams) -->
         <record id="utm_source_mz_call" model="utm.source">
             <field name="name">Call</field>
             <field name="team_ids" eval="[(6, 0, [
-                ref('team_tally'), ref('team_software'), ref('team_mis')])]"/>
+                ref('team_tally'), ref('team_software'), ref('team_mis'),
+                ref('team_hunter'), ref('team_account_manager'), ref('team_corp_training_delivery'),
+                ref('team_lms'), ref('team_tnh')])]"/>
         </record>
         <record id="utm_source_mz_direct_sales" model="utm.source">
             <field name="name">Direct Sales</field>
@@ -35,38 +56,59 @@
         <record id="utm_source_mz_partner_referral" model="utm.source">
             <field name="name">Partner Referral</field>
             <field name="team_ids" eval="[(6, 0, [
-                ref('team_tally'), ref('team_technology'), ref('team_software'), ref('team_mis')])]"/>
+                ref('team_tally'), ref('team_technology'), ref('team_software'), ref('team_mis'),
+                ref('team_hunter'), ref('team_account_manager'), ref('team_corp_training_delivery'),
+                ref('team_lms'), ref('team_tnh')])]"/>
             <field name="x_requires_reference_text">True</field>
         </record>
         <record id="utm_source_mz_customer_referral" model="utm.source">
             <field name="name">Customer Referral</field>
             <field name="team_ids" eval="[(6, 0, [
-                ref('team_tally'), ref('team_technology'), ref('team_software'), ref('team_mis')])]"/>
+                ref('team_tally'), ref('team_technology'), ref('team_software'), ref('team_mis'),
+                ref('team_hunter'), ref('team_account_manager'), ref('team_corp_training_delivery'),
+                ref('team_lms'), ref('team_tnh')])]"/>
             <field name="x_requires_reference_text">True</field>
         </record>
+        <!-- NOT shared with team_lms - see utm_source_mz_other_referral_lms below (same
+             "LMS requires reference text" reasoning as Existing Client above). -->
         <record id="utm_source_mz_other_referral" model="utm.source">
             <field name="name">Other Referral</field>
             <field name="team_ids" eval="[(6, 0, [
-                ref('team_tally'), ref('team_technology'), ref('team_software'), ref('team_mis')])]"/>
+                ref('team_tally'), ref('team_technology'), ref('team_software'), ref('team_mis'),
+                ref('team_hunter'), ref('team_account_manager'), ref('team_corp_training_delivery'),
+                ref('team_tnh')])]"/>
+        </record>
+        <record id="utm_source_mz_other_referral_lms" model="utm.source">
+            <field name="name">Other Referral</field>
+            <field name="team_ids" eval="[(6, 0, [ref('team_lms')])]"/>
+            <field name="x_requires_reference_text">True</field>
         </record>
         <record id="utm_source_mz_transferred_other_bu" model="utm.source">
             <field name="name">Transferred from Other BU</field>
             <field name="team_ids" eval="[(6, 0, [
-                ref('team_tally'), ref('team_technology'), ref('team_software'), ref('team_mis')])]"/>
+                ref('team_tally'), ref('team_technology'), ref('team_software'), ref('team_mis'),
+                ref('team_hunter'), ref('team_account_manager'), ref('team_corp_training_delivery'),
+                ref('team_lms'), ref('team_tnh')])]"/>
         </record>
 
-        <!-- DMT only -->
+        <!-- DMT only, except Outbound Calls/Chat which the Corporate Pipeline sheet's
+             Stage 1 also asks for verbatim ("Source - Outbound" / "Source - Chat") -
+             reused rather than duplicated, per this file's own sharing policy above. -->
         <record id="utm_source_mz_inbound_calls" model="utm.source">
             <field name="name">Inbound Calls</field>
             <field name="team_ids" eval="[(6, 0, [ref('team_dmt')])]"/>
         </record>
         <record id="utm_source_mz_outbound_calls" model="utm.source">
             <field name="name">Outbound Calls</field>
-            <field name="team_ids" eval="[(6, 0, [ref('team_dmt')])]"/>
+            <field name="team_ids" eval="[(6, 0, [
+                ref('team_dmt'), ref('team_hunter'), ref('team_account_manager'), ref('team_corp_training_delivery'),
+                ref('team_lms'), ref('team_tnh')])]"/>
         </record>
         <record id="utm_source_mz_chat" model="utm.source">
             <field name="name">Chat</field>
-            <field name="team_ids" eval="[(6, 0, [ref('team_dmt')])]"/>
+            <field name="team_ids" eval="[(6, 0, [
+                ref('team_dmt'), ref('team_hunter'), ref('team_account_manager'), ref('team_corp_training_delivery'),
+                ref('team_lms'), ref('team_tnh')])]"/>
         </record>
         <record id="utm_source_mz_referral_partner_customer" model="utm.source">
             <field name="name">Referral (Partner / Customer)</field>

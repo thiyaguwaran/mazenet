@@ -68,131 +68,239 @@
             <field name="team_ids" eval="[(4, ref('team_tally')), (4, ref('team_tally'))]"/>
         </record>
 
-        <!-- 3. Corp Stages (7 stages - Shared by Corp Hunter & Corp AM) -->
-        <record id="stage_corp_new" model="crm.stage">
-            <field name="name">New Lead</field>
+        <!-- 3. Corporate Pipeline Stages (Mazenet_CRM_Corporate_LMS_TNH_Pipelines.xlsx):
+             7 stages, but built as THREE separate, identically-shaped stage sets - one
+             each for Hunter, Account Manager and Corp Training Delivery - per Build
+             Notes #1 ("team_id=False would leak into every other pipeline including
+             DMT/Tally - the duplicate-column bug already reported") and #2 (stage names
+             prefixed per team so the unfiltered view stays legible). Stage 7 was
+             "Training Status" on the client's sheet; per client instruction relayed
+             2026-09-19 it is NOT a separate stage - its two fields (Training
+             Commenced/Completed) are folded into this Project State stage instead,
+             alongside the standard 4 Project State fields (see MZ_STAGE_GATE_RULES /
+             crm_lead.py for the field list). This also resolves the sheet's own
+             "DECISION PENDING" note on whether Project State is appended after
+             Training Status or replaces it - client said replace. -->
+
+        <!-- 3a. Hunter -->
+        <record id="stage_corp_hunter_new" model="crm.stage">
+            <field name="name">Hunter - New Lead / Source</field>
             <field name="sequence">1</field>
-            <field name="team_ids" eval="[(4, ref('team_corporate')), (4, ref('team_corporate')), (4, ref('team_corporate'))]"/>
+            <field name="team_ids" eval="[(4, ref('team_hunter'))]"/>
         </record>
-        <record id="stage_corp_qualification" model="crm.stage">
-            <field name="name">Qualification</field>
+        <record id="stage_corp_hunter_validation" model="crm.stage">
+            <field name="name">Hunter - Lead Validation</field>
             <field name="sequence">2</field>
-            <field name="team_ids" eval="[(4, ref('team_corporate')), (4, ref('team_corporate')), (4, ref('team_corporate'))]"/>
+            <field name="team_ids" eval="[(4, ref('team_hunter'))]"/>
         </record>
-        <record id="stage_corp_needs" model="crm.stage">
-            <field name="name">Needs Analysis</field>
+        <record id="stage_corp_hunter_deck" model="crm.stage">
+            <field name="name">Hunter - Deck Presentation</field>
             <field name="sequence">3</field>
-            <field name="team_ids" eval="[(4, ref('team_corporate')), (4, ref('team_corporate')), (4, ref('team_corporate'))]"/>
+            <field name="team_ids" eval="[(4, ref('team_hunter'))]"/>
         </record>
-        <record id="stage_corp_proposal" model="crm.stage">
-            <field name="name">Proposal / Quote</field>
+        <record id="stage_corp_hunter_proposal" model="crm.stage">
+            <field name="name">Hunter - Proposal &amp; Follow-up's</field>
             <field name="sequence">4</field>
-            <field name="team_ids" eval="[(4, ref('team_corporate')), (4, ref('team_corporate')), (4, ref('team_corporate'))]"/>
+            <field name="team_ids" eval="[(4, ref('team_hunter'))]"/>
         </record>
-        <record id="stage_corp_negotiation" model="crm.stage">
-            <field name="name">Negotiation</field>
+        <record id="stage_corp_hunter_evaluation" model="crm.stage">
+            <field name="name">Hunter - Evaluation</field>
             <field name="sequence">5</field>
-            <field name="team_ids" eval="[(4, ref('team_corporate')), (4, ref('team_corporate')), (4, ref('team_corporate'))]"/>
+            <field name="team_ids" eval="[(4, ref('team_hunter'))]"/>
         </record>
-        <record id="stage_corp_won" model="crm.stage">
-            <field name="name">Won</field>
+        <record id="stage_corp_hunter_won" model="crm.stage">
+            <field name="name">Hunter - Won / Lost</field>
             <field name="sequence">6</field>
             <field name="is_won">True</field>
-            <field name="team_ids" eval="[(4, ref('team_corporate')), (4, ref('team_corporate')), (4, ref('team_corporate'))]"/>
+            <field name="team_ids" eval="[(4, ref('team_hunter'))]"/>
         </record>
-        <record id="stage_corp_lost" model="crm.stage">
-            <field name="name">Lost</field>
+        <record id="stage_corp_hunter_project_state" model="crm.stage">
+            <field name="name">Hunter - Project State</field>
             <field name="sequence">7</field>
-            <field name="team_ids" eval="[(4, ref('team_corporate')), (4, ref('team_corporate')), (4, ref('team_corporate'))]"/>
+            <field name="team_ids" eval="[(4, ref('team_hunter'))]"/>
         </record>
 
-        <!-- 4. LMS Stages (8 stages, own set - Phase 2 build).
-             Only "Inquiry Received" and "Enrolled / Won" are named per client discovery so far;
-             intermediate stages are generic placeholders to match the declared 8-stage count
-             (Section 3) and will be renamed once the per-BU activity list lands in M2. -->
-        <record id="stage_lms_new" model="crm.stage">
-            <field name="name">Inquiry Received</field>
+        <!-- 3b. Account Manager -->
+        <record id="stage_corp_am_new" model="crm.stage">
+            <field name="name">AM - New Lead / Source</field>
             <field name="sequence">1</field>
-            <field name="team_ids" eval="[(4, ref('team_corporate'))]"/>
+            <field name="team_ids" eval="[(4, ref('team_account_manager'))]"/>
         </record>
-        <record id="stage_lms_2" model="crm.stage">
-            <field name="name">Stage 2 (Placeholder)</field>
+        <record id="stage_corp_am_validation" model="crm.stage">
+            <field name="name">AM - Lead Validation</field>
             <field name="sequence">2</field>
-            <field name="team_ids" eval="[(4, ref('team_corporate'))]"/>
+            <field name="team_ids" eval="[(4, ref('team_account_manager'))]"/>
         </record>
-        <record id="stage_lms_3" model="crm.stage">
-            <field name="name">Stage 3 (Placeholder)</field>
+        <record id="stage_corp_am_deck" model="crm.stage">
+            <field name="name">AM - Deck Presentation</field>
             <field name="sequence">3</field>
-            <field name="team_ids" eval="[(4, ref('team_corporate'))]"/>
+            <field name="team_ids" eval="[(4, ref('team_account_manager'))]"/>
         </record>
-        <record id="stage_lms_4" model="crm.stage">
-            <field name="name">Stage 4 (Placeholder)</field>
+        <record id="stage_corp_am_proposal" model="crm.stage">
+            <field name="name">AM - Proposal &amp; Follow-up's</field>
             <field name="sequence">4</field>
-            <field name="team_ids" eval="[(4, ref('team_corporate'))]"/>
+            <field name="team_ids" eval="[(4, ref('team_account_manager'))]"/>
         </record>
-        <record id="stage_lms_5" model="crm.stage">
-            <field name="name">Stage 5 (Placeholder)</field>
+        <record id="stage_corp_am_evaluation" model="crm.stage">
+            <field name="name">AM - Evaluation</field>
             <field name="sequence">5</field>
-            <field name="team_ids" eval="[(4, ref('team_corporate'))]"/>
+            <field name="team_ids" eval="[(4, ref('team_account_manager'))]"/>
         </record>
-        <record id="stage_lms_6" model="crm.stage">
-            <field name="name">Stage 6 (Placeholder)</field>
+        <record id="stage_corp_am_won" model="crm.stage">
+            <field name="name">AM - Won / Lost</field>
             <field name="sequence">6</field>
-            <field name="team_ids" eval="[(4, ref('team_corporate'))]"/>
+            <field name="is_won">True</field>
+            <field name="team_ids" eval="[(4, ref('team_account_manager'))]"/>
         </record>
-        <record id="stage_lms_7" model="crm.stage">
-            <field name="name">Stage 7 (Placeholder)</field>
+        <record id="stage_corp_am_project_state" model="crm.stage">
+            <field name="name">AM - Project State</field>
             <field name="sequence">7</field>
-            <field name="team_ids" eval="[(4, ref('team_corporate'))]"/>
+            <field name="team_ids" eval="[(4, ref('team_account_manager'))]"/>
+        </record>
+
+        <!-- 3c. Corp Training Delivery -->
+        <record id="stage_corp_training_new" model="crm.stage">
+            <field name="name">Corp Training - New Lead / Source</field>
+            <field name="sequence">1</field>
+            <field name="team_ids" eval="[(4, ref('team_corp_training_delivery'))]"/>
+        </record>
+        <record id="stage_corp_training_validation" model="crm.stage">
+            <field name="name">Corp Training - Lead Validation</field>
+            <field name="sequence">2</field>
+            <field name="team_ids" eval="[(4, ref('team_corp_training_delivery'))]"/>
+        </record>
+        <record id="stage_corp_training_deck" model="crm.stage">
+            <field name="name">Corp Training - Deck Presentation</field>
+            <field name="sequence">3</field>
+            <field name="team_ids" eval="[(4, ref('team_corp_training_delivery'))]"/>
+        </record>
+        <record id="stage_corp_training_proposal" model="crm.stage">
+            <field name="name">Corp Training - Proposal &amp; Follow-up's</field>
+            <field name="sequence">4</field>
+            <field name="team_ids" eval="[(4, ref('team_corp_training_delivery'))]"/>
+        </record>
+        <record id="stage_corp_training_evaluation" model="crm.stage">
+            <field name="name">Corp Training - Evaluation</field>
+            <field name="sequence">5</field>
+            <field name="team_ids" eval="[(4, ref('team_corp_training_delivery'))]"/>
+        </record>
+        <record id="stage_corp_training_won" model="crm.stage">
+            <field name="name">Corp Training - Won / Lost</field>
+            <field name="sequence">6</field>
+            <field name="is_won">True</field>
+            <field name="team_ids" eval="[(4, ref('team_corp_training_delivery'))]"/>
+        </record>
+        <record id="stage_corp_training_project_state" model="crm.stage">
+            <field name="name">Corp Training - Project State</field>
+            <field name="sequence">7</field>
+            <field name="team_ids" eval="[(4, ref('team_corp_training_delivery'))]"/>
+        </record>
+
+        <!-- 4. LMS Pipeline Stages (Mazenet_CRM_Corporate_LMS_TNH_Pipelines.xlsx): 8 stages,
+             own crm.team (team_lms, split out of team_corporate above). Won/Lost is
+             STAGE 5 here, with two delivery stages AFTER it - unlike every other
+             pipeline in this project, where Won sits near the end. Stage 8 "Training
+             Status" is folded into "Project State" (same client instruction, relayed
+             2026-09-19, as Corporate's own Stage 7 - the LMS sheet's own Post-Won note
+             literally says "Same open question as Corporate"). -->
+        <record id="stage_lms_new" model="crm.stage">
+            <field name="name">LMS - New Lead / Source</field>
+            <field name="sequence">1</field>
+            <field name="team_ids" eval="[(4, ref('team_lms'))]"/>
+        </record>
+        <record id="stage_lms_validation" model="crm.stage">
+            <field name="name">LMS - Lead Validation</field>
+            <field name="sequence">2</field>
+            <field name="team_ids" eval="[(4, ref('team_lms'))]"/>
+        </record>
+        <record id="stage_lms_deck" model="crm.stage">
+            <field name="name">LMS - Deck Presentation</field>
+            <field name="sequence">3</field>
+            <field name="team_ids" eval="[(4, ref('team_lms'))]"/>
+        </record>
+        <record id="stage_lms_proposal" model="crm.stage">
+            <field name="name">LMS - Proposal &amp; Follow-up's</field>
+            <field name="sequence">4</field>
+            <field name="team_ids" eval="[(4, ref('team_lms'))]"/>
         </record>
         <record id="stage_lms_won" model="crm.stage">
-            <field name="name">Enrolled / Won</field>
-            <field name="sequence">8</field>
+            <field name="name">LMS - Won / Lost</field>
+            <field name="sequence">5</field>
             <field name="is_won">True</field>
-            <field name="team_ids" eval="[(4, ref('team_corporate'))]"/>
+            <field name="team_ids" eval="[(4, ref('team_lms'))]"/>
+        </record>
+        <record id="stage_lms_delivery" model="crm.stage">
+            <field name="name">LMS - Delivery</field>
+            <field name="sequence">6</field>
+            <field name="team_ids" eval="[(4, ref('team_lms'))]"/>
+        </record>
+        <record id="stage_lms_content_availability" model="crm.stage">
+            <field name="name">LMS - Content Availability in LMS</field>
+            <field name="sequence">7</field>
+            <field name="team_ids" eval="[(4, ref('team_lms'))]"/>
+        </record>
+        <record id="stage_lms_project_state" model="crm.stage">
+            <field name="name">LMS - Project State</field>
+            <field name="sequence">8</field>
+            <field name="team_ids" eval="[(4, ref('team_lms'))]"/>
         </record>
 
-        <!-- 5. TNH Stages (8 stages, own set) -->
+        <!-- 5. TNH Pipeline Stages (Mazenet_CRM_Corporate_LMS_TNH_Pipelines.xlsx): 9 stage
+             records - the 8 the sheet counts (New Lead through Won/Lost) plus a genuinely
+             separate Project State stage. Unlike Corporate/LMS, TNH's own Post-Won note
+             does NOT reference "same question as Corporate" - it has no Training Status
+             stage to fold anything into, so Project State stands on its own (sequence 9).
+             The only Corporate-side pipeline with the colour timer/RED lock (Follow-up's,
+             stage 6) - see MZ_ACTIVITY_CARD_BU_CATEGORIES in crm_lead.py.
+             Reuses the 8 old placeholder xmlids below (renamed/rescoped) rather than
+             leaving them as orphans - stages.xml is noupdate="1", so these renames need a
+             one-off direct-write fix after this file loads (same as LMS's own two reused
+             ids); see the migration note in this module's build history. -->
         <record id="stage_tnh_new" model="crm.stage">
-            <field name="name">Initial Contact</field>
+            <field name="name">TNH - New Lead / Source</field>
             <field name="sequence">1</field>
-            <field name="team_ids" eval="[(4, ref('team_corporate'))]"/>
+            <field name="team_ids" eval="[(4, ref('team_tnh'))]"/>
         </record>
         <record id="stage_tnh_2" model="crm.stage">
-            <field name="name">Stage 2 (Placeholder)</field>
+            <field name="name">TNH - Lead Validation</field>
             <field name="sequence">2</field>
-            <field name="team_ids" eval="[(4, ref('team_corporate'))]"/>
+            <field name="team_ids" eval="[(4, ref('team_tnh'))]"/>
         </record>
         <record id="stage_tnh_3" model="crm.stage">
-            <field name="name">Stage 3 (Placeholder)</field>
+            <field name="name">TNH - Request Understanding / Scope</field>
             <field name="sequence">3</field>
-            <field name="team_ids" eval="[(4, ref('team_corporate'))]"/>
+            <field name="team_ids" eval="[(4, ref('team_tnh'))]"/>
         </record>
         <record id="stage_tnh_4" model="crm.stage">
-            <field name="name">Stage 4 (Placeholder)</field>
+            <field name="name">TNH - Deck</field>
             <field name="sequence">4</field>
-            <field name="team_ids" eval="[(4, ref('team_corporate'))]"/>
+            <field name="team_ids" eval="[(4, ref('team_tnh'))]"/>
         </record>
         <record id="stage_tnh_5" model="crm.stage">
-            <field name="name">Stage 5 (Placeholder)</field>
+            <field name="name">TNH - Proposal</field>
             <field name="sequence">5</field>
-            <field name="team_ids" eval="[(4, ref('team_corporate'))]"/>
+            <field name="team_ids" eval="[(4, ref('team_tnh'))]"/>
         </record>
         <record id="stage_tnh_6" model="crm.stage">
-            <field name="name">Stage 6 (Placeholder)</field>
+            <field name="name">TNH - Follow-up's</field>
             <field name="sequence">6</field>
-            <field name="team_ids" eval="[(4, ref('team_corporate'))]"/>
+            <field name="team_ids" eval="[(4, ref('team_tnh'))]"/>
         </record>
         <record id="stage_tnh_7" model="crm.stage">
-            <field name="name">Stage 7 (Placeholder)</field>
+            <field name="name">TNH - Agreement</field>
             <field name="sequence">7</field>
-            <field name="team_ids" eval="[(4, ref('team_corporate'))]"/>
+            <field name="team_ids" eval="[(4, ref('team_tnh'))]"/>
         </record>
         <record id="stage_tnh_won" model="crm.stage">
-            <field name="name">Contract Signed</field>
+            <field name="name">TNH - Won / Lost</field>
             <field name="sequence">8</field>
             <field name="is_won">True</field>
-            <field name="team_ids" eval="[(4, ref('team_corporate'))]"/>
+            <field name="team_ids" eval="[(4, ref('team_tnh'))]"/>
+        </record>
+        <record id="stage_tnh_project_state" model="crm.stage">
+            <field name="name">TNH - Project State</field>
+            <field name="sequence">9</field>
+            <field name="team_ids" eval="[(4, ref('team_tnh'))]"/>
         </record>
 
         <!-- 6. Technology Stages (7 stages) - Mazenet_CRM_M2_Build_Tasks.xlsx: "New Lead ->

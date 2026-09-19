@@ -35,5 +35,22 @@ model.check_red_lock_recods()</field>
             <field name="interval_type">minutes</field>
             <field name="active">True</field>
         </record>
+
+        <!-- LMS Pipeline Stage 7 (Mazenet_CRM_Corporate_LMS_TNH_Pipelines.xlsx, Build
+             Notes #6): the project's only cron. Runs DAILY, nextcall pinned to 20:00
+             IST (14:30 UTC) - the method itself (_cron_lms_friday_escalation) is what
+             actually restricts escalation to Fridays, checked in IST; see its own
+             docstring for why a daily interval was used instead of trying to express
+             a weekly-on-Friday cadence directly in interval_type. -->
+        <record id="ir_cron_mz_lms_friday_escalation" model="ir.cron">
+            <field name="name">Mazenet CRM: LMS Friday Escalation (KT / Skill Upload)</field>
+            <field name="model_id" ref="crm.model_crm_lead"/>
+            <field name="state">code</field>
+            <field name="code">model._cron_lms_friday_escalation()</field>
+            <field name="nextcall" eval="(DateTime.now()).strftime('%Y-%m-%d') + ' 14:30:00'"/>
+            <field name="interval_number">1</field>
+            <field name="interval_type">days</field>
+            <field name="active">True</field>
+        </record>
     </data>
 </odoo>

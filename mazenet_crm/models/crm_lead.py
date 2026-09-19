@@ -30,8 +30,11 @@ MZ_ACTIVITY_WINDOW_MINUTES = 20
 # Software Dev, not MIS - they have no Follow-up's stage." Every other team's leads always
 # get x_activity_card_state = False ('Normal'), and are excluded from the RED-lock cron
 # entirely (_cron_trigger_red_locks) - not just from the colour, the lock itself no longer
-# applies there either.
-MZ_ACTIVITY_CARD_BU_CATEGORIES = {'dmt', 'tally', 'tech'}
+# applies there either. TNH added 2026-09-19 (Corporate/LMS/TNH Pipelines build,
+# Build Notes #3): "the only Corporate-side pipeline that carries the colour timer and
+# RED lock" - Corporate (Hunter/AM/Corp Training) and LMS deliberately do NOT get it,
+# despite both having their own "Proposal & Follow-up's"-style stage.
+MZ_ACTIVITY_CARD_BU_CATEGORIES = {'dmt', 'tally', 'tech', 'tnh'}
 
 SYSTEM_FIELDS = {
     "message_follower_ids", "activity_ids", "message_ids", "message_main_attachment_id",
@@ -70,6 +73,13 @@ SYSTEM_FIELDS = {
 # first stage passes and a once-only first-stage check would stop catching that.
 MZ_EITHER_OR_MANDATORY_FIELDS = {
     'phone_or_email': ('phone', 'email_from'),
+    # TNH Stage 3 ("3a plus at least one of 3b-3e - two separate rules on one stage"):
+    # x_tnh_meeting_held/attachment_ids are their own always-mandatory entries in
+    # MZ_STAGE_GATE_RULES; this pseudo-name covers the SEPARATE "any one service"
+    # rule alongside them.
+    'x_tnh_service_any': ('x_tnh_service_fte', 'x_tnh_service_cwr', 'x_tnh_service_iaas', 'x_tnh_service_htd'),
+    # TNH Stage 5 ("Proposal for - ...", any one mandatory).
+    'x_tnh_proposal_any': ('x_tnh_proposal_fte', 'x_tnh_proposal_cwr', 'x_tnh_proposal_iaas', 'x_tnh_proposal_htd'),
 }
 
 MZ_STAGE_GATE_RULES = {
@@ -131,7 +141,150 @@ MZ_STAGE_GATE_RULES = {
         ('stage_mis_5', []),
         ('stage_mis_won', []),
     ],
+    # Corporate Pipeline: identical field shape across all 3 teams (Hunter, Account
+    # Manager, Corp Training Delivery) - only the stage xmlids differ, since Build
+    # Notes #1/#2 require 3 separate stage sets rather than one team_id=False set.
+    # Stage 6 (Won/Lost) and Stage 7 (Project State) carry no forward-move gate here
+    # deliberately: Won's 3-document gate is enforced separately by action_set_won
+    # (MZ_WON_GATE_RULES) since it's a close-action check, not a "next stage" one, and
+    # Project State is the pipeline's terminal stage (same convention as every other
+    # BU's own Project State/Won stage above).
+    'corp_hunter': [
+        ('stage_corp_hunter_new', ['name', 'source_id']),
+        ('stage_corp_hunter_validation', [
+            'x_client_expectations_attachment_ids', 'x_product_service', 'x_target_audience',
+            'x_lead_timelines_days', 'x_deliverables',
+        ]),
+        ('stage_corp_hunter_deck', ['x_presentation_completed_datetime']),
+        ('stage_corp_hunter_proposal', ['x_quote_document_ids']),
+        ('stage_corp_hunter_evaluation', [
+            'x_training_content_eval_start_date', 'x_training_content_finalized_date',
+            'x_trainer_eval_start_date', 'x_trainer_eval_finalized_date',
+            'x_training_dates_finalized',
+        ]),
+        ('stage_corp_hunter_won', []),
+        ('stage_corp_hunter_project_state', []),
+    ],
+    'corp_am': [
+        ('stage_corp_am_new', ['name', 'source_id']),
+        ('stage_corp_am_validation', [
+            'x_client_expectations_attachment_ids', 'x_product_service', 'x_target_audience',
+            'x_lead_timelines_days', 'x_deliverables',
+        ]),
+        ('stage_corp_am_deck', ['x_presentation_completed_datetime']),
+        ('stage_corp_am_proposal', ['x_quote_document_ids']),
+        ('stage_corp_am_evaluation', [
+            'x_training_content_eval_start_date', 'x_training_content_finalized_date',
+            'x_trainer_eval_start_date', 'x_trainer_eval_finalized_date',
+            'x_training_dates_finalized',
+        ]),
+        ('stage_corp_am_won', []),
+        ('stage_corp_am_project_state', []),
+    ],
+    'corp_training': [
+        ('stage_corp_training_new', ['name', 'source_id']),
+        ('stage_corp_training_validation', [
+            'x_client_expectations_attachment_ids', 'x_product_service', 'x_target_audience',
+            'x_lead_timelines_days', 'x_deliverables',
+        ]),
+        ('stage_corp_training_deck', ['x_presentation_completed_datetime']),
+        ('stage_corp_training_proposal', ['x_quote_document_ids']),
+        ('stage_corp_training_evaluation', [
+            'x_training_content_eval_start_date', 'x_training_content_finalized_date',
+            'x_trainer_eval_start_date', 'x_trainer_eval_finalized_date',
+            'x_training_dates_finalized',
+        ]),
+        ('stage_corp_training_won', []),
+        ('stage_corp_training_project_state', []),
+    ],
+    # LMS Pipeline: Stages 1-4 reuse Corporate's own field shape. Stage 5 (Won/Lost)
+    # and Stage 8 (Project State) carry no forward-move gate, same reasoning as
+    # Corporate above. Stage 6 (Delivery) is gated; Stage 7 (Content Availability) is
+    # NOT - Build Notes #5/#6 call it "the hardest stage in the project" precisely
+    # because its content is per-week child rows (x_lms_week_ids), not plain fields a
+    # name-list gate can check, so it's left to the Friday cron/escalation instead of
+    # a stage-advance block.
+    'lms': [
+        ('stage_lms_new', ['name', 'source_id']),
+        ('stage_lms_validation', [
+            'x_client_expectations_attachment_ids', 'x_product_service', 'x_target_audience',
+            'x_lead_timelines_days', 'x_deliverables',
+        ]),
+        ('stage_lms_deck', ['x_presentation_completed_datetime']),
+        ('stage_lms_proposal', ['x_quote_document_ids']),
+        ('stage_lms_won', []),
+        ('stage_lms_delivery', [
+            'x_lms_training_content', 'x_lms_toc_by', 'x_lms_content_availability',
+            'x_lms_training_start_date', 'x_lms_training_end_date',
+        ]),
+        ('stage_lms_content_availability', []),
+        ('stage_lms_project_state', []),
+    ],
+    # TNH Pipeline: the only Corporate-side pipeline with the colour timer/RED lock
+    # (Stage 6, Follow-up's - see MZ_ACTIVITY_CARD_BU_CATEGORIES), and the only one
+    # with a genuinely standalone Project State (no Training Status stage to fold it
+    # into, unlike Corporate/LMS). Stage 6 and Stage 8 (Won/Lost) carry no field gate,
+    # same reasoning as every other BU's Follow-up's/Won stage above.
+    'tnh': [
+        ('stage_tnh_new', ['name', 'source_id']),
+        ('stage_tnh_2', ['x_company_turnover', 'x_employee_count', 'x_nature_of_business']),
+        ('stage_tnh_3', ['x_tnh_meeting_held', 'x_tnh_meeting_attachment_ids', 'x_tnh_service_any']),
+        ('stage_tnh_4', ['x_presentation_completed_datetime']),
+        ('stage_tnh_5', ['x_tnh_proposal_any', 'x_tnh_deviation_text']),
+        ('stage_tnh_6', []),
+        ('stage_tnh_7', ['x_tnh_agreement_doc_ids']),
+        ('stage_tnh_won', []),
+        ('stage_tnh_project_state', []),
+    ],
 }
+
+# Corporate Evaluation stage (Stage 5): a field normally mandatory to advance past
+# Evaluation is waived when its paired checkbox is ticked - Pre-Approved skips
+# Training Content Finalized, Mazenet Validation skips Trainer Evaluation Finalized.
+# Kept as its own dict (not folded into MZ_EITHER_OR_MANDATORY_FIELDS, which means
+# "any one of several alternatives", a different rule) so _mz_missing_mandatory_fields
+# can special-case it the same explicit way.
+MZ_WAIVER_CONDITIONAL_MANDATORY_FIELDS = {
+    'x_training_content_finalized_date': 'x_training_content_preapproved',
+    'x_trainer_eval_finalized_date': 'x_trainer_mazenet_validated',
+}
+
+# LMS Delivery stage (Stage 6): x_lms_toc_by only applies (and is only mandatory)
+# when its companion Selection field holds a SPECIFIC value - a different shape from
+# MZ_WAIVER_CONDITIONAL_MANDATORY_FIELDS above (that one waives on a boolean being
+# True; this one requires on a Selection equalling one particular option, per the
+# sheet's own "Only applies when 6a = New Content" wording).
+MZ_SELECTION_CONDITIONAL_MANDATORY_FIELDS = {
+    'x_lms_toc_by': ('x_lms_training_content', 'new_content'),
+}
+
+# TNH Stage 5 ("Deviation... text box is mandatory ONLY IF the Deviation checkbox is
+# ticked"): the OPPOSITE direction from MZ_WAIVER_CONDITIONAL_MANDATORY_FIELDS above
+# (that one drops the requirement when its boolean is True; this one ADDS the
+# requirement when its boolean is True) - kept as its own dict rather than
+# overloading the waiver one with a "sense" flag, since the two are checked by
+# fully separate branches in _mz_missing_mandatory_fields.
+MZ_BOOLEAN_CONDITIONAL_MANDATORY_FIELDS = {
+    'x_tnh_deviation_text': 'x_tnh_deviation',
+}
+
+# Corporate Won/Lost gate (Stage 6): action_set_won below blocks Won unless every
+# listed attachment field is filled - Corporate's is the project's only THREE-
+# document gate (tagged Quotation from Stage 4, plus both POs from Stage 6). LMS's
+# own Won gate document was an open client question - built with the sheet's own
+# proposed default (a tagged Quotation), a single-document gate. TNH's is a TWO-
+# document gate (tagged Quotation/Proposal, plus the Stage 7 NDA/confirmation doc).
+MZ_WON_GATE_RULES = {
+    'corp_hunter': ['x_quote_document_ids', 'x_po_received_attachment_ids', 'x_po_issued_trainer_attachment_ids'],
+    'corp_am': ['x_quote_document_ids', 'x_po_received_attachment_ids', 'x_po_issued_trainer_attachment_ids'],
+    'corp_training': ['x_quote_document_ids', 'x_po_received_attachment_ids', 'x_po_issued_trainer_attachment_ids'],
+    'lms': ['x_quote_document_ids'],
+    'tnh': ['x_quote_document_ids', 'x_tnh_agreement_doc_ids'],
+}
+
+# BUs whose Lost reason must be free text (x_lost_reason_text) rather than stock's
+# lost_reason_id selection - action_set_lost below enforces it's non-empty.
+MZ_LOST_REASON_TEXT_BU_CATEGORIES = {'corp_hunter', 'corp_am', 'corp_training', 'lms', 'tnh'}
 
 class CrmLead(models.Model):
     _inherit = "crm.lead"
@@ -266,27 +419,6 @@ class CrmLead(models.Model):
         return self.env['crm.stage'].search(
             [('team_ids', 'in', team.id)], order='sequence asc', limit=1
         )
-
-    def action_set_lost(self, **additional_values):
-        """Stock's own version (addons/crm/models/crm_lead.py) only sets active=False
-        + probability=0 - it never touches stage_id at all, leaving a Lost lead
-        parked on whatever stage it happened to be on (hit live 2026-09-15: a
-        Tally lead marked Lost stayed on "New Lead", invisible under the "Won /
-        Lost" stage the team actually expected to find it in). This module's OWN
-        stage design already documents Lost as belonging on that same combined
-        stage as Won (data/stages.xml's own comments, e.g. Tally's: "Lost is NOT
-        its own stage - handled via active=False + lost_reason on the Won/Lost
-        stage") - so move it there too, mirroring stock's own action_set_won
-        stage-finding logic. sudo() + skip the M3 gate deliberately: closing a
-        lead as Lost is exactly the moment its earlier-stage mandatory fields may
-        never get filled in, and shouldn't block the close. Teams with no is_won
-        stage at all (DMT) are unaffected - nothing to move to."""
-        res = super().action_set_lost(**additional_values)
-        for lead in self:
-            won_stage = lead._stage_find(domain=[('is_won', '=', True)], limit=1)
-            if won_stage and lead.stage_id != won_stage:
-                lead.sudo().write({'stage_id': won_stage.id})
-        return res
 
     def _mz_resolve_stage_team_id_from_domain(self, domain):
         """Sales Team AND Salesperson search panel selections should both drive
@@ -1437,6 +1569,178 @@ class CrmLead(models.Model):
     x_mis_timelines_estimate = fields.Integer(string="Timelines (Estimate)")
     x_deliverables = fields.Char(string="Deliverables")
 
+    # -- Corporate Pipeline (Hunter / Account Manager / Corp Training Delivery) --
+    # Mazenet_CRM_Corporate_LMS_TNH_Pipelines.xlsx. Named generically (no "corp_"
+    # prefix) wherever the same concept is expected to recur on LMS's own Stage 8
+    # "Training Status" (Training Commenced/Completed) when that pipeline is built -
+    # x_target_audience/x_deliverables above are already shared the same way.
+    # Stage 1 (New Lead/Source) and Stage 4 (Quote shared) need no new fields at all:
+    # source_id/referred (stock, via utm.source.x_requires_reference_text) and
+    # x_quote_document_ids (Tally/Tech/SWDev/MIS's own field) are reused as-is.
+    x_client_expectations_attachment_ids = fields.Many2many(
+        'ir.attachment', 'mazenet_crm_lead_client_expectations_attachment_rel',
+        'lead_id', 'attachment_id', string="Client Expectations Attachment(s)")
+    x_lead_timelines_days = fields.Integer(
+        string="Timelines",
+        help="Number box, per the Corporate/LMS sheets - NOT the same field as the "
+             "generic Char x_timeline used by Tally/Technology/Software Dev's own "
+             "Stage 3/4 'Timeline' item."
+    )
+    x_presentation_completed_datetime = fields.Datetime(
+        string="Presentation Completed",
+        help="Date AND time, not date only - the sheet is explicit that a bare date isn't enough."
+    )
+    x_training_content_eval_start_date = fields.Date(string="Training Content Evaluation Started")
+    x_training_content_preapproved = fields.Boolean(
+        string="Pre-Approved",
+        help="When checked, Training Content Finalized is NOT required to advance past Evaluation."
+    )
+    x_training_content_finalized_date = fields.Date(
+        string="Training Content Finalized",
+        help="Mandatory unless Pre-Approved is checked - see MZ_WAIVER_CONDITIONAL_MANDATORY_FIELDS."
+    )
+    x_trainer_eval_start_date = fields.Date(string="Trainer Evaluation Started")
+    x_trainer_mazenet_validated = fields.Boolean(
+        string="Mazenet Validation",
+        help="When checked, Trainer Evaluation Finalized is NOT required to advance past Evaluation."
+    )
+    x_trainer_eval_finalized_date = fields.Date(
+        string="Trainer Evaluation Finalized",
+        help="Mandatory unless Mazenet Validation is checked - see MZ_WAIVER_CONDITIONAL_MANDATORY_FIELDS."
+    )
+    x_training_dates_finalized = fields.Date(string="Training Dates Finalized")
+    x_po_received_date = fields.Date(string="PO Received Date (Vendor / Client)")
+    x_po_received_attachment_ids = fields.Many2many(
+        'ir.attachment', 'mazenet_crm_lead_po_received_attachment_rel',
+        'lead_id', 'attachment_id', string="PO Received (Vendor / Client)",
+        help="Existing clients: 1-year PO or SOW. New clients: PO, SOW or mail confirmation."
+    )
+    x_po_issued_trainer_date = fields.Date(string="PO Issued to Trainer Date")
+    x_po_issued_trainer_attachment_ids = fields.Many2many(
+        'ir.attachment', 'mazenet_crm_lead_po_issued_trainer_attachment_rel',
+        'lead_id', 'attachment_id', string="PO Issued to Trainer",
+        help="A different document from PO Received above - the Won gate checks both by document type."
+    )
+    x_lost_reason_text = fields.Text(
+        string="Lost Reason (Free Text)",
+        help="Free text, any content - required before this lead can be marked Lost. NOT the "
+             "stock lost_reason_id selection ('Lost Reason'), which the sheet's own 'free text, "
+             "cannot be empty' wording rules out - named distinctly to avoid the two fields "
+             "sharing one label in list/pivot views."
+    )
+    x_training_commenced_date = fields.Date(string="Training Commenced")
+    x_training_commenced_attachment_ids = fields.Many2many(
+        'ir.attachment', 'mazenet_crm_lead_training_commenced_attachment_rel',
+        'lead_id', 'attachment_id', string="Training Commenced Attachment(s)")
+    x_training_completed_date = fields.Date(string="Training Completed")
+    x_training_completed_attachment_ids = fields.Many2many(
+        'ir.attachment', 'mazenet_crm_lead_training_completed_attachment_rel',
+        'lead_id', 'attachment_id', string="Training Completed Attachment(s)")
+
+    # -- LMS Pipeline (team_lms) only --
+    # Mazenet_CRM_Corporate_LMS_TNH_Pipelines.xlsx. Stage 1/2/3/4 reuse Corporate's own
+    # fields above (x_client_expectations_attachment_ids, x_product_service,
+    # x_target_audience, x_lead_timelines_days, x_deliverables,
+    # x_presentation_completed_datetime, x_quote_document_ids) - the sheets list
+    # identical field shapes there. Stage 5 (Won/Lost) reuses x_lost_reason_text.
+    # Stage 8 ("Training Status", folded into Project State) reuses
+    # x_training_commenced/completed_* above plus the standard 4 Project State fields.
+    x_lms_training_content = fields.Selection(
+        [('pre_approved', 'Pre-approved'), ('new_content', 'New Content')],
+        string="Training Content"
+    )
+    x_lms_toc_by = fields.Selection(
+        [('trainer', 'Trainer'), ('mazenet', 'Mazenet')],
+        string="New Content - TOC By",
+        help="Only applies when Training Content = New Content - mandatory in that case only, "
+             "see MZ_SELECTION_CONDITIONAL_MANDATORY_FIELDS."
+    )
+    x_lms_content_availability = fields.Selection(
+        [('all', 'All'), ('week_by_week', 'Week-by-Week')],
+        string="Content Available"
+    )
+    x_lms_training_start_date = fields.Date(string="Training Duration - Start")
+    x_lms_training_end_date = fields.Date(string="Training Duration - End")
+    x_lms_training_weeks = fields.Integer(
+        string="Training Duration in Weeks", compute="_compute_x_lms_training_weeks", store=True,
+        help="Auto-calculated from the Training Duration date range: each started 7-day "
+             "block counts as one week (0-6 days = 1 week, 7-13 days = 2 weeks, etc). "
+             "Read-only - drives how many rows _mz_sync_lms_weeks generates below."
+    )
+    x_lms_week_ids = fields.One2many(
+        'crm.lead.lms.week', 'lead_id', string="Weekly KT / Skill Upload Tracking"
+    )
+
+    @api.depends('x_lms_training_start_date', 'x_lms_training_end_date')
+    def _compute_x_lms_training_weeks(self):
+        for lead in self:
+            if lead.x_lms_training_start_date and lead.x_lms_training_end_date \
+                    and lead.x_lms_training_end_date >= lead.x_lms_training_start_date:
+                days = (lead.x_lms_training_end_date - lead.x_lms_training_start_date).days
+                lead.x_lms_training_weeks = days // 7 + 1
+            else:
+                lead.x_lms_training_weeks = 0
+
+    def _mz_sync_lms_weeks(self):
+        """Reconciles x_lms_week_ids against x_lms_training_weeks (Build Notes #5: "one
+        row per week, generated from the Stage 6 date range - DO NOT build fixed
+        checkbox fields"). Adds missing week rows and removes rows past the new count,
+        but never touches an existing week's own kt_uploaded/skill_uploaded flags - a
+        lead whose training got extended from 5 to 7 weeks should keep what was already
+        ticked on weeks 1-5, not have them reset."""
+        Week = self.env['crm.lead.lms.week']
+        for lead in self:
+            target = lead.x_lms_training_weeks
+            existing = Week.search([('lead_id', '=', lead.id)])
+            existing_numbers = set(existing.mapped('week_number'))
+            to_remove = existing.filtered(lambda w: w.week_number > target)
+            if to_remove:
+                to_remove.unlink()
+            missing = [n for n in range(1, target + 1) if n not in existing_numbers]
+            if missing:
+                Week.create([{'lead_id': lead.id, 'week_number': n} for n in missing])
+
+    # -- TNH Pipeline (team_tnh) only --
+    # Mazenet_CRM_Corporate_LMS_TNH_Pipelines.xlsx. Stage 1 reuses source_id/referred
+    # like every other BU. Stage 2 reuses x_company_turnover ("Revenue" here - same
+    # Monetary field, relabeled in the view), x_employee_count (DMT's own field) and
+    # x_nature_of_business (Software Dev's own field). Stage 4 reuses
+    # x_presentation_completed_datetime. Won/Lost reuses x_lost_reason_text and
+    # x_quote_document_ids (the "tagged Quotation or Proposal attachment" Stage 8's
+    # Won gate asks for - the sheet's own Stage 5 "Proposal" field list is all
+    # checkboxes with no attachment item of its own, so this is added onto that stage
+    # rather than invented as a new field). Project State reuses the standard 4 fields
+    # plus x_workorder_completion_date/x_deviation_days, same as every other BU.
+    x_tnh_meeting_held = fields.Boolean(string="Meeting")
+    x_tnh_meeting_attachment_ids = fields.Many2many(
+        'ir.attachment', 'mazenet_crm_lead_tnh_meeting_attachment_rel',
+        'lead_id', 'attachment_id', string="Meeting Attachment(s)")
+    x_tnh_service_fte = fields.Boolean(string="Service - FTE")
+    x_tnh_service_cwr = fields.Boolean(string="Service - CWR")
+    x_tnh_service_iaas = fields.Boolean(string="Service - IaaS")
+    x_tnh_service_htd = fields.Boolean(string="Service - HTD")
+    x_tnh_proposal_fte = fields.Boolean(string="Proposal for - FTE")
+    x_tnh_proposal_cwr = fields.Boolean(string="Proposal for - CWR")
+    x_tnh_proposal_iaas = fields.Boolean(string="Proposal for - IaaS")
+    x_tnh_proposal_htd = fields.Boolean(string="Proposal for - HTD")
+    x_tnh_deviation = fields.Boolean(string="Deviation")
+    x_tnh_deviation_text = fields.Text(
+        string="Deviation Notes",
+        help="Mandatory ONLY IF Deviation is checked - see MZ_BOOLEAN_CONDITIONAL_MANDATORY_FIELDS."
+    )
+    x_tnh_agreement_doc_ids = fields.Many2many(
+        'ir.attachment', 'mazenet_crm_lead_tnh_agreement_attachment_rel',
+        'lead_id', 'attachment_id', string="NDA / Confirmation Mail / Messenger Confirmation",
+        help="Any one of the three (NDA, confirmation mail, messenger confirmation) satisfies "
+             "this - upload whichever one actually applies."
+    )
+    x_tnh_msa_attachment_ids = fields.Many2many(
+        'ir.attachment', 'mazenet_crm_lead_tnh_msa_attachment_rel',
+        'lead_id', 'attachment_id', string="MSA", help="Optional - not every deal has one.")
+    x_tnh_sow_attachment_ids = fields.Many2many(
+        'ir.attachment', 'mazenet_crm_lead_tnh_sow_attachment_rel',
+        'lead_id', 'attachment_id', string="SOW", help="Optional - not every deal has one.")
+
     def _mz_check_assign_type_allowed(self, vals):
         """Server-side backstop for x_assign_type in ('team', 'internal'): the view
         only offers those to whoever passes x_can_use_assign_radio (DMT team
@@ -1562,7 +1866,15 @@ class CrmLead(models.Model):
         own entry in MZ_STAGE_GATE_RULES (it's conditional on the source, not always
         mandatory). Also special-cased for MZ_EITHER_OR_MANDATORY_FIELDS pseudo-names
         (e.g. 'phone_or_email'): satisfied if ANY of the alternative fields is filled,
-        not each one individually."""
+        not each one individually. And for MZ_WAIVER_CONDITIONAL_MANDATORY_FIELDS
+        (Corporate Evaluation stage): not required at all once its paired waiver
+        checkbox (Pre-Approved / Mazenet Validation) is ticked. Also for
+        MZ_SELECTION_CONDITIONAL_MANDATORY_FIELDS (LMS Delivery stage): only required
+        when its companion Selection field equals one specific value (e.g. TOC By only
+        matters when Training Content = New Content). And for
+        MZ_BOOLEAN_CONDITIONAL_MANDATORY_FIELDS (TNH Proposal stage): the OPPOSITE
+        direction from the waiver dict - only required when its trigger boolean is
+        True (e.g. Deviation Notes only matters once Deviation is ticked)."""
         self.ensure_one()
         missing = []
         for fname in field_names:
@@ -1571,6 +1883,18 @@ class CrmLead(models.Model):
                 if not any(self._mz_resolve_gate_value(f, vals) for f in alt_fields):
                     missing.append(fname)
                 continue
+            if fname in MZ_WAIVER_CONDITIONAL_MANDATORY_FIELDS:
+                waiver_field = MZ_WAIVER_CONDITIONAL_MANDATORY_FIELDS[fname]
+                if self._mz_resolve_gate_value(waiver_field, vals):
+                    continue
+            if fname in MZ_SELECTION_CONDITIONAL_MANDATORY_FIELDS:
+                trigger_field, trigger_value = MZ_SELECTION_CONDITIONAL_MANDATORY_FIELDS[fname]
+                if self._mz_resolve_gate_value(trigger_field, vals) != trigger_value:
+                    continue
+            if fname in MZ_BOOLEAN_CONDITIONAL_MANDATORY_FIELDS:
+                trigger_field = MZ_BOOLEAN_CONDITIONAL_MANDATORY_FIELDS[fname]
+                if not self._mz_resolve_gate_value(trigger_field, vals):
+                    continue
             value = self._mz_resolve_gate_value(fname, vals)
             if not value:
                 missing.append(fname)
@@ -1699,7 +2023,11 @@ class CrmLead(models.Model):
                 vals['team_id'] = team_id
             if dmt_team and 'x_dmt_originated' not in vals:
                 vals['x_dmt_originated'] = team_id == dmt_team.id
-        return super(CrmLead, self).create(vals_list)
+        records = super(CrmLead, self).create(vals_list)
+        records.filtered(
+            lambda l: l.x_lms_training_start_date or l.x_lms_training_end_date
+        )._mz_sync_lms_weeks()
+        return records
 
     def write(self, vals):
         u = self.env.user
@@ -1866,6 +2194,9 @@ class CrmLead(models.Model):
                         lead._mz_stage_gate_check(stage_dmt_transferred, vals)
 
         result = super(CrmLead, self).write(vals)
+
+        if 'x_lms_training_start_date' in vals or 'x_lms_training_end_date' in vals:
+            self._mz_sync_lms_weeks()
 
         # Cross-Team Handoff Stage Advance (2026-09-12, REPLACES the DMT-only
         # "Handoff Auto-Advance" from 2026-09-11): whenever a lead's team_id
@@ -2273,10 +2604,63 @@ class CrmLead(models.Model):
         hit an AccessError just clicking Lost, since action_archive()'s write()
         never stamps mz_archive_wizard - only mazenet_crm's own wizard does.
         Stamping it here waives that gate for this one legitimate path, the same
-        way the Archive Lead Wizard does for itself."""
+        way the Archive Lead Wizard does for itself.
+
+        Also covers two things a SECOND, now-removed action_set_lost override used
+        to handle before it was silently shadowing this one (same class, same
+        method name defined twice - only the later definition in the file ever
+        ran, so the first one's stage-move logic never actually executed):
+        (1) Corporate's Lost Reason gate (MZ_LOST_REASON_TEXT_BU_CATEGORIES) -
+        the sheet's own "free text, cannot be empty" wording rules out stock's
+        lost_reason_id selection, so x_lost_reason_text is checked here instead.
+        (2) A SECOND, now-removed override used to also move a newly-Lost lead
+        onto its BU's shared Won/Lost stage (motivated by a real complaint,
+        2026-09-15: a Tally lead marked Lost stayed on "New Lead" instead of
+        showing under "Won / Lost" when browsing Archived leads). That code was
+        unreachable dead code before the shadowing bug above was fixed, so it
+        never actually ran in production - and testing it for the first time
+        here (2026-09-19) showed WHY it can't work: stock's own
+        _check_won_validity constraint (addons/crm/models/crm_lead.py:262-266)
+        unconditionally forbids a lead sitting on an is_won=True stage with
+        probability != 100 ("A lead in a Won stage cannot be lost. Move it to
+        another stage first.") - and stock's write() ALSO unconditionally forces
+        probability=100/active=True the instant stage_id targets an is_won
+        stage, so there is no write ordering that lands a Lost lead on that
+        stage without stock rejecting it or silently re-Won-ing it. This is a
+        genuine limitation of the "Won and Lost share one is_won stage" design
+        this module already uses for Tally, not something specific to Corporate
+        - flagged to the user rather than worked around here, since fixing it
+        for real needs a separate is_won=False "Lost" stage per BU, a bigger
+        change than this task's scope. Lost leads stay on whatever stage they
+        were on when closed, same as stock's own default behavior."""
+        for lead in self:
+            if lead.team_id.x_bu_category in MZ_LOST_REASON_TEXT_BU_CATEGORIES and not lead.x_lost_reason_text:
+                raise UserError(_(
+                    "'%s': Lost Reason is required before this lead can be marked Lost."
+                ) % lead.name)
         return super(
             CrmLead, self.with_context(mz_archive_wizard=True)
         ).action_set_lost(**additional_values)
+
+    def action_set_won(self):
+        """Corporate Pipeline's Won gate (Build Notes #9): Hunter/Account Manager/
+        Corp Training Delivery leads are blocked from Won unless ALL of
+        MZ_WON_GATE_RULES's attachment fields for that BU are filled - the tagged
+        Quotation from Stage 4, plus BOTH POs from Stage 6 (from vendor/client, and
+        to the trainer - two distinct document types, not one attachment counted
+        twice). The project's only three-document gate. No other BU has an entry
+        in MZ_WON_GATE_RULES, so this is a no-op for everyone else."""
+        for lead in self:
+            required = MZ_WON_GATE_RULES.get(lead.team_id.x_bu_category)
+            if not required:
+                continue
+            missing = [f for f in required if not lead[f]]
+            if missing:
+                labels = ', '.join(lead._fields[f].string for f in missing)
+                raise UserError(_(
+                    "'%(lead)s': cannot mark Won - missing required document(s): %(labels)s."
+                ) % {'lead': lead.name, 'labels': labels})
+        return super().action_set_won()
 
     def action_view_spinoff_leads(self):
         """Smart-button target: leads created FROM this one via the 'Create New
@@ -2413,6 +2797,66 @@ class CrmLead(models.Model):
                 'x_lock_date': now,
             })
             lead._notify_red_lock_triggered()
+
+    @api.model
+    def _cron_lms_friday_escalation(self):
+        """LMS Pipeline Stage 7 escalation (Build Notes #6 - the project's ONLY
+        cron): if the upcoming training week's KT or Skill upload isn't checked yet,
+        notify the LMS team leader (the sheet's open "who gets notified" question -
+        built with the LMS Manager, i.e. team_lms.user_id, as the proposed default).
+
+        data/cron.xml runs this DAILY, nextcall pinned to 20:00 IST (14:30 UTC) -
+        deliberately not a weekly interval anchored to a guessed Friday date, since
+        the sheet only requires the run TIME be stated explicitly in IST, not the
+        underlying poll cadence. The method itself is the actual "Friday night" gate:
+        it no-ops on every other day, checked in IST (not server/UTC time - a
+        server-time Friday can already be Saturday morning in IST or vice versa).
+
+        "Next week" = whichever week's start date (training start + 7*(n-1) days)
+        falls within the next 7 days from today - i.e. the week that starts on or
+        before next Friday, checked from THIS Friday. Each lead gets at most one
+        escalation per run, for that one upcoming week only."""
+        ist = pytz.timezone('Asia/Kolkata')
+        now_ist = pytz.utc.localize(fields.Datetime.now()).astimezone(ist)
+        if now_ist.weekday() != 4:  # Monday=0 ... Friday=4
+            return
+
+        lms_team = self.env.ref('mazenet_crm.team_lms', raise_if_not_found=False)
+        if not lms_team:
+            return
+        today = now_ist.date()
+        leads = self.search([
+            ('team_id', '=', lms_team.id),
+            ('x_lms_training_start_date', '!=', False),
+            ('x_lms_week_ids', '!=', False),
+        ])
+        for lead in leads:
+            for week in lead.x_lms_week_ids.sorted('week_number'):
+                week_start = lead.x_lms_training_start_date + timedelta(days=7 * (week.week_number - 1))
+                if today <= week_start <= today + timedelta(days=7):
+                    if not week.kt_uploaded or not week.skill_uploaded:
+                        lead._notify_lms_week_escalation(week, lms_team.user_id)
+                    break
+
+    def _notify_lms_week_escalation(self, week, recipient):
+        """Chatter + real-time/persistent Inbox notification for one unchecked
+        upcoming LMS training week - see _cron_lms_friday_escalation."""
+        self.ensure_one()
+        missing = []
+        if not week.kt_uploaded:
+            missing.append(_("KT"))
+        if not week.skill_uploaded:
+            missing.append(_("Skill"))
+        body = _(
+            "LMS Friday Escalation: Week %(week)s upload(s) still unchecked: %(missing)s."
+        ) % {'week': week.week_number, 'missing': ', '.join(missing)}
+        self.message_post(body=body, subtype_xmlid="mail.mt_note")
+        if recipient:
+            self._push_notification(
+                recipient,
+                subject=_("LMS Week %s Upload Escalation: %s") % (week.week_number, self.name),
+                body=body,
+            )
 
     def _get_parent_hierarchy(self, group):
             """Recursively fetch all parent/ancestor groups."""
