@@ -1671,6 +1671,13 @@ class CrmLead(models.Model):
         'crm.lead.lms.week', 'lead_id', string="Weekly KT / Skill Upload Tracking"
     )
 
+    capture_dmt_lead_id = fields.Many2one(
+        'res.users', string='DMT Person (Transferred By)', ondelete='set null', copy=False,
+        help="The DMT user who transferred this lead to another team. Captured "
+             "automatically, once, the instant a DMT-owned lead's team_id first "
+             "moves off DMT - see write()'s DMT Details Snapshot block."
+    )
+
     @api.depends('x_lms_training_start_date', 'x_lms_training_end_date')
     def _compute_x_lms_training_weeks(self):
         for lead in self:
@@ -2290,6 +2297,7 @@ class CrmLead(models.Model):
                         'x_dmt_snap_company_turnover': lead.x_company_turnover,
                         'x_dmt_snap_target_team_id': lead.x_target_team_id.id,
                         'x_dmt_snap_transfer_notes': lead.x_transfer_notes,
+                        'capture_dmt_lead_id': self.env.uid, #capture the user of the Dmt team
                         'x_dmt_snap_captured': True,
                     })
 

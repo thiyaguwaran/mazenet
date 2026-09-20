@@ -221,6 +221,7 @@
                 <xpath expr="//page[@name='extra']" position="after">
                     <page name="mz_pipeline" string="Pipeline Fields">
                         <field name="x_team_bu_category" invisible="1"/>
+                        <field name="capture_dmt_lead_id"/>
                         <!-- Red-asterisk "required" indicator, scoped to whichever fields
                              MZ_STAGE_GATE_RULES actually needs to leave the CURRENT stage
                              (x_current_stage_gate_fields, crm_lead.py) - purely a UI marker
