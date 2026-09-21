@@ -311,17 +311,28 @@ class CrmLead(models.Model):
              "(not a plain compute) specifically so it CAN be used to order a kanban at all."
     )
 
-    is_show_redlock_btn = fields.Boolean('show red lock btn',
-                       default=False,copy=False,store=False,
-                      compute="_compute_show_redlock",) #note:keep store flse for dynamic condition show btn
+    is_show_redlock_btn = fields.Boolean(
+        string="Show Release RED Lock Button", copy=False, store=False,
+        compute="_compute_show_redlock",
+        help="Whether the CURRENT user (viewing/editing this lead right now) should see "
+             "the 'Release RED Lock' button - True only when the lead is actually locked "
+             "(x_is_locked) AND can_user_release_lock() authorizes them. Not stored -"
+             " reflects whoever has the form open, same as x_content_readonly_for_me.\n"
+             "Client bug report (2026-09-21): 'when i create lead and save it im seeing "
+             "button release red lock' - the previous version of this compute never "
+             "checked x_is_locked at all, only 'is the current user this lead's TEAM's "
+             "own user_id field (crm.team.user_id, an entirely different field from the "
+             "lead's owner) OR CTO/Admin/MD' - so a brand-new, never-locked lead still "
+             "showed the button for anyone in either of those two buckets. Fixed by "
+             "reusing can_user_release_lock() (the actual authorization check "
+             "action_release_lock() itself already enforces), gated on x_is_locked."
+    )
 
+    @api.depends('x_is_locked')
+    @api.depends_context('uid')
     def _compute_show_redlock(self):
-        current_user = self.env.user
         for lead in self:
-            if current_user:
-                lead.is_show_redlock_btn = lead.team_id.user_id == current_user or current_user.has_groups(
-                    'mazenet_access_rights.group_mzr_cto_admin,mazenet_access_rights.group_mzr_md')
-            # lead.is_show_redlock_btn = lead.team_id.user_id == current_user
+            lead.is_show_redlock_btn = bool(lead.x_is_locked) and lead.can_user_release_lock()
 
 
     @api.model
@@ -2584,12 +2595,14 @@ class CrmLead(models.Model):
     # Tally's Development/Sales branches into one team_tally record - but the
     # access-rights GROUP hierarchy stays fully separate per sub-team regardless (e.g.
     # group_mzr_hunter_tl is not the same group as group_mzr_lms_tl). That means a
-    # single crm.team can no longer be mapped to one fixed tier-group tuple, so both
-    # RED-lock release authority (_mz_team_tier_groups) and the "Team"/"Internal" assign-type
-    # gate (_compute_x_assignable_user_ids) resolve tier from a user's actual
-    # group membership instead of from a crm.team: each user can only belong to one of
-    # these chains, so checking which one they hold gives an unambiguous answer
-    # regardless of how teams.xml groups crm.team records.
+    # single crm.team can no longer be mapped to one fixed tier-group tuple, so the
+    # "Team"/"Internal" assign-type gate (_compute_x_assignable_user_ids) resolves
+    # tier from a user's actual group membership instead of from a crm.team: each
+    # user can only belong to one of these chains, so checking which one they hold
+    # gives an unambiguous answer regardless of how teams.xml groups crm.team
+    # records. RED-lock release authority (can_user_release_lock) does NOT use this
+    # any more (see its own docstring, 2026-09-21) - only _mz_user_tier_chain and
+    # _mz_assign_notify_recipients still rely on it.
     MZR_TIER_GROUP_CHAINS = [
         ('group_mzr_dmt_agent', 'group_mzr_dmt_atl', 'group_mzr_dmt_tl', 'group_mzr_dmt_manager'),
         ('group_mzr_technology_agent', 'group_mzr_technology_atl', 'group_mzr_technology_tl', 'group_mzr_technology_manager'),
@@ -2604,22 +2617,6 @@ class CrmLead(models.Model):
         ('group_mzr_tally_atl_agents_sales', 'group_mzr_tally_atl_sales', 'group_mzr_tally_tl_sales', 'group_tally_manager'),
     ]
     MZR_TIER_RANK = {'agent': 0, 'atl': 1, 'tl': 2, 'manager': 3}
-
-    def _mz_team_tier_groups(self):
-        """(tl_group, manager_group) xmlids (unqualified, mazenet_access_rights module)
-        for this lead's OWNER, resolved from their actual group membership - or None if
-        the owner isn't in any recognized chain."""
-        self.ensure_one()
-        owner = self.user_id
-        if not owner:
-            return None
-        for agent_group, atl_group, tl_group, manager_group in self.MZR_TIER_GROUP_CHAINS:
-            if (owner.has_group(f'mazenet_access_rights.{agent_group}')
-                    or owner.has_group(f'mazenet_access_rights.{atl_group}')
-                    or owner.has_group(f'mazenet_access_rights.{tl_group}')
-                    or owner.has_group(f'mazenet_access_rights.{manager_group}')):
-                return (tl_group, manager_group)
-        return None
 
     @api.model
     def _mz_user_tier_chain(self, user):
@@ -2639,29 +2636,24 @@ class CrmLead(models.Model):
                 return ('agent', chain)
         return (None, None)
 
-    def _mz_release_head_group(self):
-        """The mazenet_access_rights group whose members (directly, or via implied_ids from
-        a higher tier) are authorized to release this lead's RED lock - one tier above
-        whichever tier the lead's own owner holds. Returns None if the owner is themselves
-        at Manager-tier (their own lead: self-release, or CTO/Admin - handled by the callers,
-        not by a team group), or if the team/owner aren't recognized."""
-        self.ensure_one()
-        owner = self.user_id
-        chain = self._mz_team_tier_groups()
-        if not owner or not chain:
-            return False
-        tl_group, manager_group = chain
-        if owner.has_group(f'mazenet_access_rights.{manager_group}'):
-            return None
-        if owner.has_group(f'mazenet_access_rights.{tl_group}'):
-            return manager_group
-        return tl_group
-
     def can_user_release_lock(self, target_user=None):
-        """Per the release policy: CTO/Admin always can; otherwise whoever holds the group
-        one tier above the lead owner's own tier (their "head", which - through implied_ids -
-        also covers anyone further up, their "superior"); a Manager's own lead is releasable
-        by that Manager themselves (self-release) besides CTO/Admin."""
+        """Per the release policy: CTO/Admin always can; otherwise whoever the lead's
+        OWNER actually reports to, directly or transitively (res.users.x_reports_to_id) -
+        a Manager's own lead is releasable by that Manager themselves (self-release)
+        besides CTO/Admin, since a Manager has no one else above them in their own BU
+        chain (they report to CTO, already covered by the check above).
+
+        REPLACES the old group-based version (removed 2026-09-21, client instruction:
+        "red lock also should be release hierarchy wise only" - a real bug report, not
+        a feature request, same root cause as the Salesperson dropdown fix earlier the
+        same day): _mz_release_head_group used to resolve a FLAT mazenet_access_rights
+        group one tier above the owner (e.g. group_mzr_hunter_atl for an agent's lead),
+        and has_group() against that shared group couldn't tell two same-tier peers'
+        subordinates apart - Hunter's ATL-2 could release a RED lock on ATL-1's own
+        agent's lead, since both ATLs hold the exact same flat group. Reusing
+        _mz_reports_to_users here (built for that same fix) gives the correct, specific
+        answer: only the owner's OWN chain of command, walked via the real reporting
+        line this module now populates."""
         self.ensure_one()
         u = target_user or self.env.user
         owner = self.user_id
@@ -2669,12 +2661,10 @@ class CrmLead(models.Model):
             return True
         if self.env.su or u.has_group('mazenet_access_rights.group_mzr_cto_admin'):
             return True
-        head_group = self._mz_release_head_group()
-        if head_group is None:
-            return owner == u
-        if not head_group:
-            return False
-        return u.has_group(f'mazenet_access_rights.{head_group}')
+        if owner == u:
+            tier, _chain = self._mz_user_tier_chain(owner)
+            return tier == 'manager'
+        return owner in self._mz_reports_to_users(u)
 
     def _mz_can_edit_by_team(self, user):
         """Whether `user` currently qualifies for team-based edit access to this lead -
