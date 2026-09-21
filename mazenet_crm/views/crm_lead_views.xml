@@ -1471,12 +1471,14 @@
              ordinary Pipeline/Leads rendering never calls). So this view carries no
              group_ids and an ordinary (high, non-competing) priority - it is NEVER
              picked automatically. It's targeted explicitly, by id, only for
-             CTO/Admin/MD, via the generic ir.actions.act_window._get_action_dict()
-             override (models/ir_actions_act_window.py), which swaps the matching
-             entry in ANY crm.lead action's 'views' list for whichever of these
-             views corresponds - covers the Pipeline kanban, the Leads list, and the
-             Opportunities list uniformly from one place, rather than a one-off
-             swap wired into a single action method the way DMT's own redirect is.
+             CTO/Admin/MD/Corporate BU Manager, via the generic
+             ir.actions.act_window._get_action_dict() override
+             (models/ir_actions_act_window.py), which swaps the matching entry in
+             ANY crm.lead action's 'views' list for whichever of these views
+             corresponds - covers the Pipeline kanban, the Leads list, the
+             Opportunities list, and (2026-09-21) the lead FORM's own New button
+             too, uniformly from one place, rather than a one-off swap wired into
+             a single action method the way DMT's own redirect is.
              mode="primary" is still needed so each of these is a complete,
              independently-addressable arch (an ordinary extension view has no
              standalone arch of its own to point an action at). -->
@@ -1524,6 +1526,28 @@
                 <list position="attributes">
                     <attribute name="create">false</attribute>
                 </list>
+            </field>
+        </record>
+        <!-- Form view companion (2026-09-21 client bug report: "in corporate bu manager
+             login, if i go inside existing lead, in there new button is visible") - the
+             kanban/list swaps above only ever hid the New button in list/kanban VIEWS;
+             opening an existing lead's FORM still showed its own separate "New" control
+             in the top toolbar, since ir.actions.act_window's 'views' list carried
+             (False, 'form') for every action here (no explicit form view id pinned,
+             just "use whatever the default form view resolves to") - _get_action_dict()
+             below now substitutes crm.crm_lead_view_form's own id in that slot first, so
+             it can go through the exact same _MZ_NO_CREATE_VIEW_MAP replacement lookup
+             as the kanban/list ones instead of silently passing through unswapped. -->
+        <record id="mz_crm_lead_form_no_create_cto_md" model="ir.ui.view">
+            <field name="name">crm.lead.form.no.create.cto.md</field>
+            <field name="model">crm.lead</field>
+            <field name="mode">primary</field>
+            <field name="priority">99</field>
+            <field name="inherit_id" ref="crm.crm_lead_view_form"/>
+            <field name="arch" type="xml">
+                <form position="attributes">
+                    <attribute name="create">false</attribute>
+                </form>
             </field>
         </record>
     </data>

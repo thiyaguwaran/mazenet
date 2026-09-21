@@ -19,6 +19,7 @@ class IrActionsActWindow(models.Model):
         'crm.crm_case_kanban_view_leads': 'mazenet_crm.mz_crm_lead_kanban_no_create_cto_md',
         'crm.crm_case_tree_view_oppor': 'mazenet_crm.mz_crm_lead_list_no_create_cto_md_oppor',
         'crm.crm_case_tree_view_leads': 'mazenet_crm.mz_crm_lead_list_no_create_cto_md_leads',
+        'crm.crm_lead_view_form': 'mazenet_crm.mz_crm_lead_form_no_create_cto_md',
     }
 
     def _get_action_dict(self):
@@ -26,10 +27,11 @@ class IrActionsActWindow(models.Model):
         create="false" counterpart, for CTO/Admin, MD and Corporate BU Manager
         only - see _MZ_NO_CREATE_VIEW_MAP. This is the generic hook
         _for_xml_id() and the web client's own /web/action/load both go
-        through, so it covers the Pipeline kanban, the Leads list, and the
-        Opportunities list uniformly from one place, unlike DMT's own
-        dedicated-action redirect (crm_team.py's action_your_pipeline) which
-        only ever applies to the one action it explicitly returns.
+        through, so it covers the Pipeline kanban, the Leads list, the
+        Opportunities list, and the lead form's own New button uniformly from
+        one place, unlike DMT's own dedicated-action redirect (crm_team.py's
+        action_your_pipeline) which only ever applies to the one action it
+        explicitly returns.
 
         Corporate BU Manager added 2026-09-21 (client instruction, same day as
         the original CTO/Admin/MD one, same reasoning - corp.mgr's own
@@ -60,8 +62,16 @@ class IrActionsActWindow(models.Model):
             no_create_view = self.env.ref(no_create_xmlid, raise_if_not_found=False)
             if base_view and no_create_view:
                 replacements[base_view.id] = no_create_view.id
-        result['views'] = [
-            (replacements.get(view_id, view_id), view_type)
-            for view_id, view_type in result['views']
-        ]
+        # 'form' is False (no explicit view id pinned; "use whatever the default
+        # form view resolves to") in every crm.lead action's 'views' list here -
+        # substitute the actual default form view's own id first, so the same
+        # replacements lookup below can catch it too (2026-09-21 client bug
+        # report: New button still visible on an existing lead's own form).
+        default_form_view = self.env.ref('crm.crm_lead_view_form', raise_if_not_found=False)
+        new_views = []
+        for view_id, view_type in result['views']:
+            if not view_id and view_type == 'form' and default_form_view:
+                view_id = default_form_view.id
+            new_views.append((replacements.get(view_id, view_id), view_type))
+        result['views'] = new_views
         return result
