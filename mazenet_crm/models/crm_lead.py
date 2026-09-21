@@ -1991,16 +1991,24 @@ class CrmLead(models.Model):
 
     @api.model_create_multi
     def create(self, vals_list):
-        u = self.env.user
-        if not self.env.su and u.has_group("mazenet_access_rights.group_mzr_md"):
-            # MD is otherwise read-only (rule_crm_lead_mzr_md/rule_crm_lead_mzr_md_own)
-            # but may create leads for themselves - vals must resolve user_id to MD's
-            # own id (x_assign_type is Self-only for MD anyway, per
-            # _mz_user_can_use_assign_radio, so this is what the form would produce).
-            for vals in vals_list:
-                if (vals.get('user_id') or u.id) != u.id:
-                    raise AccessError(_(
-                        "MD role can only create leads assigned to themselves."))
+        # CTO/Admin and MD have no create access at all (client instruction, 2026-09-21:
+        # "no need create lead access... hide the New button for them"). This has to be
+        # an explicit guard, not just an ir.rule perm_create=False - CTO/Admin already
+        # qualifies for perm_create=True through dozens of OTHER teams' own rules via
+        # implied_ids (confirmed live: setting perm_create=False on CTO/Admin's own
+        # global rule alone did NOT block creation), and both CTO/Admin and MD hold
+        # base.group_user, whose own crm.lead ACL row already grants create=1 model-
+        # wide - neither can be "subtracted" from for one subgroup via
+        # ir.model.access.csv either, since ACL rows OR-combine across a user's
+        # groups. The New button itself is hidden by a separate, THIRD mechanism -
+        # see mz_crm_lead_kanban_no_create_cto_md and its sibling list views
+        # (views/crm_lead_views.xml) - since the list/kanban "create" arch attribute
+        # is a static per-view boolean, not a per-user expression.
+        if not self.env.su and (
+            self.env.user.has_group('mazenet_access_rights.group_mzr_cto_admin')
+            or self.env.user.has_group('mazenet_access_rights.group_mzr_md')
+        ):
+            raise AccessError(_("CTO/Admin and MD cannot create leads."))
         dmt_team = self.env.ref('mazenet_crm.team_dmt', raise_if_not_found=False)
         for vals in vals_list:
             self._mz_check_assign_type_allowed(vals)

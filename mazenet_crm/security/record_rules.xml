@@ -545,14 +545,20 @@
             <field name="perm_unlink" eval="False"/>
         </record>
 
-        <!-- MD carve-out: may create/edit leads assigned to themselves only - the
-             crm_lead.py create()/write() overrides enforce "own only" on top of
-             this (this rule alone can't stop MD reassigning an OWNED lead to
-             someone else mid-write, since the domain is only checked against the
-             final record). perm_read=False - read is already covered globally by
-             rule_crm_lead_mzr_md above; this rule exists purely for write/create. -->
+        <!-- MD carve-out: may edit leads assigned to themselves only - the
+             crm_lead.py write() override enforces "own only" on top of this (this
+             rule alone can't stop MD reassigning an OWNED lead to someone else
+             mid-write, since the domain is only checked against the final record).
+             perm_read=False - read is already covered globally by
+             rule_crm_lead_mzr_md above; this rule exists purely for write.
+             perm_create is kept True here for documentation accuracy even though
+             MD has NO create access at all (client instruction, 2026-09-21) - that
+             block is enforced in crm_lead.py's create() override instead, since
+             ir.rule's perm_create can't actually subtract access for a subgroup
+             that already qualifies via base.group_user's own ACL row (confirmed
+             live: toggling this to False alone did not block MD's create). -->
         <record id="rule_crm_lead_mzr_md_own" model="ir.rule">
-            <field name="name">Mazenet CRM Lead: MD Own Leads (Create/Edit)</field>
+            <field name="name">Mazenet CRM Lead: MD Own Leads (Edit)</field>
             <field name="model_id" ref="crm.model_crm_lead"/>
             <field name="domain_force">[('user_id', '=', user.id)]</field>
             <field name="groups" eval="[(4, ref('mazenet_access_rights.group_mzr_md'))]"/>
@@ -566,6 +572,12 @@
         <!-- each team's BU Manager -> Team Lead chain), but this explicit global    -->
         <!-- rule is kept as a safety net so a new team added to teams.xml is never  -->
         <!-- accidentally invisible to CTO/Admin before its own rules are written.   -->
+        <!-- perm_create is kept True here for documentation accuracy even though    -->
+        <!-- CTO/Admin has NO create access at all (client instruction, 2026-09-21) - -->
+        <!-- that block is enforced in crm_lead.py's create() override instead,      -->
+        <!-- since CTO/Admin qualifies for perm_create=True through dozens of OTHER  -->
+        <!-- teams' own rules via implied_ids regardless of what this one rule says  -->
+        <!-- (confirmed live: toggling this to False alone did not block creation).  -->
         <record id="rule_crm_lead_mzr_cto_admin" model="ir.rule">
             <field name="name">Mazenet CRM Lead: CTO/Admin Global</field>
             <field name="model_id" ref="crm.model_crm_lead"/>

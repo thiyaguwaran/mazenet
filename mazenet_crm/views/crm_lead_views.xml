@@ -1490,5 +1490,54 @@
             action="crm_lead_action_pipeline_dmt"
             groups="mazenet_access_rights.group_mzr_dmt_agent,mazenet_access_rights.group_mzr_dmt_tl_direct_agent,mazenet_access_rights.group_mzr_dmt_manager_direct_agent"
             sequence="3"/>
+
+        <!-- CTO/Admin and MD: no create access at all (client instruction, 2026-09-21 -
+             "no need create lead access... hide the New button for them"). The actual
+             access block is the create() guard in crm_lead.py's create() (ir.rule
+             can't do this alone - CTO/Admin qualifies for perm_create=True through
+             dozens of OTHER teams' own rules via implied_ids, and MD/CTO both hold
+             base.group_user, which already grants create=1 model-wide - neither can
+             be "subtracted" from for one subgroup via ir.model.access.csv, since ACL
+             rows OR-combine across a user's groups).
+
+             Hiding the New button itself needs a THIRD mechanism, and it's NOT
+             group_ids on this view: the list/kanban "create" arch attribute is a
+             static per-view boolean with no per-user expression, and mode="primary"
+             + default_view() picks the single LOWEST-PRIORITY primary view for a
+             model+type UNCONDITIONALLY - group_ids plays no part in that selection
+             at all (confirmed live: with two primary kanban views for crm.lead, a
+             lower-priority one with group_ids set here was picked for EVERY user,
+             not just its own groups - group_ids only gates a DIRECT, explicit
+             request to open that exact view by id, via _check_view_access, which
+             ordinary Pipeline/Leads rendering never calls). So this view carries no
+             group_ids and an ordinary (high, non-competing) priority - it is NEVER
+             picked automatically. It's targeted explicitly, by id, only for
+             CTO/Admin/MD, via crm_team.py's action_your_pipeline() override, which
+             swaps this view_id into the kanban entry of the exact same action
+             everyone else gets. mode="primary" is still needed so this is a
+             complete, independently-addressable arch (an ordinary extension view
+             has no standalone arch of its own to point an action at). -->
+        <record id="mz_crm_lead_kanban_no_create_cto_md" model="ir.ui.view">
+            <field name="name">crm.lead.kanban.no.create.cto.md</field>
+            <field name="model">crm.lead</field>
+            <field name="mode">primary</field>
+            <!-- Explicit, high, non-competing priority - MUST stay higher than
+                 crm.crm_case_kanban_view_leads's own priority (1), or this becomes
+                 the system-wide default kanban for crm.lead via default_view() for
+                 EVERY action that doesn't pin its own view_id, not just the one
+                 place (action_your_pipeline) that's supposed to target it
+                 explicitly. Removing this field from the XML instead of setting it
+                 does NOT reset it back on -u - Odoo's data loader only overwrites
+                 fields present in the current XML, so an earlier, since-removed
+                 priority="0" here kept silently winning until this was made
+                 explicit again (hit live 2026-09-21). -->
+            <field name="priority">99</field>
+            <field name="inherit_id" ref="crm.crm_case_kanban_view_leads"/>
+            <field name="arch" type="xml">
+                <kanban position="attributes">
+                    <attribute name="create">false</attribute>
+                </kanban>
+            </field>
+        </record>
     </data>
 </odoo>
