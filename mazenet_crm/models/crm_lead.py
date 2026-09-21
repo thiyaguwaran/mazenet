@@ -2130,24 +2130,29 @@ class CrmLead(models.Model):
 
     @api.model_create_multi
     def create(self, vals_list):
-        # CTO/Admin and MD have no create access at all (client instruction, 2026-09-21:
-        # "no need create lead access... hide the New button for them"). This has to be
-        # an explicit guard, not just an ir.rule perm_create=False - CTO/Admin already
-        # qualifies for perm_create=True through dozens of OTHER teams' own rules via
-        # implied_ids (confirmed live: setting perm_create=False on CTO/Admin's own
-        # global rule alone did NOT block creation), and both CTO/Admin and MD hold
-        # base.group_user, whose own crm.lead ACL row already grants create=1 model-
-        # wide - neither can be "subtracted" from for one subgroup via
-        # ir.model.access.csv either, since ACL rows OR-combine across a user's
-        # groups. The New button itself is hidden by a separate, THIRD mechanism -
-        # see mz_crm_lead_kanban_no_create_cto_md and its sibling list views
-        # (views/crm_lead_views.xml) - since the list/kanban "create" arch attribute
-        # is a static per-view boolean, not a per-user expression.
+        # CTO/Admin, MD and Corporate BU Manager have no create access at all (client
+        # instruction, 2026-09-21: "no need create lead access... hide the New button
+        # for them"; extended to Corporate BU Manager same day - same reasoning, since
+        # corp.mgr's own cross-team oversight role mirrors CTO/Admin/MD's rather than a
+        # normal team manager's). This has to be an explicit guard, not just an
+        # ir.rule perm_create=False - CTO/Admin already qualifies for perm_create=True
+        # through dozens of OTHER teams' own rules via implied_ids (confirmed live:
+        # setting perm_create=False on CTO/Admin's own global rule alone did NOT block
+        # creation), and all three groups hold base.group_user, whose own crm.lead ACL
+        # row already grants create=1 model-wide - none can be "subtracted" from for
+        # one subgroup via ir.model.access.csv either, since ACL rows OR-combine
+        # across a user's groups. The New button itself is hidden by a separate,
+        # THIRD mechanism - see mz_crm_lead_kanban_no_create_cto_md and its sibling
+        # list views (views/crm_lead_views.xml) - since the list/kanban "create" arch
+        # attribute is a static per-view boolean, not a per-user expression. Keep this
+        # list of three groups in sync with ir_actions_act_window.py's
+        # _MZ_NO_CREATE_VIEW_MAP check.
         if not self.env.su and (
             self.env.user.has_group('mazenet_access_rights.group_mzr_cto_admin')
             or self.env.user.has_group('mazenet_access_rights.group_mzr_md')
+            or self.env.user.has_group('mazenet_access_rights.group_mzr_corporate_manager')
         ):
-            raise AccessError(_("CTO/Admin and MD cannot create leads."))
+            raise AccessError(_("CTO/Admin, MD and Corporate BU Manager cannot create leads."))
         dmt_team = self.env.ref('mazenet_crm.team_dmt', raise_if_not_found=False)
         for vals in vals_list:
             self._mz_check_assign_type_allowed(vals)
