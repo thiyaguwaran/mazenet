@@ -347,10 +347,6 @@
                                 </div>
                             </group>
                             <group string="Stage 6 - Won / Lost">
-                                <div class="text-muted" colspan="2">
-                                    Won is this stage's is_won flag. Lost is recorded via the standard
-                                    Odoo "Mark Lost" wizard (Lost Reason + Closing Note), not a separate stage.
-                                </div>
                             </group>
                             <group string="Stage 7 - Project State">
                                 <field name="x_project_start_date"/>
@@ -445,10 +441,6 @@
                                 </div>
                             </group>
                             <group string="Stage 6 - Won / Lost">
-                                <div class="text-muted" colspan="2">
-                                    Won is this stage's is_won flag. Lost is recorded via the standard
-                                    Odoo "Mark Lost" wizard (Lost Reason + Closing Note), not a separate stage.
-                                </div>
                             </group>
                             <group string="Stage 7 - Project State">
                                 <field name="x_project_start_date"/>
@@ -536,11 +528,6 @@
                                 </div>
                             </group>
                             <group string="Stage 5 - Won / Lost">
-                                <div class="text-muted" colspan="2">
-                                    Won is this stage's is_won flag. Lost is recorded via the standard
-                                    Odoo "Mark Lost" wizard (Lost Reason + Closing Note), not a separate stage.
-                                    No Follow-up's stage in this BU - colour timer/RED lock don't apply.
-                                </div>
                             </group>
                             <group string="Stage 6 - Project State">
                                 <field name="x_project_start_date"/>
@@ -618,11 +605,6 @@
                                 </div>
                             </group>
                             <group string="Stage 5 - Won / Lost">
-                                <div class="text-muted" colspan="2">
-                                    Won is this stage's is_won flag. Lost is recorded via the standard
-                                    Odoo "Mark Lost" wizard (Lost Reason + Closing Note), not a separate stage.
-                                    No Follow-up's stage in this BU - colour timer/RED lock don't apply.
-                                </div>
                             </group>
                             <group string="Stage 6 - Project State">
                                 <field name="x_project_start_date"/>
@@ -689,10 +671,6 @@
                                     <field name="x_quote_document_ids" widget="many2many_binary" string="Quote Shared (Tagged Quotation)"/>
                                     <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_quote_document_ids,' in x_current_stage_gate_fields)">*</span>
                                 </div>
-                                <div class="text-muted" colspan="2">
-                                    No colour timer / RED lock in this stage - Corporate is not one of
-                                    the 4 BUs with the colour spec (DMT, Tally, Technology, TNH).
-                                </div>
                             </group>
                             <group string="Stage 5 - Evaluation">
                                 <label for="x_training_content_eval_start_date"/>
@@ -734,11 +712,6 @@
                                     <field name="x_po_issued_trainer_date"/>
                                 </div>
                                 <field name="x_po_issued_trainer_attachment_ids" widget="many2many_binary"/>
-                                <field name="x_lost_reason_text"/>
-                                <div class="text-muted" colspan="2">
-                                    Won is blocked (action_set_won) unless Quote Shared above AND both PO
-                                    documents here are present - the project's only three-document gate.
-                                </div>
                             </group>
                             <group string="Stage 7 - Project State">
                                 <field name="x_training_commenced_date"/>
@@ -803,10 +776,6 @@
                                     <field name="x_quote_document_ids" widget="many2many_binary" string="Quote Shared (Tagged Quotation)"/>
                                     <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_quote_document_ids,' in x_current_stage_gate_fields)">*</span>
                                 </div>
-                                <div class="text-muted" colspan="2">
-                                    No colour timer / RED lock in this stage - Corporate is not one of
-                                    the 4 BUs with the colour spec (DMT, Tally, Technology, TNH).
-                                </div>
                             </group>
                             <group string="Stage 5 - Evaluation">
                                 <label for="x_training_content_eval_start_date"/>
@@ -848,11 +817,6 @@
                                     <field name="x_po_issued_trainer_date"/>
                                 </div>
                                 <field name="x_po_issued_trainer_attachment_ids" widget="many2many_binary"/>
-                                <field name="x_lost_reason_text"/>
-                                <div class="text-muted" colspan="2">
-                                    Won is blocked (action_set_won) unless Quote Shared above AND both PO
-                                    documents here are present - the project's only three-document gate.
-                                </div>
                             </group>
                             <group string="Stage 7 - Project State">
                                 <field name="x_training_commenced_date"/>
@@ -917,10 +881,6 @@
                                     <field name="x_quote_document_ids" widget="many2many_binary" string="Quote Shared (Tagged Quotation)"/>
                                     <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_quote_document_ids,' in x_current_stage_gate_fields)">*</span>
                                 </div>
-                                <div class="text-muted" colspan="2">
-                                    No colour timer / RED lock in this stage - Corporate is not one of
-                                    the 4 BUs with the colour spec (DMT, Tally, Technology, TNH).
-                                </div>
                             </group>
                             <group string="Stage 5 - Evaluation">
                                 <label for="x_training_content_eval_start_date"/>
@@ -962,11 +922,6 @@
                                     <field name="x_po_issued_trainer_date"/>
                                 </div>
                                 <field name="x_po_issued_trainer_attachment_ids" widget="many2many_binary"/>
-                                <field name="x_lost_reason_text"/>
-                                <div class="text-muted" colspan="2">
-                                    Won is blocked (action_set_won) unless Quote Shared above AND both PO
-                                    documents here are present - the project's only three-document gate.
-                                </div>
                             </group>
                             <group string="Stage 7 - Project State">
                                 <field name="x_training_commenced_date"/>
@@ -1041,13 +996,6 @@
                                 </div>
                             </group>
                             <group string="Stage 5 - Won / Lost">
-                                <field name="x_lost_reason_text"/>
-                                <div class="text-muted" colspan="2">
-                                    Won gate: Quote Shared above must be present (proposed default for
-                                    an open client question - confirm before go-live). Unlike every
-                                    other pipeline, Delivery and Content Availability stages come
-                                    AFTER Won/Lost, not before it.
-                                </div>
                             </group>
                             <group string="Stage 6 - Delivery">
                                 <label for="x_lms_training_content"/>
@@ -1193,12 +1141,6 @@
                                 <field name="x_tnh_sow_attachment_ids" widget="many2many_binary"/>
                             </group>
                             <group string="Stage 8 - Won / Lost">
-                                <field name="x_lost_reason_text"/>
-                                <div class="text-muted" colspan="2">
-                                    Won is blocked (action_set_won) unless the Quote/Proposal attachment
-                                    above AND the Agreement document above are both present - the
-                                    project's only two-document gate.
-                                </div>
                             </group>
                             <group string="Stage 9 - Project State">
                                 <field name="x_project_start_date"/>

@@ -282,10 +282,6 @@ MZ_WON_GATE_RULES = {
     'tnh': ['x_quote_document_ids', 'x_tnh_agreement_doc_ids'],
 }
 
-# BUs whose Lost reason must be free text (x_lost_reason_text) rather than stock's
-# lost_reason_id selection - action_set_lost below enforces it's non-empty.
-MZ_LOST_REASON_TEXT_BU_CATEGORIES = {'corp_hunter', 'corp_am', 'corp_training', 'lms', 'tnh'}
-
 class CrmLead(models.Model):
     _inherit = "crm.lead"
 
@@ -1621,13 +1617,6 @@ class CrmLead(models.Model):
         'lead_id', 'attachment_id', string="PO Issued to Trainer",
         help="A different document from PO Received above - the Won gate checks both by document type."
     )
-    x_lost_reason_text = fields.Text(
-        string="Lost Reason (Free Text)",
-        help="Free text, any content - required before this lead can be marked Lost. NOT the "
-             "stock lost_reason_id selection ('Lost Reason'), which the sheet's own 'free text, "
-             "cannot be empty' wording rules out - named distinctly to avoid the two fields "
-             "sharing one label in list/pivot views."
-    )
     x_training_commenced_date = fields.Date(string="Training Commenced")
     x_training_commenced_attachment_ids = fields.Many2many(
         'ir.attachment', 'mazenet_crm_lead_training_commenced_attachment_rel',
@@ -1642,7 +1631,8 @@ class CrmLead(models.Model):
     # fields above (x_client_expectations_attachment_ids, x_product_service,
     # x_target_audience, x_lead_timelines_days, x_deliverables,
     # x_presentation_completed_datetime, x_quote_document_ids) - the sheets list
-    # identical field shapes there. Stage 5 (Won/Lost) reuses x_lost_reason_text.
+    # identical field shapes there. Stage 5 (Won/Lost) uses stock's default Lost
+    # functionality (no custom field - see action_set_lost).
     # Stage 8 ("Training Status", folded into Project State) reuses
     # x_training_commenced/completed_* above plus the standard 4 Project State fields.
     x_lms_training_content = fields.Selection(
@@ -1712,8 +1702,9 @@ class CrmLead(models.Model):
     # like every other BU. Stage 2 reuses x_company_turnover ("Revenue" here - same
     # Monetary field, relabeled in the view), x_employee_count (DMT's own field) and
     # x_nature_of_business (Software Dev's own field). Stage 4 reuses
-    # x_presentation_completed_datetime. Won/Lost reuses x_lost_reason_text and
-    # x_quote_document_ids (the "tagged Quotation or Proposal attachment" Stage 8's
+    # x_presentation_completed_datetime. Won/Lost uses stock's default Lost
+    # functionality (no custom field) and x_quote_document_ids (the "tagged
+    # Quotation or Proposal attachment" Stage 8's
     # Won gate asks for - the sheet's own Stage 5 "Proposal" field list is all
     # checkboxes with no attachment item of its own, so this is added onto that stage
     # rather than invented as a new field). Project State reuses the standard 4 fields
@@ -1966,6 +1957,37 @@ class CrmLead(models.Model):
                 "empty:\n%(details)s"
             ) % {'lead': self.name, 'target': new_stage.name, 'details': '\n'.join(problems)})
 
+    def _mz_won_gate_check(self, new_stage, vals):
+        """Raise UserError if `new_stage` is a Won stage and this lead's BU
+        (MZ_WON_GATE_RULES) still has a required attachment missing - Corporate's
+        3-document gate (tagged Quotation + both POs), LMS's 1-document gate,
+        TNH's 2-document gate. No entry in MZ_WON_GATE_RULES for a BU makes this
+        a no-op for it (dmt/tally/tech/swdev/mis are unaffected).
+
+        Called from write() itself, NOT from action_set_won() (which used to be
+        the only place this was enforced, and got removed) - a plain kanban
+        drag-and-drop straight onto the Won/Lost stage column never goes
+        through action_set_won() at all, it's just an ordinary write({'stage_id':
+        ...}) that stock's own won_status computed field then reacts to. Stock's
+        action_set_won() itself is ALSO just a write({'stage_id': won_stage.id,
+        ...}) under the hood (addons/crm/models/crm_lead.py) - the exact same
+        path a drag takes - so this one check in write() now catches both,
+        where the old action_set_won()-only override caught neither a drag nor
+        (silently) the client's own real bug report."""
+        self.ensure_one()
+        if not new_stage or not new_stage.is_won:
+            return
+        required = MZ_WON_GATE_RULES.get(self.team_id.x_bu_category)
+        if not required:
+            return
+        missing = [f for f in required if not self._mz_resolve_gate_value(f, vals)]
+        if missing:
+            labels = ', '.join(self._mz_gate_field_label(f) for f in missing)
+            raise UserError(_(
+                "'%(lead)s' can't move to '%(target)s' yet - missing required "
+                "document(s): %(labels)s."
+            ) % {'lead': self.name, 'target': new_stage.name, 'labels': labels})
+
     @api.model
     def _mz_backfill_x_dmt_originated(self):
         """Data-file hook (data/teams.xml's own <function> call, NOT a
@@ -2179,10 +2201,14 @@ class CrmLead(models.Model):
         # this is a data-completeness rule, not an authority one), skipped only for raw
         # su/system writes (migrations, demo-data seeding) so those aren't forced to
         # pre-fill every mandatory field for stages they're placing records into directly.
+        # Same reasoning for the Won-gate right alongside it (_mz_won_gate_check) - it
+        # used to live only in action_set_won(), which a plain kanban drag onto the
+        # Won/Lost column never actually calls, silently skipping the document check.
         if 'stage_id' in vals and not self.env.su:
             new_stage = self.env['crm.stage'].browse(vals['stage_id'])
             for lead in self:
                 lead._mz_stage_gate_check(new_stage, vals)
+                lead._mz_won_gate_check(new_stage, vals)
 
         # DMT Transfer Completeness Gate (client instruction, 2026-09-13): before a
         # DMT-owned lead's team_id moves away from DMT, verify every mandatory field
@@ -2622,61 +2648,36 @@ class CrmLead(models.Model):
         Stamping it here waives that gate for this one legitimate path, the same
         way the Archive Lead Wizard does for itself.
 
-        Also covers two things a SECOND, now-removed action_set_lost override used
-        to handle before it was silently shadowing this one (same class, same
-        method name defined twice - only the later definition in the file ever
-        ran, so the first one's stage-move logic never actually executed):
-        (1) Corporate's Lost Reason gate (MZ_LOST_REASON_TEXT_BU_CATEGORIES) -
-        the sheet's own "free text, cannot be empty" wording rules out stock's
-        lost_reason_id selection, so x_lost_reason_text is checked here instead.
-        (2) A SECOND, now-removed override used to also move a newly-Lost lead
-        onto its BU's shared Won/Lost stage (motivated by a real complaint,
-        2026-09-15: a Tally lead marked Lost stayed on "New Lead" instead of
-        showing under "Won / Lost" when browsing Archived leads). That code was
-        unreachable dead code before the shadowing bug above was fixed, so it
-        never actually ran in production - and testing it for the first time
-        here (2026-09-19) showed WHY it can't work: stock's own
-        _check_won_validity constraint (addons/crm/models/crm_lead.py:262-266)
-        unconditionally forbids a lead sitting on an is_won=True stage with
-        probability != 100 ("A lead in a Won stage cannot be lost. Move it to
-        another stage first.") - and stock's write() ALSO unconditionally forces
-        probability=100/active=True the instant stage_id targets an is_won
-        stage, so there is no write ordering that lands a Lost lead on that
-        stage without stock rejecting it or silently re-Won-ing it. This is a
-        genuine limitation of the "Won and Lost share one is_won stage" design
-        this module already uses for Tally, not something specific to Corporate
-        - flagged to the user rather than worked around here, since fixing it
-        for real needs a separate is_won=False "Lost" stage per BU, a bigger
-        change than this task's scope. Lost leads stay on whatever stage they
-        were on when closed, same as stock's own default behavior."""
-        for lead in self:
-            if lead.team_id.x_bu_category in MZ_LOST_REASON_TEXT_BU_CATEGORIES and not lead.x_lost_reason_text:
-                raise UserError(_(
-                    "'%s': Lost Reason is required before this lead can be marked Lost."
-                ) % lead.name)
+        Also covers a SECOND, now-removed action_set_lost override that used to
+        also move a newly-Lost lead onto its BU's shared Won/Lost stage
+        (motivated by a real complaint, 2026-09-15: a Tally lead marked Lost
+        stayed on "New Lead" instead of showing under "Won / Lost" when
+        browsing Archived leads). That code was dead (silently shadowed by
+        this method - same class, same method name defined twice, only the
+        later definition in the file ever ran) before being removed - testing
+        it for the first time here (2026-09-19) showed WHY it can't work:
+        stock's own _check_won_validity constraint
+        (addons/crm/models/crm_lead.py:262-266) unconditionally forbids a lead
+        sitting on an is_won=True stage with probability != 100 ("A lead in a
+        Won stage cannot be lost. Move it to another stage first.") - and
+        stock's write() ALSO unconditionally forces probability=100/active=True
+        the instant stage_id targets an is_won stage, so there is no write
+        ordering that lands a Lost lead on that stage without stock rejecting
+        it or silently re-Won-ing it. This is a genuine limitation of the "Won
+        and Lost share one is_won stage" design this module already uses for
+        Tally, not something specific to Corporate - flagged to the user
+        rather than worked around here, since fixing it for real needs a
+        separate is_won=False "Lost" stage per BU, a bigger change than this
+        task's scope. Lost leads stay on whatever stage they were on when
+        closed, same as stock's own default behavior.
+
+        Corporate/LMS/TNH's own free-text Lost Reason gate (x_lost_reason_text)
+        was removed 2026-09-21 (client decision: use stock's default Lost
+        functionality - the crm.lead.lost wizard's own lost_reason_id/feedback
+        - for every BU, not a per-BU custom field)."""
         return super(
             CrmLead, self.with_context(mz_archive_wizard=True)
         ).action_set_lost(**additional_values)
-
-    def action_set_won(self):
-        """Corporate Pipeline's Won gate (Build Notes #9): Hunter/Account Manager/
-        Corp Training Delivery leads are blocked from Won unless ALL of
-        MZ_WON_GATE_RULES's attachment fields for that BU are filled - the tagged
-        Quotation from Stage 4, plus BOTH POs from Stage 6 (from vendor/client, and
-        to the trainer - two distinct document types, not one attachment counted
-        twice). The project's only three-document gate. No other BU has an entry
-        in MZ_WON_GATE_RULES, so this is a no-op for everyone else."""
-        for lead in self:
-            required = MZ_WON_GATE_RULES.get(lead.team_id.x_bu_category)
-            if not required:
-                continue
-            missing = [f for f in required if not lead[f]]
-            if missing:
-                labels = ', '.join(lead._fields[f].string for f in missing)
-                raise UserError(_(
-                    "'%(lead)s': cannot mark Won - missing required document(s): %(labels)s."
-                ) % {'lead': lead.name, 'labels': labels})
-        return super().action_set_won()
 
     def action_view_spinoff_leads(self):
         """Smart-button target: leads created FROM this one via the 'Create New
