@@ -8,4 +8,5 @@ from . import crm_lead
 from . import crm_lead_lms_week
 from . import calendar_event
 from . import utm_source
+from . import ir_actions_act_window
 

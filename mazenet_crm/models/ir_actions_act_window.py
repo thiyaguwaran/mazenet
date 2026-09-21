@@ -1,0 +1,56 @@
+# -*- coding: utf-8 -*-
+from odoo import models
+
+
+class IrActionsActWindow(models.Model):
+    _inherit = 'ir.actions.act_window'
+
+    # CTO/Admin and MD: no create access at all (client instruction, 2026-09-21 -
+    # "no need create lead access... hide the New button for them"). Maps each
+    # ORIGINAL crm.lead view id (whatever a given action would normally resolve to)
+    # to the matching create="false" replacement (views/crm_lead_views.xml) - one
+    # per base view, since "New Lead / Source" opportunities and plain leads use
+    # genuinely different base list views (crm_case_tree_view_oppor vs
+    # crm_case_tree_view_leads), not one shared list.
+    _MZ_NO_CREATE_VIEW_MAP = {
+        'crm.crm_case_kanban_view_leads': 'mazenet_crm.mz_crm_lead_kanban_no_create_cto_md',
+        'crm.crm_case_tree_view_oppor': 'mazenet_crm.mz_crm_lead_list_no_create_cto_md_oppor',
+        'crm.crm_case_tree_view_leads': 'mazenet_crm.mz_crm_lead_list_no_create_cto_md_leads',
+    }
+
+    def _get_action_dict(self):
+        """Swaps every crm.lead view in this action's 'views' list for its
+        create="false" counterpart, for CTO/Admin and MD only - see
+        _MZ_NO_CREATE_VIEW_MAP. This is the generic hook _for_xml_id() and the
+        web client's own /web/action/load both go through, so it covers the
+        Pipeline kanban, the Leads list, and the Opportunities list uniformly
+        from one place, unlike DMT's own dedicated-action redirect
+        (crm_team.py's action_your_pipeline) which only ever applies to the one
+        action it explicitly returns.
+
+        ir.rule/ir.model.access.csv can't do this access block themselves -
+        CTO/Admin qualifies for perm_create=True through dozens of other teams'
+        own rules via implied_ids, and both groups hold base.group_user, whose
+        own crm.lead ACL row already grants create=1 model-wide; neither can be
+        "subtracted" from for one subgroup. The actual access block is
+        crm.lead's own create() override - this only ever hides the button."""
+        result = super()._get_action_dict()
+        if result.get('res_model') != 'crm.lead' or not result.get('views'):
+            return result
+        user = self.env.user
+        if not (
+            user.has_group('mazenet_access_rights.group_mzr_cto_admin')
+            or user.has_group('mazenet_access_rights.group_mzr_md')
+        ):
+            return result
+        replacements = {}
+        for base_xmlid, no_create_xmlid in self._MZ_NO_CREATE_VIEW_MAP.items():
+            base_view = self.env.ref(base_xmlid, raise_if_not_found=False)
+            no_create_view = self.env.ref(no_create_xmlid, raise_if_not_found=False)
+            if base_view and no_create_view:
+                replacements[base_view.id] = no_create_view.id
+        result['views'] = [
+            (replacements.get(view_id, view_id), view_type)
+            for view_id, view_type in result['views']
+        ]
+        return result

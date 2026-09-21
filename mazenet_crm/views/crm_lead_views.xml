@@ -1512,11 +1512,15 @@
              ordinary Pipeline/Leads rendering never calls). So this view carries no
              group_ids and an ordinary (high, non-competing) priority - it is NEVER
              picked automatically. It's targeted explicitly, by id, only for
-             CTO/Admin/MD, via crm_team.py's action_your_pipeline() override, which
-             swaps this view_id into the kanban entry of the exact same action
-             everyone else gets. mode="primary" is still needed so this is a
-             complete, independently-addressable arch (an ordinary extension view
-             has no standalone arch of its own to point an action at). -->
+             CTO/Admin/MD, via the generic ir.actions.act_window._get_action_dict()
+             override (models/ir_actions_act_window.py), which swaps the matching
+             entry in ANY crm.lead action's 'views' list for whichever of these
+             views corresponds - covers the Pipeline kanban, the Leads list, and the
+             Opportunities list uniformly from one place, rather than a one-off
+             swap wired into a single action method the way DMT's own redirect is.
+             mode="primary" is still needed so each of these is a complete,
+             independently-addressable arch (an ordinary extension view has no
+             standalone arch of its own to point an action at). -->
         <record id="mz_crm_lead_kanban_no_create_cto_md" model="ir.ui.view">
             <field name="name">crm.lead.kanban.no.create.cto.md</field>
             <field name="model">crm.lead</field>
@@ -1524,19 +1528,43 @@
             <!-- Explicit, high, non-competing priority - MUST stay higher than
                  crm.crm_case_kanban_view_leads's own priority (1), or this becomes
                  the system-wide default kanban for crm.lead via default_view() for
-                 EVERY action that doesn't pin its own view_id, not just the one
-                 place (action_your_pipeline) that's supposed to target it
-                 explicitly. Removing this field from the XML instead of setting it
-                 does NOT reset it back on -u - Odoo's data loader only overwrites
-                 fields present in the current XML, so an earlier, since-removed
-                 priority="0" here kept silently winning until this was made
-                 explicit again (hit live 2026-09-21). -->
+                 EVERY action that doesn't pin its own view_id, not just the ones
+                 the ir_actions_act_window.py override targets explicitly. Removing
+                 this field from the XML instead of setting it does NOT reset it
+                 back on -u - Odoo's data loader only overwrites fields present in
+                 the current XML, so an earlier, since-removed priority="0" here
+                 kept silently winning until this was made explicit again (hit live
+                 2026-09-21). -->
             <field name="priority">99</field>
             <field name="inherit_id" ref="crm.crm_case_kanban_view_leads"/>
             <field name="arch" type="xml">
                 <kanban position="attributes">
                     <attribute name="create">false</attribute>
                 </kanban>
+            </field>
+        </record>
+        <record id="mz_crm_lead_list_no_create_cto_md_oppor" model="ir.ui.view">
+            <field name="name">crm.lead.list.no.create.cto.md.oppor</field>
+            <field name="model">crm.lead</field>
+            <field name="mode">primary</field>
+            <field name="priority">99</field>
+            <field name="inherit_id" ref="crm.crm_case_tree_view_oppor"/>
+            <field name="arch" type="xml">
+                <list position="attributes">
+                    <attribute name="create">false</attribute>
+                </list>
+            </field>
+        </record>
+        <record id="mz_crm_lead_list_no_create_cto_md_leads" model="ir.ui.view">
+            <field name="name">crm.lead.list.no.create.cto.md.leads</field>
+            <field name="model">crm.lead</field>
+            <field name="mode">primary</field>
+            <field name="priority">99</field>
+            <field name="inherit_id" ref="crm.crm_case_tree_view_leads"/>
+            <field name="arch" type="xml">
+                <list position="attributes">
+                    <attribute name="create">false</attribute>
+                </list>
             </field>
         </record>
     </data>
