@@ -1263,15 +1263,18 @@
                          read as too aggressive for a simple overdue/locked indicator. -->
                     <widget name="web_ribbon" id="mz_red_lock_ribbon" title="Overdue" bg_color="text-bg-danger" invisible="not x_is_locked and activity_state != 'overdue'"/>
                     <span t-if="record.x_is_locked.raw_value or record.activity_state.raw_value == 'overdue'" class="mz-red-locked-card d-none"/>
-                    <!-- Client rework spec (2026-09-08) - x_activity_card_state
-                         (crm_lead.py): PURPLE = activity due today, GREEN = within 20
-                         minutes either side of it, RED is the same signal as x_is_locked
-                         above so it's not repeated here. Stored and cron-recomputed
-                         (data/cron.xml), so - unlike the old per-viewer x_activity_warning
-                         this replaces - every viewer sees the same colour, not just the
-                         owner. Only ever set for DMT/Tally/Technology leads. -->
-                    <span t-if="record.x_activity_card_state.raw_value == 'purple'" class="mz-activity-purple-card d-none"/>
+                    <!-- Client instruction (2026-09-21) - x_activity_card_state
+                         (crm_lead.py), a 4-stage countdown to the lead's next activity:
+                         GREEN = activity scheduled (more than 30 min away), YELLOW =
+                         30-10 min before, ORANGE = 10 min before through to the RED
+                         lock, RED is the same signal as x_is_locked above so it's not
+                         repeated here. Stored and cron-recomputed (data/cron.xml), so -
+                         unlike the old per-viewer x_activity_warning this replaces -
+                         every viewer sees the same colour, not just the owner. Only
+                         ever set for DMT/Tally/Technology leads. -->
                     <span t-if="record.x_activity_card_state.raw_value == 'green'" class="mz-activity-green-card d-none"/>
+                    <span t-if="record.x_activity_card_state.raw_value == 'yellow'" class="mz-activity-yellow-card d-none"/>
+                    <span t-if="record.x_activity_card_state.raw_value == 'orange'" class="mz-activity-orange-card d-none"/>
                     <!-- Read-only because Sales Team moved off whoever's browsing (not a
                          RED lock - that already gets the red treatment above) - grey tint,
                          same marker-span pattern, see kanban_red.css. -->

@@ -16,17 +16,25 @@ MZ_EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
 # other teams (Corporate/LMS/TNH/Hunter...) aren't newly constrained by this build.
 MZ_FORMAT_VALIDATED_BU_CATEGORIES = {'dmt', 'tally', 'tech', 'swdev', 'mis'}
 
-# Client rework spec (2026-09-08): the window either side of an activity's real due moment
-# (x_next_activity_datetime) for both the GREEN card state and the RED lock - e.g. a 10:00 AM
-# activity turns GREEN at 9:40, and locks/turns RED at 10:20, not the instant 10:00 passes.
-# Previously this was res.company.grace_time (a separate, user-configurable field defaulting
-# to 15 minutes) - replaced with this fixed 20-minute constant so the two states share
-# exactly one number, matching the client's explicit "20 minutes" spec rather than whatever
-# happens to be configured on the company record.
+# The RED lock's own grace period - an activity's real due moment (x_next_activity_datetime)
+# has to be this many minutes in the past before x_is_locked actually flips (a 10:00 AM
+# activity locks at 10:20, not the instant 10:00 passes). Previously this was
+# res.company.grace_time (a separate, user-configurable field defaulting to 15 minutes) -
+# replaced with this fixed 20-minute constant, matching the client's explicit "20 minutes"
+# spec rather than whatever happens to be configured on the company record.
 MZ_ACTIVITY_WINDOW_MINUTES = 20
 
-# Which BU pipelines the purple/green/red activity card state (and the RED lock it's built
-# on) applies to at all - client rework spec (2026-09-08): "DMT, Tally, Technology only. Not
+# Activity card colour thresholds (client instruction, 2026-09-21: "if activity is there for
+# a lead, make it light green... 30 mins before activity light yellow, 10 mins before activity
+# light orange... red lock happens, and red lead"), minutes BEFORE x_next_activity_datetime -
+# see _compute_x_activity_card_state for the full precedence. Replaces the earlier
+# purple/green-window scheme (single ±MZ_ACTIVITY_WINDOW_MINUTES band, plus a separate
+# "activity today" purple) with this 4-stage countdown instead.
+MZ_ACTIVITY_YELLOW_MINUTES = 30
+MZ_ACTIVITY_ORANGE_MINUTES = 10
+
+# Which BU pipelines the green/yellow/orange/red activity card state (and the RED lock
+# it's built on) applies to at all - client rework spec (2026-09-08): "DMT, Tally, Technology only. Not
 # Software Dev, not MIS - they have no Follow-up's stage." Every other team's leads always
 # get x_activity_card_state = False ('Normal'), and are excluded from the RED-lock cron
 # entirely (_cron_trigger_red_locks) - not just from the colour, the lock itself no longer
@@ -1289,24 +1297,29 @@ class CrmLead(models.Model):
 
     x_activity_card_state = fields.Selection(
         [
-            ('purple', 'Activity Today'),
-            ('green', 'Activity Due Now'),
+            ('green', 'Activity Scheduled'),
+            ('yellow', 'Activity Due Soon'),
+            ('orange', 'Activity Due Very Soon'),
             ('red', 'Activity Overdue (RED Lock)'),
         ],
         string="Activity Card State", compute="_compute_x_activity_card_state", store=True,
         help="Drives the Pipeline kanban card's colour, for DMT/Tally/Technology leads only "
              "(MZ_ACTIVITY_CARD_BU_CATEGORIES - Software Dev and MIS have no Follow-up's "
              "stage, so this doesn't apply to them; False/'Normal' for every other lead "
-             "regardless of team). Client rework spec (2026-09-08), precedence top to "
-             "bottom:\n"
+             "regardless of team). Client instruction (2026-09-21), a 4-stage countdown to "
+             "x_next_activity_datetime, precedence top to bottom:\n"
              "- RED: same signal as x_is_locked (the RED lock) - " + str(MZ_ACTIVITY_WINDOW_MINUTES) + " minutes "
              "past the activity's real moment with it still open. Deliberately reuses "
              "x_is_locked rather than its own independent timer, so there's exactly one "
              "'is this overdue' answer in the whole module.\n"
-             "- GREEN: within " + str(MZ_ACTIVITY_WINDOW_MINUTES) + " minutes either side of "
-             "the activity's real moment (not locked yet).\n"
-             "- PURPLE: the activity falls on TODAY (any time today, in the responsible "
-             "user's own timezone) - not a proximity window, just 'something is due today'.\n"
+             "- ORANGE: from " + str(MZ_ACTIVITY_ORANGE_MINUTES) + " minutes before the activity, "
+             "through the due moment itself, up to the RED lock above (no separate colour for "
+             "'just passed due time, not yet locked' - orange covers that gap too).\n"
+             "- YELLOW: from " + str(MZ_ACTIVITY_YELLOW_MINUTES) + " down to " + str(MZ_ACTIVITY_ORANGE_MINUTES) + " "
+             "minutes before the activity.\n"
+             "- GREEN: baseline whenever there's a scheduled activity at all, further out "
+             "than " + str(MZ_ACTIVITY_YELLOW_MINUTES) + " minutes - ANY future activity, not "
+             "restricted to 'today' (replaces the earlier purple 'activity today' state).\n"
              "A plain Selection, NOT the kanban 'color' integer (that's a colour-picker "
              "index, unrelated to this). Stored, because it needs to be orderable/filterable "
              "and - critically - a card must repaint purely because TIME has passed even "
@@ -1331,16 +1344,13 @@ class CrmLead(models.Model):
             if not lead.x_next_activity_datetime:
                 lead.x_activity_card_state = False
                 continue
-            minutes_away = (lead.x_next_activity_datetime - now).total_seconds() / 60
-            if abs(minutes_away) <= MZ_ACTIVITY_WINDOW_MINUTES:
+            minutes_until = (lead.x_next_activity_datetime - now).total_seconds() / 60
+            if minutes_until <= MZ_ACTIVITY_ORANGE_MINUTES:
+                lead.x_activity_card_state = 'orange'
+            elif minutes_until <= MZ_ACTIVITY_YELLOW_MINUTES:
+                lead.x_activity_card_state = 'yellow'
+            else:
                 lead.x_activity_card_state = 'green'
-                continue
-            tz_name = (lead.user_id.tz if lead.user_id else self.env.user.tz) or 'UTC'
-            activity_local_date = pytz.UTC.localize(
-                lead.x_next_activity_datetime
-            ).astimezone(pytz.timezone(tz_name)).date()
-            today_local_date = pytz.UTC.localize(now).astimezone(pytz.timezone(tz_name)).date()
-            lead.x_activity_card_state = 'purple' if activity_local_date == today_local_date else False
 
     @api.model
     def _cron_recompute_activity_card_state(self):
