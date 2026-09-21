@@ -37,13 +37,20 @@
                     <attribute name="readonly">x_content_readonly_for_me</attribute>
                 </xpath>
                 <xpath expr="//field[@name='user_id']" position="attributes">
-                    <!-- x_can_assign_salesperson_direct (2026-09-13): an ATL/TL/Manager
-                         on their OWN team can edit Salesperson even though
-                         x_assign_type stays 'self' for them (the Team/Internal radio
-                         itself is DMT/CTO/Admin/MD-only) - a plain Agent on the same
-                         team can't, most commonly the case right after a cross-team
-                         handoff lands an unowned lead on their team. -->
-                    <attribute name="readonly">x_content_readonly_for_me or (x_assign_type == 'self' and not x_can_assign_salesperson_direct)</attribute>
+                    <!-- Readonly whenever Assign Type is 'Self', full stop - client bug
+                         report 2026-09-21: "when selecting self radio, salesperson able
+                         to change, that should not happen". Until this fix, an ATL/TL/
+                         Manager on their own team could still edit Salesperson directly
+                         while the radio kept showing 'Self' (the old
+                         x_can_assign_salesperson_direct escape hatch, added 2026-09-13
+                         back when 'Internal' wasn't usable by them at all) - backwards
+                         from what "Self" is supposed to mean. Since 2026-09-15
+                         (can_assign_within_own_team in _compute_x_assignable_user_ids),
+                         'Internal' is genuinely usable by an ATL/TL/Manager on their own
+                         team, so that workaround is no longer needed: reassigning within
+                         their team now properly goes through picking 'Internal' first,
+                         same as everyone else. -->
+                    <attribute name="readonly">x_content_readonly_for_me or x_assign_type == 'self'</attribute>
                     <attribute name="domain">[('id', 'in', x_assignable_user_ids)]</attribute>
                     <!-- MD and CTO/Admin get Salesperson hidden entirely, alongside the
                          'Internal' assign-type option (_selection_x_assign_type). -->
@@ -95,7 +102,6 @@
                     <field name="x_hide_salesperson" invisible="1"/>
                     <field name="x_hide_internal_option" invisible="1"/>
                     <field name="x_show_internal_only" invisible="1"/>
-                    <field name="x_can_assign_salesperson_direct" invisible="1"/>
                     <field name="x_hide_create_new_opportunity" invisible="1"/>
                     <field name="x_hide_team_option" invisible="1"/>
                 </xpath>

@@ -799,11 +799,15 @@ class CrmLead(models.Model):
         inverse='_inverse_x_assign_type_no_team',
         help="Third mirror of x_assign_type (see x_assign_type_no_internal), shown INSTEAD "
              "of the real one for a regular team's Agent/ATL/TL/Manager - see "
-             "x_hide_team_option. 'Internal' still shows (matches DMT/CTO/Admin/MD's own "
-             "field having it too) even though the radio itself stays readonly-locked to "
-             "Self for them regardless - x_can_assign_salesperson_direct is the SEPARATE, "
-             "real mechanism an ATL/TL/Manager actually uses to assign within their own "
-             "team, straight on the Salesperson field, not through this radio at all."
+             "x_hide_team_option. 'Internal' is genuinely usable here (2026-09-15 client "
+             "instruction: an ATL/TL/Manager may pick it to assign within their OWN team -"
+             " see can_assign_within_own_team in _compute_x_assignable_user_ids), NOT "
+             "readonly-locked to Self the way an older version of this comment used to "
+             "say - a since-removed x_can_assign_salesperson_direct field briefly let "
+             "them edit Salesperson directly while the radio still showed 'Self' instead "
+             "of requiring 'Internal' first, which is exactly backwards from what "
+             "'Self' is supposed to mean (client bug report, 2026-09-21: 'when selecting "
+             "self radio, salesperson able to change, that should not happen')."
     )
 
     @api.depends('x_assign_type')
@@ -922,20 +926,6 @@ class CrmLead(models.Model):
              "only means anything alongside that). Shown (and pickable) again the "
              "moment they're viewing anyone else's lead, or creating a brand-new one. "
              "Not stored - reflects whoever has the form open."
-    )
-    x_can_assign_salesperson_direct = fields.Boolean(
-        compute='_compute_x_assignable_user_ids',
-        string="Can Assign Salesperson (Own Team)",
-        help="True for an ATL/TL/Manager viewing a lead already on THEIR OWN team -"
-             " lets them directly edit Salesperson even though x_assign_type stays "
-             "'self' for them (2026-09-13: the Team/Internal radio itself is DMT/CTO/"
-             "Admin/MD-only, per _mz_user_can_use_assign_radio - this is a SEPARATE, "
-             "tier-based capability for assigning WITHIN their own team, most commonly "
-             "right after a cross-team handoff lands an unowned lead there, not "
-             "routing across teams). Mirrors can_assign_within_own_team, the same "
-             "condition x_assignable_user_ids' own pool uses - an Agent on the same "
-             "team gets neither the pool nor this. Not stored - reflects whoever has "
-             "the form open."
     )
     x_can_create_partner = fields.Boolean(
         compute='_compute_x_can_create_partner',
@@ -1116,7 +1106,6 @@ class CrmLead(models.Model):
             lead.x_hide_internal_option = hide_for_own_lead
             lead.x_show_internal_only = show_internal_only
             lead.x_hide_team_option = not is_cto_or_md and not user_is_dmt
-            lead.x_can_assign_salesperson_direct = can_assign_within_own_team
             if not can_beyond_self and not can_assign_within_own_team:
                 lead.x_assignable_user_ids = False
             elif user_is_dmt or (is_cto_admin and show_internal_only):
