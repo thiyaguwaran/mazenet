@@ -1303,21 +1303,32 @@
                      (KeyError: 'team_id', hit locally). res_users.py's x_mz_team_id
                      exists purely to give it one.
 
-                     Sales Team stays CTO/Admin+MD only (groups= on the field itself, NOT
-                     the whole <searchpanel> - two sibling <searchpanel> nodes would each
-                     restart their own section-id counter at 1 and collide, silently
-                     dropping one section's data; the field-level groups= is the same
-                     generic view-node stripping every other node in this file already
-                     uses) - they're the only roles with cross-team visibility to begin
-                     with, so "pick any team" only makes sense for them; everyone else
-                     only ever sees their own team's leads regardless.
+                     Sales Team stays CTO/Admin+MD+Corporate BU Manager only (groups= on
+                     the field itself, NOT the whole <searchpanel> - two sibling
+                     <searchpanel> nodes would each restart their own section-id counter
+                     at 1 and collide, silently dropping one section's data; the
+                     field-level groups= is the same generic view-node stripping every
+                     other node in this file already uses) - they're the only roles with
+                     cross-team visibility to begin with, so "pick any team" only makes
+                     sense for them; everyone else only ever sees their own team's leads
+                     regardless. Corporate BU Manager added 2026-09-21 (client bug
+                     report: "why for corp.mgr@test.mazenet nothing is showing") -
+                     confirmed live they genuinely read across all 5 Corporate sub-teams
+                     (Hunter/AM/Corp Training/LMS/TNH, via mazenet_access_rights'
+                     implied_ids), same shape of cross-team visibility as CTO/Admin/MD,
+                     just scoped to those 5 instead of the whole company - the other BU
+                     Managers (dmt.mgr, tally.mgr, etc.) don't need this since each of
+                     them only ever has ONE crm.team to begin with. Keep this list in
+                     sync with crm_lead.py's search_panel_select_multi_range, which has
+                     the exact same three-group check for the nested Salesperson
+                     section.
 
                      Salesperson (user_id) is open to EVERYONE now (2026-09-04) - every
                      login gets it, but crm_lead.py's search_panel_select_multi_range
                      override scopes the comodel_domain to the CURRENT user's own team
-                     for anyone who isn't CTO/Admin/MD, so a DMT member's filter only
-                     ever lists DMT members, a Tech member's only lists Tech members,
-                     etc. - never the whole company.
+                     for anyone who isn't CTO/Admin/MD/Corporate BU Manager, so a DMT
+                     member's filter only ever lists DMT members, a Tech member's only
+                     lists Tech members, etc. - never the whole company.
 
                      Corporate excluded from the Sales Team list (2026-09-04): not in use
                      yet, needed again in a future phase - the team record itself stays,
@@ -1325,7 +1336,7 @@
                 <search position="inside">
                     <searchpanel>
                         <field name="team_id" string="Sales Team" icon="fa-users" enable_counters="1"
-                               groups="mazenet_access_rights.group_mzr_cto_admin,mazenet_access_rights.group_mzr_md"/>
+                               groups="mazenet_access_rights.group_mzr_cto_admin,mazenet_access_rights.group_mzr_md,mazenet_access_rights.group_mzr_corporate_manager"/>
                         <field name="user_id" string="Salesperson" select="multi" icon="fa-user"
                                enable_counters="1" groupby="x_mz_team_id"/>
                     </searchpanel>

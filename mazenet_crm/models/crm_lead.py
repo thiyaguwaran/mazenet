@@ -2500,13 +2500,22 @@ class CrmLead(models.Model):
         also hit locally 2026-09-04.
 
         Also scopes the Salesperson section (field_name == 'user_id') to the
-        CURRENT user's own team for everyone except CTO/Admin/MD - 2026-09-04:
-        Salesperson was opened up to every login (previously CTO/Admin/MD
-        only, same as Sales Team), so a DMT member must only ever see DMT
-        members in that list, a Tech member only Tech members, etc., never
-        the whole company. CTO/Admin/MD keep full cross-team visibility
-        (already scoped by whichever team they pick via Sales Team's own
-        groupby, x_mz_team_id on res.users)."""
+        CURRENT user's own team for everyone except CTO/Admin/MD/Corporate BU
+        Manager - 2026-09-04: Salesperson was opened up to every login
+        (previously CTO/Admin/MD only, same as Sales Team), so a DMT member
+        must only ever see DMT members in that list, a Tech member only Tech
+        members, etc., never the whole company. CTO/Admin/MD/Corporate BU
+        Manager keep full cross-team visibility (already scoped by whichever
+        team they pick via Sales Team's own groupby, x_mz_team_id on
+        res.users). Corporate BU Manager added 2026-09-21 (client bug report:
+        corp.mgr's Sales Team section was empty - see crm_lead_views.xml's
+        matching groups= list on the searchpanel field, which must stay in
+        sync with this check) - confirmed live they genuinely read across all
+        5 Corporate sub-teams (Hunter/AM/Corp Training/LMS/TNH), the same
+        shape of cross-team visibility as CTO/Admin/MD, just narrower in
+        scope; without this, picking one of those 5 teams here would still
+        wrongly scope the Salesperson list to corp.mgr's own tiny 3-person
+        team_corporate instead of the team actually picked."""
         if kwargs.get('group_domain') is None:
             kwargs['group_domain'] = []
         if field_name == 'user_id':
@@ -2514,12 +2523,13 @@ class CrmLead(models.Model):
             if not (
                 user.has_group('mazenet_access_rights.group_mzr_cto_admin')
                 or user.has_group('mazenet_access_rights.group_mzr_md')
+                or user.has_group('mazenet_access_rights.group_mzr_corporate_manager')
             ):
                 own_team = self._mz_user_own_team(user)
                 team_domain = [('id', 'in', own_team.member_ids.ids)] if own_team else [('id', '=', 0)]
                 kwargs['comodel_domain'] = (kwargs.get('comodel_domain') or []) + team_domain
             else:
-                # CTO/Admin/MD: the Salesperson section also carries groupby="x_mz_team_id"
+                # CTO/Admin/MD/Corporate BU Manager: the Salesperson section also carries groupby="x_mz_team_id"
                 # (views/crm_lead_views.xml), which routes core's
                 # search_panel_select_multi_range into its many2one+group_by branch - that
                 # branch builds its value list purely from comodel_domain (all res.users
