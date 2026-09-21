@@ -91,10 +91,22 @@
                          match - it can no longer stay "required whenever not self" once
                          Internal also hides the field, or a required-but-invisible field
                          would block saving with nothing the user could actually fill in. -->
+                    <!-- domain="[('id', '!=', team_id)]" excludes the lead's OWN current
+                         team from its own picker (client bug report, 2026-09-21 - the
+                         2026-09-15 fix for this same complaint used a Python domain=
+                         callable on the field instead, which LOOKS correct but is
+                         evaluated by fields_get() against an EMPTY recordset for the web
+                         client's dropdown search, self.team_id.ids == [] every time -
+                         confirmed live it excluded nothing, ever. A view-level domain
+                         string referencing another field on the SAME record by name
+                         (the standard Odoo idiom, e.g. parent_id pickers excluding
+                         '(id', '!=', id)') is evaluated against the actual loaded form
+                         values instead, and reliably works.) -->
                     <field name="team_id"
                            readonly="x_content_readonly_for_me"
                            required="x_assign_type == 'team'"
                            invisible="x_assign_type != 'team'"
+                           domain="[('id', '!=', team_id)]"
                            options="{'no_open': True}"/>
                     <field name="x_can_use_assign_radio" invisible="1"/>
                     <field name="x_can_assign_beyond_self" invisible="1"/>
@@ -284,7 +296,14 @@
                                 </div>
                                 <label for="x_target_team_id"/>
                                 <div class="o_row">
-                                    <field name="x_target_team_id"/>
+                                    <!-- Same fix as team_id's own field tag above (client
+                                         bug report, 2026-09-21) - x_target_team_id's
+                                         model-level domain=_get_team_id_domain is
+                                         evaluated by fields_get() against an empty
+                                         recordset, so it never actually excluded the
+                                         lead's current team in the live dropdown. A
+                                         view-level domain string works reliably. -->
+                                    <field name="x_target_team_id" domain="[('id', '!=', team_id)]"/>
                                     <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_target_team_id,' in x_current_stage_gate_fields)">*</span>
                                 </div>
                             </group>

@@ -598,21 +598,26 @@ class CrmLead(models.Model):
                 ])
         return super()._read_group(domain, groupby, aggregates, having, offset, limit, order)
 
-    def _get_team_id_domain(self):
-        """Exclude the lead's OWN current team from its own picker (2026-09-15 fix:
-        "when transfering lead to other team from dmt in dropdown dmt team also
-        showing, which should not happen" - you can't "transfer" a lead to the team
-        it's already sitting on). Previously excluded self.env.user.crm_team_ids -
-        stock's own team-membership field, which this project never populates (see
-        _mz_user_own_team's own docstring: "demo data never populates here") - so
-        that domain silently excluded nothing, ever, for anyone."""
-        return [("id", "not in", self.team_id.ids)]
-
-
+    # "Exclude the lead's own current team from its own team-picker" (2026-09-15 fix:
+    # "when transfering lead to other team from dmt in dropdown dmt team also
+    # showing, which should not happen") used to live here as a Python domain=
+    # callable (_get_team_id_domain, removed 2026-09-21) - it LOOKED correct
+    # (self.team_id.ids resolves fine when called directly on a real record, see
+    # the very next line's own field access) but fields_get() - what actually
+    # supplies the web client's dropdown search domain - calls it against an
+    # EMPTY recordset, so self.team_id.ids was always [] and it excluded nothing,
+    # ever, in the live UI (confirmed: this is the SAME bug the 2026-09-15 fix
+    # was originally meant to close, just relocated - the version it replaced had
+    # the identical problem via self.env.user.crm_team_ids, an always-empty field
+    # for a different reason). Real fix now lives in the VIEW itself
+    # (crm_lead_views.xml), as domain="[('id', '!=', team_id)]" on team_id's and
+    # x_target_team_id's own field tags - a view-level domain string referencing
+    # another field on the SAME record by name is evaluated against the actual
+    # loaded form values, not an empty model-level recordset.
     team_id = fields.Many2one(
         "crm.team",
         default=_mz_default_team_id,
-        domain=_get_team_id_domain,)
+    )
 
     x_related_lead_id = fields.Many2one(
         'crm.lead', string="Related Lead", readonly=True, copy=False,
@@ -1501,8 +1506,9 @@ class CrmLead(models.Model):
     x_employee_count = fields.Integer(string="Employee Count")
     x_target_team_id = fields.Many2one(
         'crm.team', string="Target Business Unit",
-        domain=_get_team_id_domain,
-        help="The BU this DMT lead is being transferred to."
+        help="The BU this DMT lead is being transferred to. Excludes the lead's own "
+             "current team - see team_id's own comment for why that domain lives in "
+             "the view (crm_lead_views.xml) instead of here."
     )
     x_transfer_notes = fields.Text(string="Transfer Notes / Reason")
 
