@@ -37,3 +37,18 @@ class ResUsers(models.Model):
         team_obj = self.env['crm.team'].sudo()
         for user in self:
             user.x_mz_team_id = team_obj.search([('member_ids', '=', user.id)], limit=1)
+
+    x_reports_to_id = fields.Many2one(
+        "res.users", string="Reports To",
+        help="This user's direct organizational superior (their own ATL/TL, an "
+             "ATL's TL, or a TL's BU Manager) - NOT the same thing as crm.team's "
+             "own tier groups (group_mzr_*_agent etc.), which only say WHAT TIER "
+             "a user is, not WHO SPECIFICALLY they report to (e.g. every Hunter "
+             "agent, whether under ATL-1 or ATL-2, shares one flat "
+             "group_mzr_hunter_agent group). Backfilled for every demo user by "
+             "crm_lead.py's _mz_backfill_x_reports_to_hierarchy (see "
+             "data/migrations.xml) - client instruction 2026-09-21: a TL's "
+             "Salesperson dropdown should show only their own actual reports, "
+             "not every same-tier-or-below user team-wide (see "
+             "_mz_reports_to_users)."
+    )

@@ -1009,35 +1009,38 @@ class CrmLead(models.Model):
         )
         return lower_groups.mapped('user_ids')
 
-    def _mz_team_tier_subordinate_users(self, team, user):
+    def _mz_reports_to_users(self, user):
         """Fallback pool for assigning a salesperson WITHIN a team, independent of
-        crm.team.privelege_ids (2026-09-12) - _mz_team_subordinate_group_users above
-        relies on that being configured per team, and NO team in this deployment
-        actually has any privilege configured yet (mazenet_crm_team_privilege_rel is
-        empty for every single team, confirmed live) - so that method always silently
-        returned an empty pool, no matter who was asking or which team. Hit live
-        2026-09-12: a CTO handed a lead to MIS via 'Team', and MIS's own TL then had
-        an empty Salesperson dropdown for it - not because of the can_beyond_self gate
-        (already fixed separately), but because the pool computation it fell through
-        to was ALSO always empty.
+        crm.team.privelege_ids - _mz_team_subordinate_group_users above relies on
+        that being configured per team, and NO team in this deployment actually
+        has any privilege configured yet (mazenet_crm_team_privilege_rel is empty
+        for every single team, confirmed live) - so that method always silently
+        returns an empty pool, no matter who's asking or which team.
 
-        Uses the SAME MZR_TIER_GROUP_CHAINS/MZR_TIER_RANK tiering _mz_user_tier_chain
-        already relies on instead of crm.team.privelege_ids: every team.member_ids
-        user whose own tier ranks STRICTLY below `user`'s tier. Only a genuine
-        fallback - _mz_team_subordinate_group_users is tried first wherever both are
-        used, so a team that DOES eventually get real privileges configured keeps
+        REPLACES the old _mz_team_tier_subordinate_users (removed 2026-09-21,
+        client instruction: "im tl1... dropdown should show only my agents who
+        are reporting to me" - a real bug report, not a feature request: the old
+        method picked every team.member_ids user whose TIER ranked below the
+        caller's, TEAM-WIDE - so Hunter's TL-1 and TL-2 (or any team's ATL-1 and
+        ATL-2) each saw EVERY agent on the whole team in their Salesperson
+        dropdown, not just their own actual reports, since tier alone can't tell
+        two same-tier peers' subordinates apart (every Hunter agent, whether
+        under ATL-1 or ATL-2, shares one flat group_mzr_hunter_agent group -
+        there's no per-superior group at all). This walks res.users.x_reports_to_id
+        instead - a real reporting-line field this module now populates (see
+        _mz_backfill_x_reports_to_hierarchy) - giving the FULL subtree under
+        `user` (direct reports plus every report-of-a-report, e.g. a TL sees
+        their ATLs' agents too, not just the TL's own two direct agents), scoped
+        to exactly one person's own chain of command. Only a genuine fallback -
+        _mz_team_subordinate_group_users is tried first wherever both are used,
+        so a team that DOES eventually get real privileges configured keeps
         using that finer-grained ranking instead."""
-        if not team:
-            return self.env['res.users']
-        tier, _chain = self._mz_user_tier_chain(user)
-        if not tier:
-            return self.env['res.users']
-        rank = self.MZR_TIER_RANK[tier]
-        result = self.env['res.users']
-        for member in team.member_ids:
-            member_tier, _m_chain = self._mz_user_tier_chain(member)
-            if member_tier and self.MZR_TIER_RANK[member_tier] < rank:
-                result |= member
+        Users = self.env['res.users']
+        result = Users
+        frontier = Users.search([('x_reports_to_id', '=', user.id)])
+        while frontier:
+            result |= frontier
+            frontier = Users.search([('x_reports_to_id', 'in', frontier.ids)])
         return result
 
     @api.depends('team_id', 'x_assign_type', 'user_id')
@@ -1134,7 +1137,7 @@ class CrmLead(models.Model):
                 lead.x_assignable_user_ids = lead.team_id.create_lead_id
             else:
                 pool = self._mz_team_subordinate_group_users(lead.team_id, user)
-                lead.x_assignable_user_ids = pool if pool else self._mz_team_tier_subordinate_users(lead.team_id, user)
+                lead.x_assignable_user_ids = pool if pool else self._mz_reports_to_users(user)
 
     @api.onchange('x_assign_type', 'team_id')
     def assign_salesperson(self):
@@ -1804,9 +1807,9 @@ class CrmLead(models.Model):
                 pool_ids = self._mz_team_subordinate_group_users(team, user).ids
                 if not pool_ids:
                     # Same crm.team.privelege_ids-is-never-configured fallback as
-                    # _compute_x_assignable_user_ids (see _mz_team_tier_subordinate_
-                    # users' own docstring) - keep both in sync.
-                    pool_ids = self._mz_team_tier_subordinate_users(team, user).ids
+                    # _compute_x_assignable_user_ids (see _mz_reports_to_users'
+                    # own docstring) - keep both in sync.
+                    pool_ids = self._mz_reports_to_users(user).ids
             if vals['user_id'] not in pool_ids:
                 raise AccessError(_(
                     "The selected salesperson isn't in the allowed assignment pool for "
@@ -2010,6 +2013,120 @@ class CrmLead(models.Model):
         ])
         if leads:
             leads.write({'x_dmt_originated': True})
+
+    # BU Manager each team's TL reports to (res_users.x_reports_to_id) - Hunter,
+    # Account Manager, Corp Training Delivery, LMS and TNH all share ONE Corporate
+    # BU Manager (mazenet_access_rights' MZR_TIER_GROUP_CHAINS already encodes
+    # this: all five chains' Manager tier is group_mzr_corporate_manager); every
+    # other BU has its own dedicated Manager. team_corporate itself (the Corporate
+    # BU Manager's own team, holding just them + their 2 direct agents) maps to
+    # None - there's no BU above a BU Manager in this system.
+    MZ_REPORTS_TO_BU_MANAGER_LOGIN = {
+        'team_dmt': 'dmt.mgr@test.mazenet',
+        'team_tally': 'tally.mgr@test.mazenet',
+        'team_technology': 'tech.mgr@test.mazenet',
+        'team_software': 'swdev.mgr@test.mazenet',
+        'team_mis': 'mis.mgr@test.mazenet',
+        'team_hunter': 'corp.mgr@test.mazenet',
+        'team_account_manager': 'corp.mgr@test.mazenet',
+        'team_corp_training_delivery': 'corp.mgr@test.mazenet',
+        'team_lms': 'corp.mgr@test.mazenet',
+        'team_tnh': 'corp.mgr@test.mazenet',
+        'team_corporate': None,
+    }
+
+    @api.model
+    def _mz_backfill_x_reports_to_hierarchy(self):
+        """Data-file hook (data/migrations.xml's own <function> call - see
+        _mz_backfill_x_dmt_originated just above for why a plain post_init_hook
+        can't be used instead). Populates res.users.x_reports_to_id for every
+        demo user, resolved purely from each team's own member_ids (never
+        guessed from login text at runtime) - client instruction 2026-09-21:
+        "im tl1... dropdown should show only my agents who are reporting to
+        me" - the Salesperson pool (_mz_reports_to_users) needs a REAL
+        reporting-line field to answer that, since crm.team's own tier groups
+        only say WHAT TIER a user is, never WHO SPECIFICALLY they report to
+        (every Hunter agent, ATL-1's or ATL-2's, shares one flat
+        group_mzr_hunter_agent group - see x_reports_to_id's own help text).
+
+        Three rules, applied per team (plus team_corporate, for the Corporate
+        BU Manager's own direct agents):
+        - Agent tier (matched by login ending in '.agentN', NOT
+          _mz_user_tier_chain - TL-direct and Manager-direct agents use their
+          own distinct mazenet_access_rights groups, e.g.
+          group_mzr_hunter_tl_direct_agent, which _mz_user_tier_chain doesn't
+          recognize at all, returning no tier for them): reports to whichever
+          OTHER active user's login is identical minus that '.agentN' suffix
+          (an ATL's own agent -> that ATL; a TL's or Manager's own direct
+          agent -> that TL/Manager directly - one rule covers both shapes).
+        - ATL tier: reports to the team's own TL - matched by a shared 'tdl'/
+          'sales' substring for Tally specifically (its ONLY multi-TL team:
+          two full parallel chains, TDL and Sales, sharing one BU Manager),
+          the team's single TL everywhere else.
+        - TL tier: reports to MZ_REPORTS_TO_BU_MANAGER_LOGIN's entry for their
+          team - the shared Corporate BU Manager for Hunter/AM/Corp Training/
+          LMS/TNH, their own dedicated Manager for every other BU.
+        - Manager tier, and MD (who holds no team membership at all so never
+          reaches the per-team loop below): reports to CTO. Confirmed against
+          the client's own Phase-1 access-roster reference (2026-09-21) -
+          every BU Manager and MD report to CTO there; an earlier version of
+          this method left them unset ("top of chain, no one above"), which
+          the roster showed was wrong for these two roles specifically - CTO
+          itself is the only genuine top of this system's chain (still left
+          unset; it holds no supervisor in that same reference).
+
+        Idempotent (a plain write of the same value each time), so re-running
+        it on every future -u upgrade is harmless - and self-healing if a
+        team's roster changes later, since it's recomputed from team.member_ids
+        fresh each time rather than a one-time hardcoded snapshot."""
+        import re
+        Users = self.env['res.users'].sudo()
+        team_xmlids = list(self.MZ_REPORTS_TO_BU_MANAGER_LOGIN.keys())
+        all_logins = {u.login: u for u in Users.search([])}
+        cto_user = all_logins.get('cto@test.mazenet')
+        updates = {}  # user -> reports_to user (or False)
+
+        md_user = all_logins.get('md@test.mazenet')
+        if md_user and cto_user:
+            updates[md_user] = cto_user
+
+        for team_xmlid in team_xmlids:
+            team = self.env.ref(f'mazenet_crm.{team_xmlid}', raise_if_not_found=False)
+            if not team:
+                continue
+            members = team.member_ids
+            member_logins = set(members.mapped('login'))
+            for member in members:
+                login = member.login
+                if re.search(r'\.agent\d+@', login):
+                    stripped = re.sub(r'\.agent\d+@', '@', login)
+                    superior = all_logins.get(stripped)
+                    if superior:
+                        updates[member] = superior
+                    continue
+                tier, _chain = self._mz_user_tier_chain(member)
+                if tier == 'atl':
+                    candidates = [
+                        l for l in member_logins
+                        if l in all_logins and self._mz_user_tier_chain(all_logins[l])[0] == 'tl'
+                    ]
+                    if 'tdl' in login:
+                        candidates = [l for l in candidates if 'tdl' in l]
+                    elif 'sales' in login:
+                        candidates = [l for l in candidates if 'sales' in l]
+                    if len(candidates) == 1:
+                        updates[member] = all_logins[candidates[0]]
+                elif tier == 'tl':
+                    manager_login = self.MZ_REPORTS_TO_BU_MANAGER_LOGIN.get(team_xmlid)
+                    if manager_login and manager_login in all_logins:
+                        updates[member] = all_logins[manager_login]
+                elif tier == 'manager' and cto_user:
+                    updates[member] = cto_user
+                # CTO itself: left unset, the genuine top of this system's chain.
+
+        for user, superior in updates.items():
+            if user.x_reports_to_id != superior:
+                user.x_reports_to_id = superior
 
     @api.model_create_multi
     def create(self, vals_list):

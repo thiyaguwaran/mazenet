@@ -40,6 +40,7 @@ Mazenet CRM - Pipeline Customizations
     'assets': {
         'web.assets_backend': [
             'mazenet_crm/static/src/css/kanban_red.css',
+            'mazenet_crm/static/src/js/search_panel_team_all_count.js',
         ],
     },
     'demo': [

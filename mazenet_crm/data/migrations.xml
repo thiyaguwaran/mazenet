@@ -24,5 +24,12 @@
              it always matches whatever teams actually exist now, not a
              possibly-stale team list. -->
         <function model="crm.stage" name="_mz_ensure_unassigned_stages" eval="()"/>
+
+        <!-- res.users.x_reports_to_id backfill (crm_lead.py) - client instruction,
+             2026-09-21: "im tl1... dropdown should show only my agents who are
+             reporting to me". crm.team's own tier groups only say WHAT TIER a
+             user is (agent/ATL/TL/Manager), never WHO SPECIFICALLY they report
+             to - resolved here from each team's own member_ids instead. -->
+        <function model="crm.lead" name="_mz_backfill_x_reports_to_hierarchy" eval="()"/>
     </data>
 </odoo>
