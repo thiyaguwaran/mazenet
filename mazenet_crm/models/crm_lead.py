@@ -2294,6 +2294,18 @@ class CrmLead(models.Model):
         if track_assign:
             pre_assign = {lead.id: (lead.user_id, lead.team_id) for lead in self}
 
+        # BOM/BOQ Attachment Log: same before/after-write comparison as
+        # track_assign above - vals['x_bom_attachment_ids']/['x_boq_attachment_ids']
+        # being present doesn't guarantee a NEW attachment was actually added (could
+        # be a no-op resave, or a removal), so the diff has to happen after
+        # super().write() actually applies it, not from vals itself.
+        track_bom_boq = 'x_bom_attachment_ids' in vals or 'x_boq_attachment_ids' in vals
+        if track_bom_boq:
+            pre_bom_boq = {
+                lead.id: (set(lead.x_bom_attachment_ids.ids), set(lead.x_boq_attachment_ids.ids))
+                for lead in self
+            }
+
         # Direct Lead Archiving Restriction: leads are archived only via the Archive Lead
         # Wizard (which stamps mz_archive_wizard on the context), never a raw active=False.
         if "active" in vals and not vals["active"]:
@@ -2569,6 +2581,15 @@ class CrmLead(models.Model):
                 old_user, old_team = pre_assign.get(lead.id, (lead.user_id, lead.team_id))
                 if lead.user_id != old_user or lead.team_id != old_team:
                     lead._notify_assign_reassign(old_user)
+
+        if track_bom_boq:
+            for lead in self:
+                old_bom, old_boq = pre_bom_boq.get(
+                    lead.id, (set(lead.x_bom_attachment_ids.ids), set(lead.x_boq_attachment_ids.ids)))
+                new_bom = lead.x_bom_attachment_ids.filtered(lambda a: a.id not in old_bom)
+                new_boq = lead.x_boq_attachment_ids.filtered(lambda a: a.id not in old_boq)
+                if new_bom or new_boq:
+                    lead._notify_bom_boq_attached(new_bom, new_boq)
 
         return result
 
@@ -2978,6 +2999,32 @@ class CrmLead(models.Model):
                 recipients,
                 subject=_("Lead Assigned/Reassigned: %s") % self.name,
                 body=body,
+            )
+
+    def _notify_bom_boq_attached(self, new_bom, new_boq):
+        """Chatter log entry whenever a BOM or BOQ file is actually added (Technology
+        pipeline's stage_tech_4 mandatory documents - see MZ_STAGE_GATE_RULES['tech']
+        and x_bom_attachment_ids/x_boq_attachment_ids' own definitions). Fires from
+        write() itself, same as _notify_assign_reassign, so every path that can add
+        one of these (form, API, import) is covered without duplicating this per
+        caller. Only fires on an actual ADD (write()'s diff against the pre-write
+        attachment set) - removing or resaving the same set doesn't post anything."""
+        self.ensure_one()
+        if new_bom:
+            self.message_post(
+                body=_("BOM document(s) attached: %(files)s, by %(actor)s.") % {
+                    'files': ', '.join(new_bom.mapped('name')),
+                    'actor': self.env.user.name,
+                },
+                subtype_xmlid="mail.mt_note",
+            )
+        if new_boq:
+            self.message_post(
+                body=_("BOQ document(s) attached: %(files)s, by %(actor)s.") % {
+                    'files': ', '.join(new_boq.mapped('name')),
+                    'actor': self.env.user.name,
+                },
+                subtype_xmlid="mail.mt_note",
             )
 
     def _notify_red_lock_triggered(self):
