@@ -567,28 +567,51 @@ class CrmLead(models.Model):
         this Pipeline actually belongs to is known (from context or the
         viewer's own team), strip the result down to that team's own stages
         (plus genuinely global, team_ids=False ones) - a stage only present
-        because of some OTHER cross-cutting read grant doesn't belong here."""
+        because of some OTHER cross-cutting read grant doesn't belong here.
+
+        Corporate BU Manager added 2026-09-22 (client bug report: "in kanban
+        also all pipeline stages should show, now only one stage showing...
+        but for cto all stages showing same like that need for corp.mgr") -
+        corp.mgr oversees 5 DIFFERENT teams (Hunter/AM/Corp Training/LMS/TNH,
+        see MZ_CORP_MANAGER_BU_CATEGORIES) without _mz_user_own_team(corp.mgr)
+        ever resolving to any of them (that stays team_corporate, their one
+        real crm.team.member_ids membership) - so before this fix, picking
+        e.g. "LMS" in the Sales Team panel still forced target_team_id back to
+        team_corporate regardless, and the filter below then stripped out
+        every genuine LMS-only stage column, leaving just whatever stage(s)
+        happened to already hold a visible record. Needs the SAME
+        domain-based resolution as CTO/Admin/MD, since they likewise view
+        more than one team's pipeline depending on what's selected - but
+        UNLIKE CTO/Admin/MD (who own no team at all), corp.mgr falls back to
+        their own real team (team_corporate) rather than an empty stage set
+        when nothing is selected (the "All" view), since that's a genuine,
+        sensible default for them."""
         target_team_id = self.env.context.get('default_team_id')
         if not target_team_id:
             user = self.env.user
-            if (
+            is_cto_or_md = (
                 user.has_group('mazenet_access_rights.group_mzr_cto_admin')
                 or user.has_group('mazenet_access_rights.group_mzr_md')
-            ):
+            )
+            is_corp_manager = user.has_group('mazenet_access_rights.group_mzr_corporate_manager')
+            if is_cto_or_md or is_corp_manager:
                 target_team_id = self.sudo()._mz_resolve_stage_team_id_from_domain(domain)
                 if not target_team_id:
-                    # CTO/Admin and MD: no fallback team for the "All" view for now
-                    # (client instruction, 2026-09-14 for CTO, extended 2026-09-15
-                    # to MD: "for cto we removed pipeline right, same remove
-                    # pipeline stages stage_id for md as well") - neither owns a
-                    # team of their own, and defaulting to DMT's stage columns
-                    # implied they were a DMT member, the same reasoning that
-                    # already stopped team_id/x_assign_type from defaulting to
-                    # DMT for them elsewhere in this file. Real records still
-                    # group by their own actual stage regardless (group_expand
-                    # can't suppress that) - this only drops the synthetic EMPTY
-                    # DMT columns.
-                    return self.env['crm.stage']
+                    if is_corp_manager:
+                        target_team_id = self._mz_user_own_team(user).id or None
+                    else:
+                        # CTO/Admin and MD: no fallback team for the "All" view for
+                        # now (client instruction, 2026-09-14 for CTO, extended
+                        # 2026-09-15 to MD: "for cto we removed pipeline right,
+                        # same remove pipeline stages stage_id for md as well") -
+                        # neither owns a team of their own, and defaulting to
+                        # DMT's stage columns implied they were a DMT member, the
+                        # same reasoning that already stopped team_id/x_assign_type
+                        # from defaulting to DMT for them elsewhere in this file.
+                        # Real records still group by their own actual stage
+                        # regardless (group_expand can't suppress that) - this
+                        # only drops the synthetic EMPTY DMT columns.
+                        return self.env['crm.stage']
             else:
                 target_team_id = self._mz_user_own_team(user).id or None
             if target_team_id:
