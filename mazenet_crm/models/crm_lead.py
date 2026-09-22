@@ -44,6 +44,19 @@ MZ_ACTIVITY_ORANGE_MINUTES = 10
 # despite both having their own "Proposal & Follow-up's"-style stage.
 MZ_ACTIVITY_CARD_BU_CATEGORIES = {'dmt', 'tally', 'tech', 'tnh'}
 
+# Corporate BU Manager's actual day-to-day supervision scope (client instruction,
+# 2026-09-22: "corp.mgr...should have all access regarding pipeline and also edit
+# access, bcoz under his supervision only those 5 teams will come"). corp.mgr is
+# only a REAL crm.team.member_ids member of team_corporate itself (just them + 2
+# direct agents) - these 5 x_bu_category values are the sub-teams they oversee
+# without being literally enrolled in each one's own roster, same as any other
+# BU's own Manager oversees their one team by being a genuine member of it.
+# Referenced by _mz_is_corp_manager_oversight_team, used everywhere edit/assign
+# authority would otherwise require literal team membership or _mz_user_own_team
+# equality - kept as x_bu_category values, not crm.team ids, so it stays correct
+# even if these teams get renamed/recreated later.
+MZ_CORP_MANAGER_BU_CATEGORIES = {'corp_hunter', 'corp_am', 'corp_training', 'lms', 'tnh'}
+
 SYSTEM_FIELDS = {
     "message_follower_ids", "activity_ids", "message_ids", "message_main_attachment_id",
     "website_message_ids", "message_has_error", "message_has_error_counter", "message_needaction",
@@ -349,6 +362,28 @@ class CrmLead(models.Model):
         actually set up; returns an empty recordset if none/ambiguous."""
         user = user or self.env.user
         return self.env['crm.team'].search([('member_ids', '=', user.id)], limit=1)
+
+    @api.model
+    def _mz_is_corp_manager_oversight_team(self, user, team):
+        """Whether `team` is one of the 5 Corporate sub-teams
+        (MZ_CORP_MANAGER_BU_CATEGORIES) that `user`, as Corporate BU Manager,
+        oversees without being a literal crm.team.member_ids member of it -
+        client instruction, 2026-09-22: corp.mgr "should have all access
+        regarding pipeline and also edit access, bcoz under his supervision
+        only those 5 teams will come". _mz_user_own_team(corp.mgr) itself still
+        only ever resolves to team_corporate (their one real membership) -
+        this is a SEPARATE, additional check, used ALONGSIDE (never instead
+        of) every place that otherwise gates edit/assign authority on literal
+        team.member_ids membership or _mz_user_own_team equality
+        (_mz_can_edit_by_team, _mz_can_edit_owned, _compute_x_assignable_user_ids's
+        can_assign_within_own_team, _mz_check_assign_type_allowed's
+        own_team_internal_ok, and assign_salesperson's 'internal' onchange) -
+        keep all of them in sync."""
+        return bool(
+            team
+            and team.x_bu_category in MZ_CORP_MANAGER_BU_CATEGORIES
+            and user.has_group('mazenet_access_rights.group_mzr_corporate_manager')
+        )
 
     @api.model
     def _mz_user_is_dmt(self, user=None):
@@ -1100,10 +1135,15 @@ class CrmLead(models.Model):
             # stays DMT/CTO/Admin/MD-only - x_hide_team_option below still hides it
             # for them regardless of this. Computed per-lead (depends on lead.team_id
             # matching the user's own team) - moved ahead of x_can_use_assign_radio/
-            # x_can_assign_beyond_self below so both can fold it in.
+            # x_can_assign_beyond_self below so both can fold it in. The
+            # _mz_is_corp_manager_oversight_team OR covers Corporate BU Manager's
+            # 5-team oversight (2026-09-22) - see that method's own docstring.
             can_assign_within_own_team = bool(
                 tier in ('atl', 'tl', 'manager') and lead.team_id
-                and self._mz_user_own_team(user) == lead.team_id
+                and (
+                    self._mz_user_own_team(user) == lead.team_id
+                    or self._mz_is_corp_manager_oversight_team(user, lead.team_id)
+                )
             )
             lead.x_can_use_assign_radio = can_use_radio or can_assign_within_own_team
             lead.x_can_assign_beyond_self = can_beyond_self or can_assign_within_own_team
@@ -1195,6 +1235,13 @@ class CrmLead(models.Model):
             # someone ELSE's lead (2026-09-08). For them, team_id already correctly
             # holds whatever team the lead they're viewing belongs to - leave it as
             # is instead of forcing a team that doesn't exist for this user.
+            # Corporate BU Manager (2026-09-22) needs the SAME "leave it as is"
+            # treatment for their own 5 oversight teams specifically - their real
+            # crm_team_ids/own_team is team_corporate, which would otherwise
+            # WRONGLY snap e.g. a Hunter lead's team_id away to Corporate the
+            # instant they picked 'Internal' (see _mz_is_corp_manager_oversight_team).
+            if self._mz_is_corp_manager_oversight_team(user, self.team_id):
+                return
             if user.crm_team_ids:
                 self.team_id = user.crm_team_ids[0]
             return
@@ -1799,9 +1846,15 @@ class CrmLead(models.Model):
         # allow it. MD is deliberately NOT included - still Self-only everywhere else.
         for record in (self or [self.env['crm.lead']]):
             team_id = vals['team_id'] if 'team_id' in vals else (record.team_id.id if record else False)
+            # _mz_is_corp_manager_oversight_team OR covers Corporate BU Manager's
+            # 5-team oversight (2026-09-22) - see that method's own docstring; kept
+            # in sync with _compute_x_assignable_user_ids' own can_assign_within_own_team.
             own_team_internal_ok = bool(
-                assign_type == 'internal' and tier in ('atl', 'tl', 'manager')
-                and own_team and team_id == own_team.id
+                assign_type == 'internal' and tier in ('atl', 'tl', 'manager') and team_id
+                and (
+                    (own_team and team_id == own_team.id)
+                    or self._mz_is_corp_manager_oversight_team(user, self.env['crm.team'].browse(team_id))
+                )
             )
             if not own_team_internal_ok and (
                 not can_use_radio or not (user_is_dmt or is_cto_admin or tier in ('atl', 'tl', 'manager'))
@@ -2693,9 +2746,16 @@ class CrmLead(models.Model):
         keyed off the OWNER's specific head group (one tier above them) rather than
         "any ATL/TL/Manager on the team", so it excludes the locked owner even if
         they hold ATL/TL/Manager tier themselves, and excludes unrelated peers at
-        that tier too."""
+        that tier too.
+
+        Corporate BU Manager (2026-09-22) counts as a member here too for their 5
+        oversight teams specifically, even without a literal team_id.member_ids
+        row - see _mz_is_corp_manager_oversight_team."""
         self.ensure_one()
-        if not self.team_id or user not in self.team_id.member_ids:
+        if not self.team_id or (
+            user not in self.team_id.member_ids
+            and not self._mz_is_corp_manager_oversight_team(user, self.team_id)
+        ):
             return False
         tier, _chain = self._mz_user_tier_chain(user)
         return tier in ('atl', 'tl', 'manager')
@@ -2734,11 +2794,23 @@ class CrmLead(models.Model):
         without this they'd fail the team-membership check even on a lead they
         just created for themselves (write()'s own MD gate already restricts them
         to owned leads only, so this doesn't widen anything - it just lets that
-        case reach here instead of dead-ending on team membership)."""
+        case reach here instead of dead-ending on team membership).
+
+        Corporate BU Manager (2026-09-22, client instruction: corp.mgr "should
+        have all access regarding pipeline and also edit access, bcoz under his
+        supervision only those 5 teams will come") gets the same treatment as a
+        literal team member for their 5 oversight teams - see
+        _mz_is_corp_manager_oversight_team. Without this, every lead on Hunter/
+        Account Manager/Corp Training Delivery/LMS/TNH showed corp.mgr the
+        "transferred to another team, read-only" message, since they're only
+        really enrolled in team_corporate's own member_ids."""
         self.ensure_one()
         if user == self.user_id and user.has_group('mazenet_access_rights.group_mzr_md'):
             return True
-        if not self.team_id or user not in self.team_id.member_ids:
+        if not self.team_id or (
+            user not in self.team_id.member_ids
+            and not self._mz_is_corp_manager_oversight_team(user, self.team_id)
+        ):
             return False
         if user == self.user_id or not self.user_id:
             return True
