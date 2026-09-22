@@ -818,6 +818,20 @@ class CrmLead(models.Model):
              "(mazenet_access_rights) - an Agent has no one to delegate to, so both are "
              "restricted to Self for them."
     )
+    x_team_assign_note = fields.Text(
+        string="Team Assignment Note",
+        help="Why this lead is being handed to the team rather than a specific person - "
+             "mandatory in the view (see crm_lead_views.xml) while Assign Type is 'Team' "
+             "and not yet logged. Posted to the chatter and then hidden once saved (see "
+             "write()'s track_bom_boq-style before/after diff and "
+             "x_team_assign_note_logged) - a one-time capture, not an ongoing field."
+    )
+    x_team_assign_note_logged = fields.Boolean(
+        copy=False,
+        help="Guards x_team_assign_note's chatter post against firing again on a later "
+             "save, and drives the view hiding the note box again once logged - same "
+             "one-time-capture-flag pattern as x_dmt_snap_captured."
+    )
     x_hide_internal_option = fields.Boolean(
         compute='_compute_x_assignable_user_ids',
         string="Hide Internal Option",
@@ -2278,6 +2292,7 @@ class CrmLead(models.Model):
         records.filtered(
             lambda l: l.x_lms_training_start_date or l.x_lms_training_end_date
         )._mz_sync_lms_weeks()
+        records._mz_log_team_assign_note()
         return records
 
     def write(self, vals):
@@ -2462,6 +2477,32 @@ class CrmLead(models.Model):
 
         result = super(CrmLead, self).write(vals)
 
+        # BOM/BOQ and Team Assignment Note logging both read straight off THIS
+        # write's own result, deliberately BEFORE any of the system-driven
+        # follow-up writes below (Cross-Team Handoff Stage Advance, Post-Handoff
+        # Assign-Type Reset, DMT snapshot, x_dmt_originated retirement) - those
+        # can themselves change x_assign_type/team_id again as a side effect of
+        # what the user just saved (e.g. Post-Handoff Assign-Type Reset flips
+        # x_assign_type from 'team' back to 'self' the instant team_id lands on
+        # a non-DMT team - confirmed live 2026-09-22: logging AFTER that ran
+        # meant _mz_log_team_assign_note's own 'team' check silently never
+        # matched, so the note never got posted on a normal single-save form
+        # submit that set Assign Type, Sales Team and the note together - only
+        # ever worked in the narrower case of setting Assign Type without also
+        # changing team_id in that same write). The note itself should reflect
+        # what the user actually chose at save time, not wherever the system's
+        # own later auto-normalization leaves the record.
+        if track_bom_boq:
+            for lead in self:
+                old_bom, old_boq = pre_bom_boq.get(
+                    lead.id, (set(lead.x_bom_attachment_ids.ids), set(lead.x_boq_attachment_ids.ids)))
+                new_bom = lead.x_bom_attachment_ids.filtered(lambda a: a.id not in old_bom)
+                new_boq = lead.x_boq_attachment_ids.filtered(lambda a: a.id not in old_boq)
+                if new_bom or new_boq:
+                    lead._notify_bom_boq_attached(new_bom, new_boq)
+
+        self._mz_log_team_assign_note()
+
         if 'x_lms_training_start_date' in vals or 'x_lms_training_end_date' in vals:
             self._mz_sync_lms_weeks()
 
@@ -2581,15 +2622,6 @@ class CrmLead(models.Model):
                 old_user, old_team = pre_assign.get(lead.id, (lead.user_id, lead.team_id))
                 if lead.user_id != old_user or lead.team_id != old_team:
                     lead._notify_assign_reassign(old_user)
-
-        if track_bom_boq:
-            for lead in self:
-                old_bom, old_boq = pre_bom_boq.get(
-                    lead.id, (set(lead.x_bom_attachment_ids.ids), set(lead.x_boq_attachment_ids.ids)))
-                new_bom = lead.x_bom_attachment_ids.filtered(lambda a: a.id not in old_bom)
-                new_boq = lead.x_boq_attachment_ids.filtered(lambda a: a.id not in old_boq)
-                if new_bom or new_boq:
-                    lead._notify_bom_boq_attached(new_bom, new_boq)
 
         return result
 
@@ -3026,6 +3058,34 @@ class CrmLead(models.Model):
                 },
                 subtype_xmlid="mail.mt_note",
             )
+
+    def _mz_log_team_assign_note(self):
+        """Post x_team_assign_note to the chatter, for any lead in `self` where
+        Assign Type is 'Team', a note was actually typed, and it hasn't already
+        been logged (x_team_assign_note_logged guards against re-posting on a
+        later, unrelated save - see that field's own help text, same one-time-
+        capture-flag idiom as x_dmt_snap_captured elsewhere in this file).
+        Called from both create() and write() so the note gets logged whether
+        it was filled in on the very first save or added on a later edit -
+        matches the view's own required="x_assign_type == 'team' and not
+        x_team_assign_note_logged" (crm_lead_views.xml), which is exactly the
+        set of leads this method would find.
+
+        sudo().write() (not a plain attribute assignment) to set the guard
+        flag, matching x_dmt_originated's own retire-write just above -
+        recurses back into this same write() override, but self-terminates
+        immediately since the flag is now True and to_log's own filter no
+        longer matches on that recursive call."""
+        to_log = self.filtered(
+            lambda l: l.x_assign_type == 'team' and l.x_team_assign_note and not l.x_team_assign_note_logged
+        )
+        for lead in to_log:
+            lead.message_post(
+                body=_("Team Assignment Note: %s") % lead.x_team_assign_note,
+                subtype_xmlid="mail.mt_note",
+            )
+        if to_log:
+            to_log.sudo().write({'x_team_assign_note_logged': True})
 
     def _notify_red_lock_triggered(self):
         """Chatter (audit trail on the lead) + real-time/persistent Inbox notification +

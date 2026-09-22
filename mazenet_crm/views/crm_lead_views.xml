@@ -108,6 +108,17 @@
                            invisible="x_assign_type != 'team'"
                            domain="[('id', '!=', team_id)]"
                            options="{'no_open': True}"/>
+                    <!-- Team Assignment Note: mandatory one-time capture while Assign
+                         Type is 'Team' - posted to the chatter and hidden again once
+                         saved (crm_lead.py's _mz_log_team_assign_note, called from
+                         both create() and write()). x_team_assign_note_logged is the
+                         guard that keeps it hidden after that first log, even though
+                         Assign Type itself may still say 'Team'. -->
+                    <field name="x_team_assign_note"
+                           placeholder="Why is this lead going to the team rather than a specific person?"
+                           required="x_assign_type == 'team' and not x_team_assign_note_logged"
+                           invisible="x_assign_type != 'team' or x_team_assign_note_logged"/>
+                    <field name="x_team_assign_note_logged" invisible="1"/>
                     <field name="x_can_use_assign_radio" invisible="1"/>
                     <field name="x_can_assign_beyond_self" invisible="1"/>
                     <field name="x_assignable_user_ids" invisible="1"/>
