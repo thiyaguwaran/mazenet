@@ -615,5 +615,40 @@
         <function model="ir.rule" name="write"
                    eval="[[ref('crm.crm_rule_personal_lead')], {'active': False}]"/>
 
+        <!-- ================================================================
+             Lead Report (crm.lead.report) - deliberately a SEPARATE model
+             from crm.lead, not another crm.lead rule. Confirmed live
+             (2026-09-22, SWDev ATL 1): crm.lead's own base-tier rules above
+             give every team's ATL the SAME team-wide read as a plain Agent
+             (ATL's group implies the Agent group, so it matches
+             rule_crm_lead_*_base) - that's intentional, documented design
+             for the Pipeline kanban/list (team-wide visibility for
+             collaboration). A report needs the OPPOSITE: each person's own
+             count, rolling up only through their real reporting line. Since
+             ir.rule is per-model, not per-view, tightening crm.lead itself
+             would also narrow the Pipeline for every ATL - hence this
+             separate reporting model instead, with its own independent rule.
+
+             Reuses _mz_reports_to_users (crm_lead.py) - it already walks
+             res.users.x_reports_to_id transitively, so an Agent (no reports)
+             sees only themselves, an ATL/TL/Manager sees their whole
+             subtree, and CTO/Admin sees the whole company (everyone's
+             x_reports_to_id chain is backfilled all the way up to CTO - see
+             _mz_backfill_x_reports_to_hierarchy). MD is the one exception:
+             a leaf in that same chain (reports to CTO, nobody reports to
+             MD), so the hierarchy walk alone would show MD only their own
+             (nonexistent) leads - explicitly bypassed here since MD's group
+             is documented as "Read-Only, All Teams".
+        ================================================================= -->
+        <record id="rule_crm_lead_report_hierarchy" model="ir.rule">
+            <field name="name">Mazenet CRM Lead Report: Self + Reporting Hierarchy</field>
+            <field name="model_id" ref="model_crm_lead_report"/>
+            <field name="domain_force">[(1, '=', 1)] if user.has_group('mazenet_access_rights.group_mzr_md') else ['|', ('user_id', '=', user.id), ('user_id', 'in', user.env['crm.lead']._mz_reports_to_users(user).ids)]</field>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="False"/>
+            <field name="perm_create" eval="False"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
+
     </data>
 </odoo>

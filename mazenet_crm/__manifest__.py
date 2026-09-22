@@ -34,6 +34,7 @@ Mazenet CRM - Pipeline Customizations
         "views/calendar_event_views.xml",
         "views/crm_lead_views.xml",
         "views/crm_lead_pivot_views.xml",
+        "views/crm_lead_report_views.xml",
         "views/crm_team_views.xml",
         "views/res_company_views.xml",
         "views/res_users_views.xml"
