@@ -33,6 +33,7 @@ Mazenet CRM - Pipeline Customizations
         "wizards/mass_assign_wizard_views.xml",
         "views/calendar_event_views.xml",
         "views/crm_lead_views.xml",
+        "views/crm_lead_pivot_views.xml",
         "views/crm_team_views.xml",
         "views/res_company_views.xml",
         "views/res_users_views.xml"
