@@ -1027,12 +1027,11 @@ class CrmLead(models.Model):
         compute='_compute_x_can_create_partner',
         string="Can Create Partner",
         help="Whether the CURRENT user (viewing/editing this lead right now) may create "
-             "a new res.partner from this form - Technology's own restriction (M2 sheet: "
-             "'Agents may only SELECT from the existing partner and customer list; "
-             "creating one is restricted to Team Leads and Managers'). True for every "
-             "other BU (no such rule there) and for Technology TL/Manager tier; False "
-             "for a Technology Agent/ATL. Not stored - reflects whoever has the form "
-             "open."
+             "a new res.partner from this form. Was Technology's own restriction (M2 "
+             "sheet: 'Agents may only SELECT from the existing partner and customer "
+             "list; creating one is restricted to Team Leads and Managers') - reversed "
+             "by client instruction 2026-09-25, now True unconditionally for every BU "
+             "including Technology. Not stored - reflects whoever has the form open."
     )
     x_hide_create_new_opportunity = fields.Boolean(
         compute='_compute_x_hide_create_new_opportunity',
@@ -1057,15 +1056,16 @@ class CrmLead(models.Model):
         for lead in self:
             lead.x_hide_create_new_opportunity = hide
 
-    @api.depends('team_id')
-    @api.depends_context('uid')
     def _compute_x_can_create_partner(self):
-        tier, _chain = self._mz_user_tier_chain(self.env.user)
+        # Technology's Agent/ATL/TL-Direct-Agent/Manager-Direct-Agent tiers used to be
+        # select-only here (M2 sheet: creation restricted to Team Lead/Manager) - client
+        # reversed that instruction 2026-09-25 (every one of those logins needs to create a
+        # Company from this field too), so this is now unconditionally True, same as every
+        # other BU always was. Left as its own compute (rather than a plain True default on
+        # the field) since the view's partner_id toggle still reads it - if a future
+        # instruction reinstates a tier restriction, this is where it goes back.
         for lead in self:
-            if lead.team_id.x_bu_category != 'tech':
-                lead.x_can_create_partner = True
-            else:
-                lead.x_can_create_partner = tier in ('tl', 'manager')
+            lead.x_can_create_partner = True
 
     def _mz_team_subordinate_group_users(self, team, user):
         """Direct members (group.user_ids, NOT the transitively-implied

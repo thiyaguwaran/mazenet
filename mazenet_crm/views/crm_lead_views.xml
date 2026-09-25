@@ -1222,11 +1222,17 @@
                     </page>
                 </xpath>
 
-                <!-- Technology-only: partner/customer creation restricted to TL/Manager -
-                     Agents (and ATLs) may only SELECT from the existing list. Two field tags
-                     over the same partner_id, toggled by x_can_create_partner, since a
-                     Many2one's no_create/no_create_edit widget options are static per tag,
-                     not expression-evaluable.
+                <!-- Technology-only partner/customer creation restriction (Agents/ATLs
+                     select-only, TL/Manager could create) reversed by client instruction
+                     2026-09-25 - x_can_create_partner is now unconditionally True
+                     (crm_lead.py), so the field[@name='partner_id'] tag below (with
+                     no_create/no_create_edit) is permanently invisible and the one above it
+                     always renders instead. Left in place rather than removed: if a future
+                     instruction reinstates a tier restriction here, only
+                     _compute_x_can_create_partner needs to change back, not this view. Two
+                     field tags over the same partner_id since a Many2one's
+                     no_create/no_create_edit widget options are static per tag, not
+                     expression-evaluable.
 
                      Scoped to group[@name='opportunity_partner'] specifically (2026-09-14
                      fix) - stock's own form has TWO partner_id fields (the other one lives in
