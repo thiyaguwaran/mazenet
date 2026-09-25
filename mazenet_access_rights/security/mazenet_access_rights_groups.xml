@@ -675,5 +675,33 @@
             <field name="comment">Read-only oversight across DMT, Technology, software and MIS. Not part of the write-access chain of any team (parallel role, not a reporting line) - grant it read access via ir.rule, not implied_ids, when wiring up models.</field>
         </record>
 
+        <!-- Company/Contact Creation: deliberately standalone, implying only
+             base.group_user, NOT wired into any team's Agent->ATL->TL->Manager
+             implied_ids chain. It must be assignable to individual users while
+             excluding a specific TL, which is structurally impossible via that
+             chain - a Team Lead group always implies its own ATL and
+             TL-Direct-Agent groups (and is in turn implied by its BU Manager),
+             so any grant reachable from both "below" (Agent/ATL/TL-Direct
+             Agent) and "above" (BU Manager) would inevitably also reach the TL
+             sitting between them. This group is therefore added directly to
+             specific users' group_ids (see demo/demo_data.xml in mazenet_crm),
+             never to another group's implied_ids.
+             Deliberately NOT base.group_partner_manager: that group also
+             grants unrestricted read/write/unlink on res.partner_bank and
+             res.partner_category, and - since calendar is a mazenet_crm
+             dependency - full read/write/unlink on EVERY calendar.event in
+             the system (calendar's own ir.model.access.csv wires that ACL
+             row straight to base.group_partner_manager), not just the
+             holder's own meetings. This group's own ir.model.access.csv row
+             (mazenet_crm) grants only create+write on res.partner, no
+             unlink, to avoid that blast radius. -->
+        <record id="group_mzr_partner_creator" model="res.groups">
+            <field name="name">Company/Contact Creation</field>
+            <field name="sequence">30</field>
+            <field name="privilege_id" ref="res_groups_privilege_mzr_global"/>
+            <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+            <field name="comment">Lets the holder create (and edit) res.partner records - e.g. creating a new Company from the CRM lead form's Company Name field - without the unrelated unlink/calendar exposure that base.group_partner_manager carries. Assigned per-user, not per-role.</field>
+        </record>
+
     </data>
 </odoo>
