@@ -20,7 +20,21 @@ class MzMassAssignWizard(models.TransientModel):
         bulk-reassigns WITHIN their own team, so they get 'Internal' only. Unlike
         crm.lead's own x_assign_type, this wizard is a TransientModel opened fresh per
         session, so there's no per-record variability problem here; checking
-        self.env.user directly is enough, no mirror-field workaround needed."""
+        self.env.user directly is enough, no mirror-field workaround needed.
+
+        Client instruction 2026-09-26: an Agent must not get 'Internal' either -
+        this wizard, and its single radio option, is ATL/TL/Manager-and-up only
+        outside DMT/CTO/MD. Deliberately an ALLOW-list on tier in ('atl', 'tl',
+        'manager') rather than a deny-list on tier == 'agent': _mz_user_tier_chain
+        doesn't recognize the TL-direct-agent/Manager-direct-agent groups at all
+        (see _mz_backfill_x_reports_to_hierarchy's own docstring - e.g.
+        group_mzr_technology_tl_direct_agent implies neither
+        group_mzr_technology_agent nor any tier group), so those logins resolve to
+        no tier (None) rather than 'agent' - a deny-list keyed on 'agent' alone
+        would have missed them and still let them through to 'Internal'. Raising
+        here (rather than returning an empty list) means the wizard's form never
+        actually opens for anyone outside the allow-list - they get a clear
+        AccessError instead of a radio widget with nothing on it."""
         user = self.env.user
         is_dmt = self.env['crm.lead']._mz_user_is_dmt(user)
         is_cto_or_md = (
@@ -31,6 +45,9 @@ class MzMassAssignWizard(models.TransientModel):
             return [('team', 'Team')]
         if is_cto_or_md:
             return [('team', 'Team'), ('internal', 'Internal')]
+        tier, _chain = self.env['crm.lead']._mz_user_tier_chain(user)
+        if tier not in ('atl', 'tl', 'manager'):
+            raise AccessError(_("You don't have access to mass-reassign leads."))
         return [('internal', 'Internal')]
 
     @api.model
