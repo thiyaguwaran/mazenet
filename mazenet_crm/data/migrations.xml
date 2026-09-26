@@ -31,5 +31,11 @@
              user is (agent/ATL/TL/Manager), never WHO SPECIFICALLY they report
              to - resolved here from each team's own member_ids instead. -->
         <function model="crm.lead" name="_mz_backfill_x_reports_to_hierarchy" eval="()"/>
+
+        <!-- x_source_team_id backfill (crm_lead.py) - client instruction, 2026-09-26:
+             "Source Team" kanban badge should also show up for leads transferred
+             BEFORE the feature existed, reconstructed from team_id's own tracking
+             history rather than left blank. -->
+        <function model="crm.lead" name="_mz_backfill_x_source_team_id" eval="()"/>
     </data>
 </odoo>

@@ -1316,6 +1316,19 @@
                          same marker-span pattern, see kanban_red.css. -->
                     <span t-if="record.x_team_transfer_readonly.raw_value" class="mz-team-transferred-card d-none"/>
                 </xpath>
+                <!-- "Source Team" badge (client instruction, 2026-09-26): when a lead gets
+                     handed off to another team (e.g. DMT -> Tally), show where it came from
+                     right on the receiving team's kanban card - same visual language as
+                     tag_ids's own colored pills just above, placed right after it. Only
+                     ever visible once x_source_team_id is actually set (write()'s own
+                     "Source Team Tag" block, crm_lead.py) - a lead that's never been
+                     transferred shows nothing here, same as tag_ids showing nothing when
+                     there are no tags. -->
+                <xpath expr="//t[@t-name='card']/field[@name='tag_ids']" position="after">
+                    <span t-if="record.x_source_team_id.raw_value" class="badge rounded-pill text-bg-info me-1">
+                        From <field name="x_source_team_id"/>
+                    </span>
+                </xpath>
             </field>
         </record>
 

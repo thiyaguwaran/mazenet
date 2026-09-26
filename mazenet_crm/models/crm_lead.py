@@ -730,6 +730,22 @@ class CrmLead(models.Model):
              "to land there."
     )
 
+    x_source_team_id = fields.Many2one(
+        'crm.team', string="Source Team", copy=False, readonly=True,
+        help="The team this lead was on just before its most recent cross-team "
+             "transfer - write() sets this automatically whenever team_id actually "
+             "changes (client instruction, 2026-09-26: show where a handed-off lead "
+             "came from, right on the receiving team's kanban card, the same way "
+             "tag_ids shows its colored pills). Deliberately NOT DMT-specific "
+             "(unlike x_dmt_originated/the DMT snapshot fields above) - ANY team-to-"
+             "team transfer sets it, and each further transfer overwrites it with "
+             "the MOST RECENT previous team, not the original one (e.g. DMT -> Tally "
+             "-> MIS ends up showing 'From Tally' on MIS's kanban, not 'From DMT'). "
+             "Never self-expires, unlike x_dmt_originated - it's just a where-did-"
+             "this-come-from label, not an access grant, so there's nothing that "
+             "needs to time out."
+    )
+
     @api.depends('stage_id', 'team_id', 'x_dmt_originated')
     def _compute_x_dmt_pipeline_stage_id(self):
         dmt_team = self.env.ref('mazenet_crm.team_dmt', raise_if_not_found=False)
@@ -752,45 +768,27 @@ class CrmLead(models.Model):
 
     @api.model
     def _default_x_assign_type(self):
-        """Agents can't use 'team' or 'internal' (see x_can_assign_beyond_self), so
-        defaulting everyone to 'team' meant every Agent got bounced back to 'self'
-        with a warning on every single new lead. Pick the default from the current
-        user's own tier instead, so an Agent starts on 'self' - the only option
-        that was ever going to stick for them - and TL/ATL/Manager keep the
-        original 'team' default.
+        """Client instruction, 2026-09-26: a brand-new lead always starts on 'Self',
+        for whoever's actually creating it - no exceptions by tier or role any
+        more. Unconditional now; used to vary by who was creating the lead:
 
-        'Team'/'Internal' default is now ALSO gated on _mz_user_can_use_assign_radio
-        (DMT/CTO/Admin/MD only) - fixed 2026-09-08: a non-DMT Team Lead/Manager
-        (e.g. Tally TL) still qualified for the tier check below on its own, so
-        Kanban quick-create defaulted x_assign_type='team' for them even though
-        _mz_check_assign_type_allowed has rejected 'team' for anyone outside
-        DMT/CTO/Admin for a while now - the create() call then hit that very
-        AccessError on a plain quick-create, before the user ever touched the
-        (correctly readonly-forced-to-self) radio on the full form.
+        - A DMT ATL/TL/Manager (the only case with a non-'self' default) used to
+          start on 'Team' (a plain DMT Agent already defaulted to 'self', since
+          Agents can't use 'team'/'internal' at all - see x_can_assign_beyond_self
+          - so defaulting them to 'team' just meant an immediate bounce-back with
+          a warning on every single new lead).
+        - CTO/Admin and MD were already hardcoded to 'self' (2026-09-12, an
+          earlier client instruction, corrected same day from a brief 'Internal'
+          default) - this now covers them too, just with no special case needed.
+        - Everyone else (every regular team's ATL/TL/Manager/Agent outside DMT)
+          already defaulted to 'self' via _mz_user_can_use_assign_radio (DMT/CTO/
+          Admin/MD only) gating the tier check below entirely.
 
-        CTO/Admin and MD always start a brand-new lead on 'Self' (2026-09-12, client
-        instruction, corrected same day from a brief 'Internal' default): checked
-        BEFORE the tier fallback below on purpose - group_mzr_cto_admin's own
-        implied_ids include every team's Manager group, and has_group() (which
-        _mz_user_tier_chain relies on) resolves implied groups transitively even
-        though CTO/Admin never actually gets a real row in that group's membership
-        - so the tier-chain fallback would otherwise misread CTO/Admin as a genuine
-        DMT Manager and default them to 'team' immediately, which is the exact bug
-        that started this whole conversation ("cto tries to create new lead it auto
-        assigns to team"). 'Team' is still reachable for CTO/Admin, just only AFTER
-        the lead is saved (see x_hide_internal_option/x_show_internal_only for what
-        it looks like once picked) - 'Internal', in turn, only ever applies to an
-        EXISTING lead already owned by someone else, never to a brand-new one."""
-        user = self.env.user
-        if not self._mz_user_can_use_assign_radio(user):
-            return 'self'
-        if (
-            user.has_group('mazenet_access_rights.group_mzr_cto_admin')
-            or user.has_group('mazenet_access_rights.group_mzr_md')
-        ):
-            return 'self'
-        tier, _chain = self._mz_user_tier_chain(user)
-        return 'team' if tier in ('atl', 'tl', 'manager') else 'self'
+        This is purely the FORM's initial radio value - 'Team' and 'Internal' are
+        still fully usable afterward by whoever could already use them
+        (x_can_use_assign_radio/x_can_assign_beyond_self, _mz_check_assign_type_allowed
+        unchanged); this only stops the radio starting anywhere but 'Self'."""
+        return 'self'
 
     @api.model
     def _selection_x_assign_type(self):
@@ -1005,13 +1003,12 @@ class CrmLead(models.Model):
         help="The users user_id may be hand-picked from, when the current user is "
              "allowed to assign beyond Self (see x_can_assign_beyond_self) - otherwise "
              "empty. For 'Team': the selected team's create_lead_id members. For "
-             "'Internal': whoever's directly in a group ranked below the current "
-             "user's own group, per the team's configured privileges "
-             "(_mz_team_subordinate_group_users) - DMT is exempt from both "
-             "restrictions and always gets the full team roster. Used as user_id's "
-             "domain in the view; not stored, purely a UI helper. An onchange-returned "
-             "domain isn't reliably honored by the web client for Many2one search, so "
-             "the domain lives in the view via this computed field instead."
+             "'Internal': the current user's own x_reports_to_id subtree "
+             "(_mz_reports_to_users) - DMT is exempt from both restrictions and "
+             "always gets the full team roster. Used as user_id's domain in the "
+             "view; not stored, purely a UI helper. An onchange-returned domain "
+             "isn't reliably honored by the web client for Many2one search, so the "
+             "domain lives in the view via this computed field instead."
     )
     x_hide_salesperson = fields.Boolean(
         compute='_compute_x_assignable_user_ids',
@@ -1067,60 +1064,40 @@ class CrmLead(models.Model):
         for lead in self:
             lead.x_can_create_partner = True
 
-    def _mz_team_subordinate_group_users(self, team, user):
-        """Direct members (group.user_ids, NOT the transitively-implied
-        all_user_ids) of every group ranked below `user`'s own group within
-        `team`'s configured privileges (crm.team.privelege_ids) - i.e. only users
-        under the current user in that team's configured hierarchy. Checked
-        privilege by privilege, since sequence only ranks groups WITHIN one
-        privilege (a Corporate team's several sub-team privileges each restart
-        their own numbering). Empty recordset if the team has no privileges
-        configured, or `user` doesn't hold any of their groups."""
-        if not team or not team.privelege_ids:
-            return self.env['res.users']
-        owner_privilege = None
-        owner_group = None
-        for privilege in team.privelege_ids:
-            for group in privilege.group_ids.sorted('sequence', reverse=True):
-                if user in group.user_ids:
-                    owner_privilege = privilege
-                    owner_group = group
-                    break
-            if owner_group:
-                break
-        if not owner_group:
-            return self.env['res.users']
-        lower_groups = owner_privilege.group_ids.filtered(
-            lambda g: g.sequence < owner_group.sequence
-        )
-        return lower_groups.mapped('user_ids')
-
     def _mz_reports_to_users(self, user):
-        """Fallback pool for assigning a salesperson WITHIN a team, independent of
-        crm.team.privelege_ids - _mz_team_subordinate_group_users above relies on
-        that being configured per team, and NO team in this deployment actually
-        has any privilege configured yet (mazenet_crm_team_privilege_rel is empty
-        for every single team, confirmed live) - so that method always silently
-        returns an empty pool, no matter who's asking or which team.
+        """THE pool for assigning a salesperson WITHIN a team - the full subtree
+        under `user` in res.users.x_reports_to_id (direct reports plus every
+        report-of-a-report, e.g. a TL sees their ATLs' agents too, not just the
+        TL's own two direct agents), scoped to exactly one person's own chain of
+        command.
 
         REPLACES the old _mz_team_tier_subordinate_users (removed 2026-09-21,
         client instruction: "im tl1... dropdown should show only my agents who
-        are reporting to me" - a real bug report, not a feature request: the old
+        are reporting to me" - a real bug report, not a feature request: that
         method picked every team.member_ids user whose TIER ranked below the
         caller's, TEAM-WIDE - so Hunter's TL-1 and TL-2 (or any team's ATL-1 and
         ATL-2) each saw EVERY agent on the whole team in their Salesperson
         dropdown, not just their own actual reports, since tier alone can't tell
         two same-tier peers' subordinates apart (every Hunter agent, whether
         under ATL-1 or ATL-2, shares one flat group_mzr_hunter_agent group -
-        there's no per-superior group at all). This walks res.users.x_reports_to_id
-        instead - a real reporting-line field this module now populates (see
-        _mz_backfill_x_reports_to_hierarchy) - giving the FULL subtree under
-        `user` (direct reports plus every report-of-a-report, e.g. a TL sees
-        their ATLs' agents too, not just the TL's own two direct agents), scoped
-        to exactly one person's own chain of command. Only a genuine fallback -
-        _mz_team_subordinate_group_users is tried first wherever both are used,
-        so a team that DOES eventually get real privileges configured keeps
-        using that finer-grained ranking instead."""
+        there's no per-superior group at all).
+
+        Deliberately the ONLY method here any more - there used to be a second,
+        crm.team.privelege_ids-driven method (_mz_team_subordinate_group_users,
+        removed 2026-09-26) tried FIRST whenever a team had its Team Privileges
+        configured, falling back to this one only when it wasn't. That method had
+        the EXACT SAME "flat group, can't tell peers apart" flaw this one was
+        built to fix (it pooled by raw group.user_ids, e.g. every
+        group_mzr_technology_agent member team-wide, regardless of which ATL they
+        actually report to) - it just happened to never fire because no team had
+        Team Privileges configured. It reactivated itself the moment someone set
+        Technology's Team Privileges on staging (an unrelated stock Odoo Settings
+        field, Sales > Configuration > Sales Teams), silently reintroducing the
+        2026-09-21 bug there while local (privileges still unconfigured) kept
+        working correctly - confirmed live 2026-09-26. Removing that method
+        entirely, rather than leaving it dormant, means configuring Team
+        Privileges for ANY reason in the future can never again change which pool
+        this dropdown uses."""
         Users = self.env['res.users']
         result = Users
         frontier = Users.search([('x_reports_to_id', '=', user.id)])
@@ -1141,10 +1118,9 @@ class CrmLead(models.Model):
         'Team'/'Internal' here and then get rejected on save.
 
         Everyone else keeps the normal tier-gated behavior: 'Team' restricted to
-        create_lead_id members; 'Internal' restricted to whoever's DIRECTLY in a
-        group ranked below the current user's own group, per the team's
-        configured privileges (_mz_team_subordinate_group_users) - not the whole
-        team roster."""
+        create_lead_id members; 'Internal' restricted to the current user's own
+        x_reports_to_id subtree (_mz_reports_to_users) - not the whole team
+        roster."""
         user = self.env.user
         user_is_dmt = self._mz_user_is_dmt(user)
         can_use_radio = self._mz_user_can_use_assign_radio(user)
@@ -1210,12 +1186,10 @@ class CrmLead(models.Model):
             if not can_beyond_self and not can_assign_within_own_team:
                 lead.x_assignable_user_ids = False
             elif user_is_dmt or (is_cto_admin and show_internal_only):
-                # CTO/Admin's 'internal' pool would otherwise be empty:
-                # _mz_team_subordinate_group_users checks raw, non-transitive group
-                # membership, and CTO/Admin never actually gets a real row in any
-                # team's own privilege groups (only the transitive has_group() result
-                # used above, which doesn't apply here) - give them the same
-                # unrestricted whole-team-roster pool as DMT for this one path.
+                # CTO/Admin's 'internal' pool would otherwise be empty: CTO/Admin
+                # never actually holds a real x_reports_to_id subtree of their own -
+                # give them the same unrestricted whole-team-roster pool as DMT for
+                # this one path.
                 lead.x_assignable_user_ids = lead.team_id.member_ids
             elif can_use_radio and lead.x_assign_type == 'team':
                 # 'Team' pool (create_lead_id) only applies to whoever can actually
@@ -1226,8 +1200,7 @@ class CrmLead(models.Model):
                 # whoever routed it here in the first place).
                 lead.x_assignable_user_ids = lead.team_id.create_lead_id
             else:
-                pool = self._mz_team_subordinate_group_users(lead.team_id, user)
-                lead.x_assignable_user_ids = pool if pool else self._mz_reports_to_users(user)
+                lead.x_assignable_user_ids = self._mz_reports_to_users(user)
 
     @api.onchange('x_assign_type', 'team_id')
     def assign_salesperson(self):
@@ -1644,15 +1617,28 @@ class CrmLead(models.Model):
     # -- Technology only --
     x_customer_status = fields.Char(string="Customer Status")
     x_customer_need = fields.Char(string="Customer Need")
-    x_feasibility_identified = fields.Boolean(string="Feasibility Evaluation Identified")
+    x_feasibility_identified = fields.Datetime(
+        string="Feasibility Evaluation Identified",
+        help="Date AND time, not date only - client instruction 2026-09-26 (was a "
+             "plain checkbox)."
+    )
     x_bom_attachment_ids = fields.Many2many(
         'ir.attachment', 'mazenet_crm_lead_bom_attachment_rel',
         'lead_id', 'attachment_id', string="BOM Received")
     x_boq_attachment_ids = fields.Many2many(
         'ir.attachment', 'mazenet_crm_lead_boq_attachment_rel',
         'lead_id', 'attachment_id', string="BOQ Received")
-    x_quote_shared_checkbox = fields.Boolean(string="Shared with Customer")
-    x_customer_goods_finalised = fields.Boolean(string="Customer Goods Finalised")
+    x_quote_shared_checkbox = fields.Datetime(
+        string="Shared with Customer",
+        help="Date AND time, not date only - client instruction 2026-09-26 (was a "
+             "plain checkbox; keeping the old field name despite '_checkbox' now "
+             "being stale, to avoid orphaning the existing DB column/data)."
+    )
+    x_customer_goods_finalised = fields.Datetime(
+        string="Customer Goods Finalised",
+        help="Date AND time, not date only - client instruction 2026-09-26 (was a "
+             "plain checkbox)."
+    )
 
     # -- Software Dev only --
     x_branch_count = fields.Char(string="No. of Branches")
@@ -1853,8 +1839,8 @@ class CrmLead(models.Model):
         accepting it. Mirrors _compute_x_assignable_user_ids' DMT waiver (a DMT
         team member skips the tier gate entirely and gets the full team roster as
         their pool for both 'team' and 'internal') and its 'internal' pool for
-        everyone else (_mz_team_subordinate_group_users) - keep all three in
-        sync, or a UI selection could get rejected on save.
+        everyone else (_mz_reports_to_users) - keep all three in sync, or a UI
+        selection could get rejected on save.
 
         Own-team ATL/TL/Manager exception (2026-09-15, client instruction:
         "internal radio button should be selecteable in order to assign
@@ -1910,12 +1896,10 @@ class CrmLead(models.Model):
             elif assign_type == 'team':
                 pool_ids = team.create_lead_id.ids
             else:
-                pool_ids = self._mz_team_subordinate_group_users(team, user).ids
-                if not pool_ids:
-                    # Same crm.team.privelege_ids-is-never-configured fallback as
-                    # _compute_x_assignable_user_ids (see _mz_reports_to_users'
-                    # own docstring) - keep both in sync.
-                    pool_ids = self._mz_reports_to_users(user).ids
+                # Same pool as _compute_x_assignable_user_ids' own 'internal'
+                # branch (see _mz_reports_to_users' own docstring) - keep both in
+                # sync.
+                pool_ids = self._mz_reports_to_users(user).ids
             if vals['user_id'] not in pool_ids:
                 raise AccessError(_(
                     "The selected salesperson isn't in the allowed assignment pool for "
@@ -2119,6 +2103,50 @@ class CrmLead(models.Model):
         ])
         if leads:
             leads.write({'x_dmt_originated': True})
+
+    @api.model
+    def _mz_backfill_x_source_team_id(self):
+        """Data-file hook (data/migrations.xml's own <function> call, same reasoning
+        as _mz_backfill_x_dmt_originated above - a plain post_init_hook never fires
+        on an -u upgrade of an already-installed module). x_source_team_id
+        (crm_lead.py) is only ever set going forward, by write()'s own "Source Team
+        Tag" block - every lead that was ALREADY transferred before this feature
+        existed (2026-09-26) would otherwise show no badge at all, even though it
+        genuinely has been handed off.
+
+        Reconstructed from team_id's own tracking history, not guessed: team_id has
+        tracking=True in stock crm, so every past change is already logged as a
+        mail.tracking.value on the lead's chatter. Takes the OLD value of each
+        lead's MOST RECENT team_id tracking entry (ordered by id, same as this
+        model's own default order - ids are assigned in creation/chronological
+        order) - the exact same "most recent previous team" write() itself captures
+        live for every future transfer, so a backfilled lead and a freshly
+        transferred one end up indistinguishable.
+
+        Idempotent (only touches x_source_team_id=False rows, and only when a real
+        tracking entry confirms a genuine change into the lead's CURRENT team_id) so
+        re-running it on every future -u upgrade is harmless; a lead with no tracked
+        team_id change at all (never actually transferred) is correctly left
+        untouched."""
+        field = self.env['ir.model.fields'].sudo()._get('crm.lead', 'team_id')
+        if not field:
+            return
+        leads = self.sudo().with_context(active_test=False).search([
+            ('x_source_team_id', '=', False), ('team_id', '!=', False),
+        ])
+        Tracking = self.env['mail.tracking.value'].sudo()
+        for lead in leads:
+            entry = Tracking.search([
+                ('field_id', '=', field.id),
+                ('mail_message_id.model', '=', 'crm.lead'),
+                ('mail_message_id.res_id', '=', lead.id),
+            ], order='id desc', limit=1)
+            if (
+                entry and entry.old_value_integer
+                and entry.old_value_integer != lead.team_id.id
+                and entry.new_value_integer == lead.team_id.id
+            ):
+                lead.x_source_team_id = entry.old_value_integer
 
     # BU Manager each team's TL reports to (res_users.x_reports_to_id) - Hunter,
     # Account Manager, Corp Training Delivery, LMS and TNH all share ONE Corporate
@@ -2567,6 +2595,25 @@ class CrmLead(models.Model):
             )
             if to_reset_assign_type:
                 to_reset_assign_type.sudo().write({'x_assign_type': 'self'})
+
+        # Source Team Tag (client instruction, 2026-09-26): whenever a lead's
+        # team_id actually changes, remember which team it just came FROM in
+        # x_source_team_id - shown as a small badge on the receiving team's kanban
+        # card (crm_lead_views.xml), the same way tag_ids shows colored pills.
+        # Deliberately its own top-level condition (not nested inside the
+        # 'stage_id not in vals' block above) - this should be set regardless of
+        # whether the caller also set stage_id explicitly in the same write, unlike
+        # the auto-stage-advance convenience just above. Batched by old team_id,
+        # same pattern as the by_stage batching above.
+        if track_assign and 'team_id' in vals:
+            by_source_team = {}
+            for lead in self:
+                old_team = pre_assign.get(lead.id, (None, lead.team_id))[1]
+                if old_team and lead.team_id and lead.team_id != old_team:
+                    by_source_team.setdefault(old_team.id, self.env['crm.lead'])
+                    by_source_team[old_team.id] |= lead
+            for old_team_id, leads in by_source_team.items():
+                leads.sudo().write({'x_source_team_id': old_team_id})
 
         # DMT Details Snapshot (client instruction, 2026-09-13): the instant a
         # DMT-originated lead's team_id first moves OFF DMT, freeze a copy of DMT's
