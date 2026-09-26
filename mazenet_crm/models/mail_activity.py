@@ -170,3 +170,38 @@ class MailActivity(models.Model):
                 raise UserError(_(
                     "Can't schedule '%s' in the past. Pick a date/time that hasn't passed yet."
                 ) % (activity.summary or activity.activity_type_id.name))
+
+    def _mz_check_dmt_not_transferred(self):
+        """Reject scheduling an activity on a CRM lead that's been transferred off DMT,
+        for a DMT user specifically (client instruction, 2026-09-26: block DMT from
+        scheduling activities once a lead has moved off their team).
+
+        DMT keeps READ access to a lead it originated even after handoff
+        (rule_crm_lead_dmt_originated_read / x_dmt_originated - crm_lead.py), so the
+        Follow-up's step in DMT's own dedicated pipeline still works - but that read
+        grant was never meant to let DMT keep ACTING on a lead that's no longer
+        theirs. crm.lead.write() already goes fully read-only for DMT the instant
+        team_id moves elsewhere (_mz_can_edit_owned, content_touched check) - but
+        mail.activity is a separate model that write() guard never touches, so
+        scheduling an activity here was still wide open regardless of the transfer.
+        Same acting-user check as write()'s own guard: it's the CURRENT user
+        scheduling the activity that matters, not who the activity gets assigned to.
+        """
+        if self.env.su:
+            return
+        Lead = self.env['crm.lead']
+        user = self.env.user
+        if not Lead._mz_user_is_dmt(user):
+            return
+        dmt_team = self.env.ref('mazenet_crm.team_dmt', raise_if_not_found=False)
+        if not dmt_team:
+            return
+        for activity in self:
+            if activity.res_model != 'crm.lead' or not activity.res_id:
+                continue
+            lead = Lead.browse(activity.res_id)
+            if lead.team_id and lead.team_id != dmt_team:
+                raise UserError(_(
+                    "'%s' has been transferred to another team - DMT can no longer "
+                    "schedule activities on it."
+                ) % lead.name)
