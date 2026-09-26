@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- noupdate="0": these <function> calls must re-run on every -u upgrade,
+         not just on a fresh install (a post_init_hook would only fire on
+         install, never on upgrading an already-installed module - the actual
+         path these fixes need). Each one is idempotent, so repeated runs are
+         harmless. -->
+    <data noupdate="0">
+        <!-- x_dmt_originated backfill (crm_lead.py) - fixed 2026-09-08: DMT lost
+             all read access to a lead the instant they transferred its team_id
+             elsewhere, even the agent who'd just done the transfer, since none
+             of DMT's own ir.rules matched a non-DMT team_id anymore. New leads
+             get x_dmt_originated set at create() time now, but leads already
+             sitting in team_dmt before this fix need a one-time backfill. -->
+        <function model="crm.lead" name="_mz_backfill_x_dmt_originated" eval="()"/>
+
+        <!-- "Unassigned" stage per team (crm_stage.py) - client instruction,
+             2026-09-15, "important": a lead transferred from DMT/CTO/MD/another
+             team, or one freshly created directly on a team, should land in an
+             "Unassigned" stage until someone actually picks it up, and this
+             should be the genuine FIRST stage for every team, before "New
+             Lead". Idempotent (checks by name+team before creating), and kept
+             here rather than as hardcoded records in the noupdate stages.xml so
+             it always matches whatever teams actually exist now, not a
+             possibly-stale team list. -->
+        <function model="crm.stage" name="_mz_ensure_unassigned_stages" eval="()"/>
+
+        <!-- res.users.x_reports_to_id backfill (crm_lead.py) - client instruction,
+             2026-09-21: "im tl1... dropdown should show only my agents who are
+             reporting to me". crm.team's own tier groups only say WHAT TIER a
+             user is (agent/ATL/TL/Manager), never WHO SPECIFICALLY they report
+             to - resolved here from each team's own member_ids instead. -->
+        <function model="crm.lead" name="_mz_backfill_x_reports_to_hierarchy" eval="()"/>
+
+        <!-- x_source_team_id backfill (crm_lead.py) - client instruction, 2026-09-26:
+             "Source Team" kanban badge should also show up for leads transferred
+             BEFORE the feature existed, reconstructed from team_id's own tracking
+             history rather than left blank. -->
+        <function model="crm.lead" name="_mz_backfill_x_source_team_id" eval="()"/>
+    </data>
+</odoo>

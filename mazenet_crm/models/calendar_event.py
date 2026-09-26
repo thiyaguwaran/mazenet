@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-from odoo import models, fields, api
+from odoo import models, fields, api, _
+from odoo.exceptions import UserError
 
 
 class CalendarEvent(models.Model):
@@ -21,16 +22,87 @@ class CalendarEvent(models.Model):
     @api.model_create_multi
     def create(self, vals_list):
         events = super().create(vals_list)
+        events._mz_check_not_scheduled_in_past()
+        events._mz_check_no_double_booking()
         events._attach_mz_reminders()
         return events
 
     def write(self, vals):
         res = super().write(vals)
+        if 'start' in vals:
+            self._mz_check_not_scheduled_in_past()
+        if 'start' in vals or 'stop' in vals or 'user_id' in vals:
+            self._mz_check_no_double_booking()
         if 'res_model' in vals or 'res_id' in vals:
             self._attach_mz_reminders()
         if vals.get('x_meeting_status') == 'done':
             self._complete_linked_crm_activities()
         return res
+
+    def _mz_check_no_double_booking(self):
+        """Reject scheduling a CRM-lead meeting that clashes with something else the same
+        user already has scheduled on a *different* lead - another meeting overlapping this
+        one's start/stop window, or a Call/To-Do/Email activity whose resolved time falls
+        inside that window. The same login shouldn't be able to double-book itself across
+        leads no matter which activity type it uses. Scoped to res_model == 'crm.lead'
+        (mirrors _mz_check_not_scheduled_in_past) and compares by organizer (user_id), since
+        that's who the RED-lock/activity ownership is tracked against. The Call/To-Do side
+        of this rule is enforced separately in mail_activity.py's
+        _mz_check_no_double_booking, using this same window-containment check."""
+        for event in self:
+            if event.res_model != 'crm.lead' or not event.start or not event.stop or not event.user_id:
+                continue
+            clashing_meeting = self.env['calendar.event'].search([
+                ('id', '!=', event.id),
+                ('res_model', '=', 'crm.lead'),
+                ('res_id', '!=', event.res_id),
+                ('user_id', '=', event.user_id.id),
+                ('start', '<', event.stop),
+                ('stop', '>', event.start),
+            ], limit=1)
+            if clashing_meeting:
+                raise UserError(_(
+                    "%(user)s already has a meeting scheduled for that time (\"%(other)s\", "
+                    "%(start)s - %(stop)s), on a different lead. Pick another time."
+                ) % {
+                    'user': event.user_id.name,
+                    'other': clashing_meeting.name,
+                    'start': clashing_meeting.start,
+                    'stop': clashing_meeting.stop,
+                })
+
+            other_activities = self.env['mail.activity'].search([
+                ('res_model', '=', 'crm.lead'),
+                ('res_id', '!=', event.res_id),
+                ('user_id', '=', event.user_id.id),
+                ('activity_type_id.category', '!=', 'meeting'),
+            ])
+            clashing_activity = next(
+                (a for a in other_activities
+                 if a._mz_resolve_activity_datetime()
+                 and event.start <= a._mz_resolve_activity_datetime() < event.stop),
+                None,
+            )
+            if clashing_activity:
+                raise UserError(_(
+                    "%(user)s already has \"%(other)s\" scheduled during that time, on a "
+                    "different lead. Pick another time."
+                ) % {
+                    'user': event.user_id.name,
+                    'other': clashing_activity.summary or clashing_activity.activity_type_id.name,
+                })
+
+    def _mz_check_not_scheduled_in_past(self):
+        """Reject scheduling/moving a CRM-lead meeting to a start time that's already
+        passed - mirrors the same rule enforced for Call/To-Do activities in
+        mail_activity.py's _mz_check_not_scheduled_in_past. Scoped to res_model ==
+        'crm.lead' so it doesn't affect general calendar usage outside the CRM."""
+        now = fields.Datetime.now()
+        for event in self:
+            if event.res_model == 'crm.lead' and event.start and event.start < now:
+                raise UserError(_(
+                    "Can't schedule '%s' in the past. Pick a date/time that hasn't passed yet."
+                ) % event.name)
 
     def _attach_mz_reminders(self):
         """Auto-attach the 30/10-minute popup reminders to meetings scheduled from a CRM

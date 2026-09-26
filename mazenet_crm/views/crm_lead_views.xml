@@ -7,72 +7,1257 @@
             <field name="model">crm.lead</field>
             <field name="inherit_id" ref="crm.crm_lead_view_form"/>
             <field name="arch" type="xml">
-                <xpath expr="//field[@name='team_id']" position="after">
-                    <field name="x_originating_team_id" options="{'no_create': True}"/>
-                </xpath>
-
-                <!-- Release button lives in the header (buttons stay clickable even though
-                     the sheet below is made readonly while locked) -->
+                <!-- Release button lives in the header, next to the (now hidden-while-locked)
+                     stage statusbar and Won/Lost/Convert buttons - see below. -->
                 <xpath expr="//header" position="inside">
+                    <field name="is_show_redlock_btn" invisible="1"/>
                     <button name="action_release_lock" string="Release RED Lock" type="object"
-                            class="btn-danger" invisible="not x_is_locked"
+                            class="btn-danger" invisible="not is_show_redlock_btn"
                             confirm="Release the RED lock on this lead? It will become editable again."/>
+                    <!-- Spin-off: same customer, a new/different requirement, routed to
+                         another team - opens mz.lead.spinoff.wizard pre-filled with this
+                         lead's customer/contact info. Only makes sense on a saved lead. -->
+                    <button name="%(action_mz_lead_spinoff_wizard)d" string="Create New Opportunity"
+                            type="action" class="btn-secondary"
+                            invisible="not id or x_hide_create_new_opportunity"/>
                 </xpath>
 
-                <!-- Whole sheet becomes read-only while x_is_locked is True. Server-side
-                     write() enforcement (crm_lead.py) is the real guard; this is the UX
-                     mirror of it so users see it as read-only rather than hitting a save
-                     error. Buttons are unaffected by the sheet's readonly modifier. -->
+                <xpath expr="//div[@name='button_box']" position="inside">
+                    <button name="action_view_spinoff_leads" type="object"
+                            class="oe_stat_button" icon="fa-random"
+                            invisible="not x_spinoff_lead_ids">
+                        <field name="x_spinoff_lead_ids" widget="statinfo" string="Spin-off Leads"/>
+                    </button>
+                </xpath>
+                <xpath expr="//field[@name='user_id'][1]" position="before">
+                    <field name="x_related_lead_id" invisible="not x_related_lead_id"/>
+                </xpath>
+
                 <xpath expr="//sheet" position="attributes">
-                    <attribute name="readonly">x_is_locked</attribute>
+                    <attribute name="readonly">x_content_readonly_for_me</attribute>
+                </xpath>
+                <xpath expr="//field[@name='user_id']" position="attributes">
+                    <!-- Readonly whenever Assign Type is 'Self', full stop - client bug
+                         report 2026-09-21: "when selecting self radio, salesperson able
+                         to change, that should not happen". Until this fix, an ATL/TL/
+                         Manager on their own team could still edit Salesperson directly
+                         while the radio kept showing 'Self' (the old
+                         x_can_assign_salesperson_direct escape hatch, added 2026-09-13
+                         back when 'Internal' wasn't usable by them at all) - backwards
+                         from what "Self" is supposed to mean. Since 2026-09-15
+                         (can_assign_within_own_team in _compute_x_assignable_user_ids),
+                         'Internal' is genuinely usable by an ATL/TL/Manager on their own
+                         team, so that workaround is no longer needed: reassigning within
+                         their team now properly goes through picking 'Internal' first,
+                         same as everyone else. -->
+                    <attribute name="readonly">x_content_readonly_for_me or x_assign_type == 'self'</attribute>
+                    <attribute name="domain">[('id', 'in', x_assignable_user_ids)]</attribute>
+                    <!-- MD and CTO/Admin get Salesperson hidden entirely, alongside the
+                         'Internal' assign-type option (_selection_x_assign_type). -->
+                    <attribute name="invisible">x_hide_salesperson</attribute>
+                    <!-- no_open: don't let users click through to the salesperson's
+                         res.users form from here. -->
+                    <attribute name="options">{'no_open': True}</attribute>
+                </xpath>
+                <xpath expr="//field[@name='user_id']" position="before">
+                    <!-- Only DMT team members, MD and CTO/Admin may touch this radio at
+                         all (_mz_user_can_use_assign_radio) - everyone else is forced to
+                         Self and can't even click through to Team/Internal.
+                         Four fields, mutually exclusive via x_hide_internal_option /
+                         x_show_internal_only / x_hide_team_option: a Selection's option
+                         list is per-environment, not per-record, so different roles
+                         needing different subsets of Self/Internal/Team each need their
+                         own narrower mirror field swapped in for the real one - see
+                         x_assign_type_no_internal / x_assign_type_internal_only /
+                         x_assign_type_no_team's own help text. -->
+                    <field name="x_assign_type" widget="radio" options="{'horizontal': true}"
+                           readonly="not x_can_use_assign_radio"
+                           invisible="x_hide_internal_option or x_show_internal_only or x_hide_team_option"/>
+                    <field name="x_assign_type_no_internal" widget="radio" options="{'horizontal': true}"
+                           readonly="not x_can_use_assign_radio"
+                           invisible="not x_hide_internal_option or x_show_internal_only"/>
+                    <field name="x_assign_type_internal_only" widget="radio" options="{'horizontal': true}"
+                           readonly="not x_can_use_assign_radio"
+                           invisible="not x_show_internal_only"/>
+                    <field name="x_assign_type_no_team" widget="radio" options="{'horizontal': true}"
+                           readonly="not x_can_use_assign_radio"
+                           invisible="not x_hide_team_option"/>
+                    <!-- Sales Team hidden entirely for Self/Internal (2026-09-15, client
+                         instruction: "if internal radio or self selected, salez team
+                         field should be hidden") - only 'Team' actually means picking a
+                         DIFFERENT team; for Self/Internal, team_id is already fixed to
+                         wherever the lead already sits (unchanged by either), so there's
+                         nothing for the user to see or fill in. required= narrowed to
+                         match - it can no longer stay "required whenever not self" once
+                         Internal also hides the field, or a required-but-invisible field
+                         would block saving with nothing the user could actually fill in. -->
+                    <!-- domain="[('id', '!=', team_id)]" excludes the lead's OWN current
+                         team from its own picker (client bug report, 2026-09-21 - the
+                         2026-09-15 fix for this same complaint used a Python domain=
+                         callable on the field instead, which LOOKS correct but is
+                         evaluated by fields_get() against an EMPTY recordset for the web
+                         client's dropdown search, self.team_id.ids == [] every time -
+                         confirmed live it excluded nothing, ever. A view-level domain
+                         string referencing another field on the SAME record by name
+                         (the standard Odoo idiom, e.g. parent_id pickers excluding
+                         '(id', '!=', id)') is evaluated against the actual loaded form
+                         values instead, and reliably works.) -->
+                    <field name="team_id"
+                           readonly="x_content_readonly_for_me"
+                           required="x_assign_type == 'team'"
+                           invisible="x_assign_type != 'team'"
+                           domain="[('id', '!=', team_id)]"
+                           options="{'no_open': True}"/>
+                    <!-- Team Assignment Note: mandatory one-time capture while Assign
+                         Type is 'Team' - posted to the chatter and hidden again once
+                         saved (crm_lead.py's _mz_log_team_assign_note, called from
+                         both create() and write()). x_team_assign_note_logged is the
+                         guard that keeps it hidden after that first log, even though
+                         Assign Type itself may still say 'Team'. -->
+                    <field name="x_team_assign_note"
+                           placeholder="Why is this lead going to the team rather than a specific person?"
+                           required="x_assign_type == 'team' and not x_team_assign_note_logged"
+                           invisible="x_assign_type != 'team' or x_team_assign_note_logged"/>
+                    <field name="x_team_assign_note_logged" invisible="1"/>
+                    <field name="x_can_use_assign_radio" invisible="1"/>
+                    <field name="x_can_assign_beyond_self" invisible="1"/>
+                    <field name="x_assignable_user_ids" invisible="1"/>
+                    <field name="x_hide_salesperson" invisible="1"/>
+                    <field name="x_hide_internal_option" invisible="1"/>
+                    <field name="x_show_internal_only" invisible="1"/>
+                    <field name="x_hide_create_new_opportunity" invisible="1"/>
+                    <field name="x_hide_team_option" invisible="1"/>
+                </xpath>
+
+                <!-- Phone/Email either-or indicator (MZ_EITHER_OR_MANDATORY_FIELDS,
+                     crm_lead.py): a plain visual marker, NOT the native required=
+                     attribute - required= would ALSO block saving the record any
+                     time it's used, on any edit, not just a forward stage move,
+                     which is stricter than the actual gate (_mz_stage_gate_check
+                     only fires on a forward stage change). Shown as long as the
+                     OTHER field is still empty - matches the gate exactly (satisfied
+                     by either field, not both), on every stage now, not just the
+                     first. Both the 'opportunity'-type fields (no @id) and the
+                     'lead'-type variants (id=..._group_lead_info) are covered,
+                     though mazenet leads are always type='opportunity' in practice. -->
+                <xpath expr="//field[@name='email_from'][not(@id)]" position="after">
+                    <span class="text-danger fw-bold ms-1" title="Required until Phone is filled"
+                          invisible="phone">*</span>
+                </xpath>
+                <xpath expr="//field[@name='phone'][not(@id)]" position="after">
+                    <span class="text-danger fw-bold ms-1" title="Required until Email is filled"
+                          invisible="email_from">*</span>
+                </xpath>
+                <xpath expr="//field[@name='email_from'][@id='email_from_group_lead_info']" position="after">
+                    <span class="text-danger fw-bold ms-1" title="Required until Phone is filled"
+                          invisible="phone">*</span>
+                </xpath>
+                <xpath expr="//field[@name='phone'][@id='phone_group_lead_info']" position="after">
+                    <span class="text-danger fw-bold ms-1" title="Required until Email is filled"
+                          invisible="email_from">*</span>
+                </xpath>
+
+                <xpath expr="//field[@name='stage_id']" position="attributes">
+                    <attribute name="readonly">won_status == 'lost' or not active or x_content_readonly_for_me</attribute>
+                </xpath>
+                <!-- Won/Lost hidden for DMT (2026-09-15, client instruction) - DMT was
+                     deliberately built with NO Won/Lost stage at all (it routes leads to
+                     other teams, never closes them itself). Stock CRM's "Won" button
+                     looks for a stage with is_won=True on the CURRENT team and silently
+                     sets stage_id to EMPTY when none exists (addons/crm's
+                     action_set_won: `next(..., won_stages)` on an empty won_stages
+                     recordset returns that same empty recordset, whose .id is False) -
+                     hit live, a DMT lead marked Won ended up with a null stage_id,
+                     invisible in every kanban column. x_team_bu_category is already
+                     loaded elsewhere on this form (Pipeline Fields tab). -->
+                <xpath expr="//button[@name='action_set_won_rainbowman']" position="attributes">
+                    <attribute name="invisible" add="x_content_readonly_for_me or x_team_bu_category == 'dmt'" separator="or"/>
+                </xpath>
+                <xpath expr="//button[@name='%(crm.action_crm_lead2opportunity_partner)d']" position="attributes">
+                    <attribute name="invisible" add="x_content_readonly_for_me" separator="or"/>
+                </xpath>
+                <xpath expr="//button[@name='action_restore']" position="attributes">
+                    <attribute name="invisible" add="x_content_readonly_for_me" separator="or"/>
+                </xpath>
+                <xpath expr="//button[@name='%(crm.crm_lead_lost_action)d']" position="attributes">
+                    <attribute name="invisible" add="x_content_readonly_for_me or x_team_bu_category == 'dmt'" separator="or"/>
                 </xpath>
 
                 <xpath expr="//field[@name='won_status']" position="before">
                     <field name="x_is_locked" invisible="1"/>
+                    <field name="x_content_readonly_for_me" invisible="1"/>
+                    <field name="x_team_transfer_readonly" invisible="1"/>
                     <div class="alert alert-danger mb-0" role="alert" invisible="not x_is_locked">
                         <i class="fa fa-lock me-1" title="RED Lock"/>
                         <b>RED LOCKED</b> - this lead is overdue and read-only until released.
                     </div>
+                    <div class="alert alert-secondary mb-0" role="alert" invisible="not x_team_transfer_readonly">
+                        <i class="fa fa-arrow-right-arrow-left me-1" title="Transferred"/>
+                        <b>TRANSFERRED</b> - this lead has moved to another Sales Team and is read-only for you.
+                    </div>
                 </xpath>
-            </field>
-        </record>
 
-        <!-- Lead List View Inheritance -->
-        <record id="view_crm_lead_list_inherit_mz" model="ir.ui.view">
-            <field name="name">crm.lead.list.inherit.mz</field>
-            <field name="model">crm.lead</field>
-            <field name="inherit_id" ref="crm.crm_case_tree_view_oppor"/>
-            <field name="arch" type="xml">
-                <xpath expr="//field[@name='team_id']" position="after">
-                    <field name="x_originating_team_id" optional="hide"/>
+                <!-- Source options are per-BU (utm_source.py's team_ids), scoped to team_id -->
+                <xpath expr="//page[@name='extra']//field[@name='source_id']" position="attributes">
+                    <attribute name="domain">[('team_ids', 'in', team_id)]</attribute>
                 </xpath>
-            </field>
-        </record>
+                <xpath expr="//page[@name='lead']//field[@name='source_id']" position="attributes">
+                    <attribute name="domain">[('team_ids', 'in', team_id)]</attribute>
+                </xpath>
 
-        <!-- Pipeline (Opportunities) Search View: "Agent" filter -->
-        <record id="view_crm_case_opportunities_filter_inherit_mz" model="ir.ui.view">
-            <field name="name">crm.lead.search.opportunity.inherit.mz</field>
-            <field name="model">crm.lead</field>
-            <field name="inherit_id" ref="crm.view_crm_case_opportunities_filter"/>
-            <field name="arch" type="xml">
-                <xpath expr="//filter[@name='unassigned']" position="after">
-                    <filter string="Agent" name="filter_owner_agent" domain="[('x_owner_role', '=', 'agent')]"
-                            help="Leads owned by a pure Agent (not TL/ATL/Manager)"/>
-                    <filter string="ATL" name="filter_owner_atl" domain="[('x_owner_role', '=', 'atl')]"
-                            help="Leads owned by an ATL"/>
-                    <filter string="TL" name="filter_owner_tl" domain="[('x_owner_role', '=', 'tl')]"
-                            help="Leads owned by a TL"/>
-                    <filter string="BU Manager" name="filter_owner_manager" domain="[('x_owner_role', '=', 'manager')]"
-                            help="Leads owned by a BU Manager"/>
-                    <filter string="MD" name="filter_owner_md" domain="[('x_owner_role', '=', 'md')]"
-                            help="Leads owned by MD (should normally be none - MD is read-only)"/>
-                    <filter string="CTO / Admin" name="filter_owner_admin" domain="[('x_owner_role', '=', 'admin')]"
-                            help="Leads owned by CTO/Admin"/>
+                <!-- Build notes: "Format validation only... Show a placeholder hint" -
+                     placeholders on both the Lead-type and Opportunity-type variants of
+                     phone/email_from (crm_lead_view_form renders a different group for
+                     each, per the `type` field). Actual format enforcement is the
+                     _mz_check_contact_format constraint in crm_lead.py. -->
+                <!-- Phone/email are an either-or pair on every BU's first stage
+                     (deliberate deviation from the sheet - business wants "fill one,
+                     the other becomes optional" - see MZ_EITHER_OR_MANDATORY_FIELDS
+                     in crm_lead.py; Tally's sheet-wording "Progressive" email is
+                     deliberately overridden the same way). No view-level `required=`
+                     here on purpose - see the note above the M2 pipeline fields group
+                     below: enforcement is the backend stage gate only, on a real
+                     stage-move attempt, not on every save. -->
+                <xpath expr="//field[@name='phone'][@id='phone_group_lead_info']" position="attributes">
+                    <attribute name="placeholder">e.g. 9876543210</attribute>
                 </xpath>
-                <xpath expr="//filter[@name='salesperson']" position="after">
-                    <filter string="Role" name="group_by_owner_role" context="{'group_by':'x_owner_role'}"/>
-                    <filter string="Supervisor" name="group_by_owner_supervisor" context="{'group_by':'x_owner_supervisor_id'}"
-                            help="Who the salesperson reports to - combine with Salesperson/Role to see the full branch: Manager > TL > ATL > Agent"/>
+                <xpath expr="//field[@name='email_from'][@id='email_from_group_lead_info']" position="attributes">
+                    <attribute name="placeholder">e.g. name@example.com</attribute>
+                </xpath>
+                <xpath expr="//group[@name='opportunity_partner']//field[@name='phone']" position="attributes">
+                    <attribute name="placeholder">e.g. 9876543210</attribute>
+                    <!-- Drop the stock phone widget entirely (2026-09-15 fix, hit live:
+                         typing a plain 10-digit number like "9843371611" saved as "+1
+                         984-337-1611", then failed _mz_check_contact_format's own
+                         10-digit check) - the phone widget auto-formats and prepends a
+                         country code using the record's/company's country, and this
+                         company's own country_id is set to United States (its currency
+                         is correctly INR, but country_id was never fixed to match) -
+                         every lead with no country picked fell back to that. The
+                         business wants a plain 10-digit number here, not international
+                         formatting, so remove the widget rather than depend on company
+                         data being right - a plain Char input just stores exactly what's
+                         typed. -->
+                    <attribute name="widget"></attribute>
+                </xpath>
+                <xpath expr="//group[@name='opportunity_partner']//field[@name='email_from']" position="attributes">
+                    <attribute name="placeholder">e.g. name@example.com</attribute>
+                </xpath>
+
+                <!-- M2 pipeline fields (Mazenet_CRM_M2_Build_Tasks.xlsx). Each group is
+                     gated to the BU(s) it applies to via x_team_bu_category, since all
+                     5 pipelines share this one crm.lead form. -->
+                <xpath expr="//page[@name='extra']" position="after">
+                    <page name="mz_pipeline" string="Pipeline Fields">
+                        <field name="x_team_bu_category" invisible="1"/>
+                        <field name="capture_dmt_lead_id"/>
+                        <!-- Red-asterisk "required" indicator, scoped to whichever fields
+                             MZ_STAGE_GATE_RULES actually needs to leave the CURRENT stage
+                             (x_current_stage_gate_fields, crm_lead.py) - purely a UI marker
+                             matching what _mz_stage_gate_check enforces on the NEXT forward
+                             move; doesn't block saving while still on the current stage. -->
+                        <field name="x_current_stage_gate_fields" invisible="1"/>
+                        <div invisible="x_team_bu_category != 'dmt'">
+                            <group string="Stage 1 - New Lead / Source">
+                                <label for="x_organic_inorganic"/>
+                                <div class="o_row">
+                                    <field name="x_organic_inorganic"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_organic_inorganic,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="source_id"/>
+                                <div class="o_row">
+                                    <field name="source_id" domain="[('team_ids', 'in', team_id)]"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',source_id,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <field name="referred" string="Source Reference (Referral / Ads)"/>
+                            </group>
+                            <group string="Stage 2 - Lead Validation">
+                                <label for="x_company_or_individual"/>
+                                <div class="o_row">
+                                    <field name="x_company_or_individual"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_company_or_individual,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_contact_purpose"/>
+                                <div class="o_row">
+                                    <field name="x_contact_purpose"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_contact_purpose,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_product_service"/>
+                                <div class="o_row">
+                                    <field name="x_product_service"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_product_service,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_employee_count"/>
+                                <div class="o_row">
+                                    <field name="x_employee_count"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_employee_count,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_company_turnover"/>
+                                <div class="o_row">
+                                    <field name="x_company_turnover"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_company_turnover,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <field name="priority" widget="priority" string="Lead Fit"/>
+                            </group>
+                            <group string="Stage 3 - Transfer to BU">
+                                <label for="x_transfer_notes"/>
+                                <div class="o_row">
+                                    <field name="x_transfer_notes"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_transfer_notes,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_target_team_id"/>
+                                <div class="o_row">
+                                    <!-- Same fix as team_id's own field tag above (client
+                                         bug report, 2026-09-21) - x_target_team_id's
+                                         model-level domain=_get_team_id_domain is
+                                         evaluated by fields_get() against an empty
+                                         recordset, so it never actually excluded the
+                                         lead's current team in the live dropdown. A
+                                         view-level domain string works reliably. -->
+                                    <field name="x_target_team_id" domain="[('id', '!=', team_id)]"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_target_team_id,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                            </group>
+                            <group string="Stage 4 - Follow-up's">
+                                <div class="text-muted" colspan="2">
+                                    Follow-up activities live in the Activities/Chatter area below -
+                                    colour timer and RED lock are already wired to them.
+                                </div>
+                            </group>
+                        </div>
+                        <div invisible="x_team_bu_category != 'tally'">
+                            <group string="Stage 1 - New Lead">
+                                <label for="source_id"/>
+                                <div class="o_row">
+                                    <field name="source_id" domain="[('team_ids', 'in', team_id)]"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',source_id,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <field name="referred" string="Source Reference (Referral)"/>
+                            </group>
+                            <group string="Stage 2 - Lead Validation">
+                                <label for="x_tally_category"/>
+                                <div class="o_row">
+                                    <field name="x_tally_category"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_tally_category,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                            </group>
+                            <group string="Stage 3 - Requirements">
+                                <field name="x_company_intro_done"/>
+                                <label for="x_product_service"/>
+                                <div class="o_row">
+                                    <field name="x_product_service"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_product_service,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_feasibility"/>
+                                <div class="o_row">
+                                    <field name="x_feasibility"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_feasibility,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_timeline"/>
+                                <div class="o_row">
+                                    <field name="x_timeline"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_timeline,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_requirements_attachment_ids"/>
+                                <div class="o_row">
+                                    <field name="x_requirements_attachment_ids" widget="many2many_binary"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_requirements_attachment_ids,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                            </group>
+                            <group string="Stage 4 - Quote Shared">
+                                <label for="x_quote_date"/>
+                                <div class="o_row">
+                                    <field name="x_quote_date"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_quote_date,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_quote_document_ids"/>
+                                <div class="o_row">
+                                    <field name="x_quote_document_ids" widget="many2many_binary"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_quote_document_ids,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                            </group>
+                            <group string="Stage 5 - Follow-up's">
+                                <div class="text-muted" colspan="2">
+                                    Follow-up activities live in the Activities/Chatter area below -
+                                    colour timer and RED lock are already wired to them.
+                                </div>
+                            </group>
+                            <group string="Stage 6 - Won / Lost">
+                            </group>
+                            <group string="Stage 7 - Project State">
+                                <field name="x_project_start_date"/>
+                                <field name="x_project_start_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_project_completed_date"/>
+                                <field name="x_project_completed_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_workorder_completion_date"/>
+                                <field name="x_deviation_days"/>
+                            </group>
+                        </div>
+
+                        <div invisible="x_team_bu_category != 'tech'">
+                            <group string="Stage 1 - New Lead / Source">
+                                <label for="source_id"/>
+                                <div class="o_row">
+                                    <field name="source_id" domain="[('team_ids', 'in', team_id)]"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',source_id,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <field name="referred" string="Source Reference (Referral / GeM Bid)"/>
+                                <field name="x_can_create_partner" invisible="1"/>
+                            </group>
+                            <group string="Stage 2 - Lead Validation">
+                                <label for="x_customer_status"/>
+                                <div class="o_row">
+                                    <field name="x_customer_status"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_customer_status,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_customer_need"/>
+                                <div class="o_row">
+                                    <field name="x_customer_need"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_customer_need,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                            </group>
+                            <group string="Stage 3 - Requirement Understanding">
+                                <label for="x_product_service"/>
+                                <div class="o_row">
+                                    <field name="x_product_service"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_product_service,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_feasibility_identified"/>
+                                <div class="o_row">
+                                    <field name="x_feasibility_identified"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_feasibility_identified,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_timeline"/>
+                                <div class="o_row">
+                                    <field name="x_timeline"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_timeline,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_requirements_attachment_ids"/>
+                                <div class="o_row">
+                                    <field name="x_requirements_attachment_ids" widget="many2many_binary"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_requirements_attachment_ids,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                            </group>
+                            <group string="Stage 4 - Quote">
+                                <label for="x_bom_attachment_ids"/>
+                                <div class="o_row">
+                                    <field name="x_bom_attachment_ids" widget="many2many_binary"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_bom_attachment_ids,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_boq_attachment_ids"/>
+                                <div class="o_row">
+                                    <field name="x_boq_attachment_ids" widget="many2many_binary"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_boq_attachment_ids,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_quote_shared_checkbox"/>
+                                <div class="o_row">
+                                    <field name="x_quote_shared_checkbox"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_quote_shared_checkbox,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_customer_goods_finalised"/>
+                                <div class="o_row">
+                                    <field name="x_customer_goods_finalised"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_customer_goods_finalised,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_quote_date"/>
+                                <div class="o_row">
+                                    <field name="x_quote_date"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_quote_date,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_quote_document_ids"/>
+                                <div class="o_row">
+                                    <field name="x_quote_document_ids" widget="many2many_binary"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_quote_document_ids,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                            </group>
+                            <group string="Stage 5 - Follow-up's">
+                                <div class="text-muted" colspan="2">
+                                    Follow-up activities live in the Activities/Chatter area below -
+                                    colour timer and RED lock are already wired to them.
+                                </div>
+                            </group>
+                            <group string="Stage 6 - Won / Lost">
+                            </group>
+                            <group string="Stage 7 - Project State">
+                                <field name="x_project_start_date"/>
+                                <field name="x_project_start_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_project_completed_date"/>
+                                <field name="x_project_completed_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_workorder_completion_date"/>
+                                <field name="x_deviation_days"/>
+                            </group>
+                        </div>
+
+                        <div invisible="x_team_bu_category != 'swdev'">
+                            <group string="Stage 1 - New Lead / Source">
+                                <label for="source_id"/>
+                                <div class="o_row">
+                                    <field name="source_id" domain="[('team_ids', 'in', team_id)]"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',source_id,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <field name="referred" string="Source Reference (Referral)"/>
+                            </group>
+                            <group string="Stage 2 - Lead Validation">
+                                <field name="expected_revenue" string="Order Value"/>
+                                <label for="x_branch_count"/>
+                                <div class="o_row">
+                                    <field name="x_branch_count"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_branch_count,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_sw_employee_count"/>
+                                <div class="o_row">
+                                    <field name="x_sw_employee_count"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_sw_employee_count,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_nature_of_business"/>
+                                <div class="o_row">
+                                    <field name="x_nature_of_business"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_nature_of_business,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_established_year"/>
+                                <div class="o_row">
+                                    <field name="x_established_year"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_established_year,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <field name="x_founder"/>
+                                <field name="x_ceo"/>
+                                <field name="x_company_turnover"/>
+                                <field name="website"/>
+                                <label for="x_meeting_attendees"/>
+                                <div class="o_row">
+                                    <field name="x_meeting_attendees"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_meeting_attendees,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                            </group>
+                            <group string="Stage 3 - Demo">
+                                <label for="x_demo_completed"/>
+                                <div class="o_row">
+                                    <field name="x_demo_completed"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_demo_completed,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_system_study_attachment_ids"/>
+                                <div class="o_row">
+                                    <field name="x_system_study_attachment_ids" widget="many2many_binary"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_system_study_attachment_ids,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_feasibility"/>
+                                <div class="o_row">
+                                    <field name="x_feasibility"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_feasibility,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_timeline"/>
+                                <div class="o_row">
+                                    <field name="x_timeline"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_timeline,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                            </group>
+                            <group string="Stage 4 - Quote">
+                                <label for="x_quote_date"/>
+                                <div class="o_row">
+                                    <field name="x_quote_date"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_quote_date,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_quote_document_ids"/>
+                                <div class="o_row">
+                                    <field name="x_quote_document_ids" widget="many2many_binary"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_quote_document_ids,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                            </group>
+                            <group string="Stage 5 - Won / Lost">
+                            </group>
+                            <group string="Stage 6 - Project State">
+                                <field name="x_project_start_date"/>
+                                <field name="x_project_start_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_project_completed_date"/>
+                                <field name="x_project_completed_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_workorder_completion_date"/>
+                                <field name="x_deviation_days"/>
+                            </group>
+                        </div>
+
+                        <div invisible="x_team_bu_category != 'mis'">
+                            <group string="Stage 1 - New Lead / Source">
+                                <label for="source_id"/>
+                                <div class="o_row">
+                                    <field name="source_id" domain="[('team_ids', 'in', team_id)]"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',source_id,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <field name="referred" string="Source Reference (Referral)"/>
+                            </group>
+                            <group string="Stage 2 - Lead Validation">
+                                <label for="x_product_service"/>
+                                <div class="o_row">
+                                    <field name="x_product_service"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_product_service,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_target_audience"/>
+                                <div class="o_row">
+                                    <field name="x_target_audience"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_target_audience,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_mis_timelines_estimate"/>
+                                <div class="o_row">
+                                    <field name="x_mis_timelines_estimate"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_mis_timelines_estimate,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_deliverables"/>
+                                <div class="o_row">
+                                    <field name="x_deliverables"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_deliverables,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_requirements_attachment_ids"/>
+                                <div class="o_row">
+                                    <field name="x_requirements_attachment_ids" widget="many2many_binary" string="Client Expectations Attachment"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_requirements_attachment_ids,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                            </group>
+                            <group string="Stage 3 - Demo">
+                                <label for="x_demo_completed"/>
+                                <div class="o_row">
+                                    <field name="x_demo_completed"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_demo_completed,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_system_study_attachment_ids"/>
+                                <div class="o_row">
+                                    <field name="x_system_study_attachment_ids" widget="many2many_binary"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_system_study_attachment_ids,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_feasibility"/>
+                                <div class="o_row">
+                                    <field name="x_feasibility"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_feasibility,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_timeline"/>
+                                <div class="o_row">
+                                    <field name="x_timeline"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_timeline,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                            </group>
+                            <group string="Stage 4 - Quote">
+                                <label for="x_quote_document_ids"/>
+                                <div class="o_row">
+                                    <field name="x_quote_document_ids" widget="many2many_binary"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_quote_document_ids,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                            </group>
+                            <group string="Stage 5 - Won / Lost">
+                            </group>
+                            <group string="Stage 6 - Project State">
+                                <field name="x_project_start_date"/>
+                                <field name="x_project_start_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_project_completed_date"/>
+                                <field name="x_project_completed_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_workorder_completion_date"/>
+                                <field name="x_deviation_days"/>
+                            </group>
+                        </div>
+
+                        <!-- Corporate Pipeline: identical field layout for all 3 teams (Hunter,
+                             Account Manager, Corp Training Delivery) - only x_team_bu_category
+                             differs, so this block is copy-pasted 3x rather than shared, matching
+                             how every other BU above gets its own div. Stage 7 "Project State"
+                             includes the old Stage 7 "Training Status" fields folded in per
+                             client instruction (2026-09-19) - see data/stages.xml. -->
+                        <div invisible="x_team_bu_category != 'corp_hunter'">
+                            <group string="Stage 1 - New Lead / Source">
+                                <label for="source_id"/>
+                                <div class="o_row">
+                                    <field name="source_id" domain="[('team_ids', 'in', team_id)]"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',source_id,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <field name="referred" string="Source Reference (Referral)"/>
+                            </group>
+                            <group string="Stage 2 - Lead Validation">
+                                <label for="x_client_expectations_attachment_ids"/>
+                                <div class="o_row">
+                                    <field name="x_client_expectations_attachment_ids" widget="many2many_binary"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_client_expectations_attachment_ids,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_product_service"/>
+                                <div class="o_row">
+                                    <field name="x_product_service"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_product_service,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_target_audience"/>
+                                <div class="o_row">
+                                    <field name="x_target_audience"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_target_audience,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_lead_timelines_days"/>
+                                <div class="o_row">
+                                    <field name="x_lead_timelines_days"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_lead_timelines_days,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_deliverables"/>
+                                <div class="o_row">
+                                    <field name="x_deliverables"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_deliverables,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                            </group>
+                            <group string="Stage 3 - Deck Presentation">
+                                <label for="x_presentation_completed_datetime"/>
+                                <div class="o_row">
+                                    <field name="x_presentation_completed_datetime"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_presentation_completed_datetime,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                            </group>
+                            <group string="Stage 4 - Proposal &amp; Follow-up's">
+                                <label for="x_quote_document_ids"/>
+                                <div class="o_row">
+                                    <field name="x_quote_document_ids" widget="many2many_binary" string="Quote Shared (Tagged Quotation)"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_quote_document_ids,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                            </group>
+                            <group string="Stage 5 - Evaluation">
+                                <label for="x_training_content_eval_start_date"/>
+                                <div class="o_row">
+                                    <field name="x_training_content_eval_start_date"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_training_content_eval_start_date,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <field name="x_training_content_preapproved"/>
+                                <label for="x_training_content_finalized_date"/>
+                                <div class="o_row">
+                                    <field name="x_training_content_finalized_date" invisible="x_training_content_preapproved"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="x_training_content_preapproved or not (x_current_stage_gate_fields and ',x_training_content_finalized_date,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_trainer_eval_start_date"/>
+                                <div class="o_row">
+                                    <field name="x_trainer_eval_start_date"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_trainer_eval_start_date,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <field name="x_trainer_mazenet_validated"/>
+                                <label for="x_trainer_eval_finalized_date"/>
+                                <div class="o_row">
+                                    <field name="x_trainer_eval_finalized_date" invisible="x_trainer_mazenet_validated"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="x_trainer_mazenet_validated or not (x_current_stage_gate_fields and ',x_trainer_eval_finalized_date,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_training_dates_finalized"/>
+                                <div class="o_row">
+                                    <field name="x_training_dates_finalized"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_training_dates_finalized,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                            </group>
+                            <group string="Stage 6 - Won / Lost">
+                                <label for="x_po_received_date"/>
+                                <div class="o_row">
+                                    <field name="x_po_received_date"/>
+                                </div>
+                                <field name="x_po_received_attachment_ids" widget="many2many_binary"/>
+                                <label for="x_po_issued_trainer_date"/>
+                                <div class="o_row">
+                                    <field name="x_po_issued_trainer_date"/>
+                                </div>
+                                <field name="x_po_issued_trainer_attachment_ids" widget="many2many_binary"/>
+                            </group>
+                            <group string="Stage 7 - Project State">
+                                <field name="x_training_commenced_date"/>
+                                <field name="x_training_commenced_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_training_completed_date"/>
+                                <field name="x_training_completed_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_project_start_date"/>
+                                <field name="x_project_start_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_project_completed_date"/>
+                                <field name="x_project_completed_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_workorder_completion_date"/>
+                                <field name="x_deviation_days"/>
+                            </group>
+                        </div>
+
+                        <div invisible="x_team_bu_category != 'corp_am'">
+                            <group string="Stage 1 - New Lead / Source">
+                                <label for="source_id"/>
+                                <div class="o_row">
+                                    <field name="source_id" domain="[('team_ids', 'in', team_id)]"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',source_id,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <field name="referred" string="Source Reference (Referral)"/>
+                            </group>
+                            <group string="Stage 2 - Lead Validation">
+                                <label for="x_client_expectations_attachment_ids"/>
+                                <div class="o_row">
+                                    <field name="x_client_expectations_attachment_ids" widget="many2many_binary"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_client_expectations_attachment_ids,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_product_service"/>
+                                <div class="o_row">
+                                    <field name="x_product_service"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_product_service,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_target_audience"/>
+                                <div class="o_row">
+                                    <field name="x_target_audience"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_target_audience,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_lead_timelines_days"/>
+                                <div class="o_row">
+                                    <field name="x_lead_timelines_days"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_lead_timelines_days,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_deliverables"/>
+                                <div class="o_row">
+                                    <field name="x_deliverables"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_deliverables,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                            </group>
+                            <group string="Stage 3 - Deck Presentation">
+                                <label for="x_presentation_completed_datetime"/>
+                                <div class="o_row">
+                                    <field name="x_presentation_completed_datetime"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_presentation_completed_datetime,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                            </group>
+                            <group string="Stage 4 - Proposal &amp; Follow-up's">
+                                <label for="x_quote_document_ids"/>
+                                <div class="o_row">
+                                    <field name="x_quote_document_ids" widget="many2many_binary" string="Quote Shared (Tagged Quotation)"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_quote_document_ids,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                            </group>
+                            <group string="Stage 5 - Evaluation">
+                                <label for="x_training_content_eval_start_date"/>
+                                <div class="o_row">
+                                    <field name="x_training_content_eval_start_date"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_training_content_eval_start_date,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <field name="x_training_content_preapproved"/>
+                                <label for="x_training_content_finalized_date"/>
+                                <div class="o_row">
+                                    <field name="x_training_content_finalized_date" invisible="x_training_content_preapproved"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="x_training_content_preapproved or not (x_current_stage_gate_fields and ',x_training_content_finalized_date,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_trainer_eval_start_date"/>
+                                <div class="o_row">
+                                    <field name="x_trainer_eval_start_date"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_trainer_eval_start_date,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <field name="x_trainer_mazenet_validated"/>
+                                <label for="x_trainer_eval_finalized_date"/>
+                                <div class="o_row">
+                                    <field name="x_trainer_eval_finalized_date" invisible="x_trainer_mazenet_validated"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="x_trainer_mazenet_validated or not (x_current_stage_gate_fields and ',x_trainer_eval_finalized_date,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_training_dates_finalized"/>
+                                <div class="o_row">
+                                    <field name="x_training_dates_finalized"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_training_dates_finalized,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                            </group>
+                            <group string="Stage 6 - Won / Lost">
+                                <label for="x_po_received_date"/>
+                                <div class="o_row">
+                                    <field name="x_po_received_date"/>
+                                </div>
+                                <field name="x_po_received_attachment_ids" widget="many2many_binary"/>
+                                <label for="x_po_issued_trainer_date"/>
+                                <div class="o_row">
+                                    <field name="x_po_issued_trainer_date"/>
+                                </div>
+                                <field name="x_po_issued_trainer_attachment_ids" widget="many2many_binary"/>
+                            </group>
+                            <group string="Stage 7 - Project State">
+                                <field name="x_training_commenced_date"/>
+                                <field name="x_training_commenced_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_training_completed_date"/>
+                                <field name="x_training_completed_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_project_start_date"/>
+                                <field name="x_project_start_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_project_completed_date"/>
+                                <field name="x_project_completed_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_workorder_completion_date"/>
+                                <field name="x_deviation_days"/>
+                            </group>
+                        </div>
+
+                        <div invisible="x_team_bu_category != 'corp_training'">
+                            <group string="Stage 1 - New Lead / Source">
+                                <label for="source_id"/>
+                                <div class="o_row">
+                                    <field name="source_id" domain="[('team_ids', 'in', team_id)]"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',source_id,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <field name="referred" string="Source Reference (Referral)"/>
+                            </group>
+                            <group string="Stage 2 - Lead Validation">
+                                <label for="x_client_expectations_attachment_ids"/>
+                                <div class="o_row">
+                                    <field name="x_client_expectations_attachment_ids" widget="many2many_binary"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_client_expectations_attachment_ids,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_product_service"/>
+                                <div class="o_row">
+                                    <field name="x_product_service"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_product_service,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_target_audience"/>
+                                <div class="o_row">
+                                    <field name="x_target_audience"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_target_audience,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_lead_timelines_days"/>
+                                <div class="o_row">
+                                    <field name="x_lead_timelines_days"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_lead_timelines_days,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_deliverables"/>
+                                <div class="o_row">
+                                    <field name="x_deliverables"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_deliverables,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                            </group>
+                            <group string="Stage 3 - Deck Presentation">
+                                <label for="x_presentation_completed_datetime"/>
+                                <div class="o_row">
+                                    <field name="x_presentation_completed_datetime"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_presentation_completed_datetime,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                            </group>
+                            <group string="Stage 4 - Proposal &amp; Follow-up's">
+                                <label for="x_quote_document_ids"/>
+                                <div class="o_row">
+                                    <field name="x_quote_document_ids" widget="many2many_binary" string="Quote Shared (Tagged Quotation)"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_quote_document_ids,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                            </group>
+                            <group string="Stage 5 - Evaluation">
+                                <label for="x_training_content_eval_start_date"/>
+                                <div class="o_row">
+                                    <field name="x_training_content_eval_start_date"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_training_content_eval_start_date,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <field name="x_training_content_preapproved"/>
+                                <label for="x_training_content_finalized_date"/>
+                                <div class="o_row">
+                                    <field name="x_training_content_finalized_date" invisible="x_training_content_preapproved"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="x_training_content_preapproved or not (x_current_stage_gate_fields and ',x_training_content_finalized_date,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_trainer_eval_start_date"/>
+                                <div class="o_row">
+                                    <field name="x_trainer_eval_start_date"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_trainer_eval_start_date,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <field name="x_trainer_mazenet_validated"/>
+                                <label for="x_trainer_eval_finalized_date"/>
+                                <div class="o_row">
+                                    <field name="x_trainer_eval_finalized_date" invisible="x_trainer_mazenet_validated"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="x_trainer_mazenet_validated or not (x_current_stage_gate_fields and ',x_trainer_eval_finalized_date,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_training_dates_finalized"/>
+                                <div class="o_row">
+                                    <field name="x_training_dates_finalized"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_training_dates_finalized,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                            </group>
+                            <group string="Stage 6 - Won / Lost">
+                                <label for="x_po_received_date"/>
+                                <div class="o_row">
+                                    <field name="x_po_received_date"/>
+                                </div>
+                                <field name="x_po_received_attachment_ids" widget="many2many_binary"/>
+                                <label for="x_po_issued_trainer_date"/>
+                                <div class="o_row">
+                                    <field name="x_po_issued_trainer_date"/>
+                                </div>
+                                <field name="x_po_issued_trainer_attachment_ids" widget="many2many_binary"/>
+                            </group>
+                            <group string="Stage 7 - Project State">
+                                <field name="x_training_commenced_date"/>
+                                <field name="x_training_commenced_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_training_completed_date"/>
+                                <field name="x_training_completed_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_project_start_date"/>
+                                <field name="x_project_start_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_project_completed_date"/>
+                                <field name="x_project_completed_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_workorder_completion_date"/>
+                                <field name="x_deviation_days"/>
+                            </group>
+                        </div>
+
+                        <!-- LMS Pipeline: Won/Lost is Stage 5 here, with Delivery and Content
+                             Availability AFTER it - unlike every other pipeline. Stage 7's
+                             weekly KT/Skill tracking is a real child model (x_lms_week_ids),
+                             not fixed fields - see crm_lead_lms_week.py / _mz_sync_lms_weeks. -->
+                        <div invisible="x_team_bu_category != 'lms'">
+                            <group string="Stage 1 - New Lead / Source">
+                                <label for="source_id"/>
+                                <div class="o_row">
+                                    <field name="source_id" domain="[('team_ids', 'in', team_id)]"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',source_id,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <field name="referred" string="Source Reference (Referral)"/>
+                            </group>
+                            <group string="Stage 2 - Lead Validation">
+                                <label for="x_client_expectations_attachment_ids"/>
+                                <div class="o_row">
+                                    <field name="x_client_expectations_attachment_ids" widget="many2many_binary"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_client_expectations_attachment_ids,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_product_service"/>
+                                <div class="o_row">
+                                    <field name="x_product_service"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_product_service,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_target_audience"/>
+                                <div class="o_row">
+                                    <field name="x_target_audience"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_target_audience,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_lead_timelines_days"/>
+                                <div class="o_row">
+                                    <field name="x_lead_timelines_days"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_lead_timelines_days,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_deliverables"/>
+                                <div class="o_row">
+                                    <field name="x_deliverables"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_deliverables,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                            </group>
+                            <group string="Stage 3 - Deck Presentation">
+                                <label for="x_presentation_completed_datetime"/>
+                                <div class="o_row">
+                                    <field name="x_presentation_completed_datetime"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_presentation_completed_datetime,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                            </group>
+                            <group string="Stage 4 - Proposal &amp; Follow-up's">
+                                <label for="x_quote_document_ids"/>
+                                <div class="o_row">
+                                    <field name="x_quote_document_ids" widget="many2many_binary" string="Quote Shared (Tagged Quotation)"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_quote_document_ids,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <div class="text-muted" colspan="2">
+                                    No colour timer / RED lock in this stage - LMS is not one of
+                                    the 4 BUs with the colour spec (DMT, Tally, Technology, TNH).
+                                </div>
+                            </group>
+                            <group string="Stage 5 - Won / Lost">
+                            </group>
+                            <group string="Stage 6 - Delivery">
+                                <label for="x_lms_training_content"/>
+                                <div class="o_row">
+                                    <field name="x_lms_training_content"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_lms_training_content,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_lms_toc_by"/>
+                                <div class="o_row">
+                                    <field name="x_lms_toc_by" invisible="x_lms_training_content != 'new_content'"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="x_lms_training_content != 'new_content' or not (x_current_stage_gate_fields and ',x_lms_toc_by,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_lms_content_availability"/>
+                                <div class="o_row">
+                                    <field name="x_lms_content_availability"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_lms_content_availability,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_lms_training_start_date"/>
+                                <div class="o_row">
+                                    <field name="x_lms_training_start_date"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_lms_training_start_date,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_lms_training_end_date"/>
+                                <div class="o_row">
+                                    <field name="x_lms_training_end_date"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_lms_training_end_date,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                            </group>
+                            <group string="Stage 7 - Content Availability in LMS">
+                                <field name="x_lms_training_weeks"/>
+                            </group>
+                            <field name="x_lms_week_ids" nolabel="1" colspan="2">
+                                <list editable="bottom">
+                                    <field name="week_number" readonly="1" string="Week"/>
+                                    <field name="kt_uploaded"/>
+                                    <field name="skill_uploaded"/>
+                                </list>
+                            </field>
+                            <group string="Stage 8 - Project State">
+                                <field name="x_training_commenced_date"/>
+                                <field name="x_training_commenced_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_training_completed_date"/>
+                                <field name="x_training_completed_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_project_start_date"/>
+                                <field name="x_project_start_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_project_completed_date"/>
+                                <field name="x_project_completed_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_workorder_completion_date"/>
+                                <field name="x_deviation_days"/>
+                            </group>
+                        </div>
+
+                        <!-- TNH Pipeline: the only Corporate-side pipeline with the colour
+                             timer/RED lock (Stage 6, Follow-up's) and a genuinely standalone
+                             Project State (no Training Status stage to fold it into). -->
+                        <div invisible="x_team_bu_category != 'tnh'">
+                            <group string="Stage 1 - New Lead / Source">
+                                <label for="source_id"/>
+                                <div class="o_row">
+                                    <field name="source_id" domain="[('team_ids', 'in', team_id)]"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',source_id,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <field name="referred" string="Source Reference (Referral)"/>
+                            </group>
+                            <group string="Stage 2 - Lead Validation">
+                                <label for="x_company_turnover"/>
+                                <div class="o_row">
+                                    <field name="x_company_turnover" string="Revenue"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_company_turnover,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_employee_count"/>
+                                <div class="o_row">
+                                    <field name="x_employee_count" string="Employee Head Count"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_employee_count,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_nature_of_business"/>
+                                <div class="o_row">
+                                    <field name="x_nature_of_business"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_nature_of_business,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                            </group>
+                            <group string="Stage 3 - Request Understanding / Scope">
+                                <label for="x_tnh_meeting_held"/>
+                                <div class="o_row">
+                                    <field name="x_tnh_meeting_held"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_tnh_meeting_held,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_tnh_meeting_attachment_ids"/>
+                                <div class="o_row">
+                                    <field name="x_tnh_meeting_attachment_ids" widget="many2many_binary"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_tnh_meeting_attachment_ids,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_tnh_service_fte" string="Service"/>
+                                <div class="o_row">
+                                    <field name="x_tnh_service_fte"/><label for="x_tnh_service_fte" string="FTE" class="ms-1 me-3"/>
+                                    <field name="x_tnh_service_cwr"/><label for="x_tnh_service_cwr" string="CWR" class="ms-1 me-3"/>
+                                    <field name="x_tnh_service_iaas"/><label for="x_tnh_service_iaas" string="IaaS" class="ms-1 me-3"/>
+                                    <field name="x_tnh_service_htd"/><label for="x_tnh_service_htd" string="HTD" class="ms-1 me-3"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_tnh_service_any,' in x_current_stage_gate_fields)">* (any one)</span>
+                                </div>
+                            </group>
+                            <group string="Stage 4 - Deck">
+                                <label for="x_presentation_completed_datetime"/>
+                                <div class="o_row">
+                                    <field name="x_presentation_completed_datetime"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_presentation_completed_datetime,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                            </group>
+                            <group string="Stage 5 - Proposal">
+                                <label for="x_tnh_proposal_fte" string="Proposal For"/>
+                                <div class="o_row">
+                                    <field name="x_tnh_proposal_fte"/><label for="x_tnh_proposal_fte" string="FTE" class="ms-1 me-3"/>
+                                    <field name="x_tnh_proposal_cwr"/><label for="x_tnh_proposal_cwr" string="CWR" class="ms-1 me-3"/>
+                                    <field name="x_tnh_proposal_iaas"/><label for="x_tnh_proposal_iaas" string="IaaS" class="ms-1 me-3"/>
+                                    <field name="x_tnh_proposal_htd"/><label for="x_tnh_proposal_htd" string="HTD" class="ms-1 me-3"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_tnh_proposal_any,' in x_current_stage_gate_fields)">* (any one)</span>
+                                </div>
+                                <field name="x_tnh_deviation"/>
+                                <label for="x_tnh_deviation_text"/>
+                                <div class="o_row">
+                                    <field name="x_tnh_deviation_text" invisible="not x_tnh_deviation"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not x_tnh_deviation or not (x_current_stage_gate_fields and ',x_tnh_deviation_text,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <label for="x_quote_document_ids"/>
+                                <div class="o_row">
+                                    <field name="x_quote_document_ids" widget="many2many_binary" string="Quote / Proposal Attachment (Tagged)"/>
+                                </div>
+                            </group>
+                            <group string="Stage 6 - Follow-up's">
+                                <div class="text-muted" colspan="2">
+                                    Follow-up activities live in the Activities/Chatter area below -
+                                    colour timer and RED lock apply here, same as DMT/Tally/Technology
+                                    (TNH is the only Corporate-side pipeline with this).
+                                </div>
+                            </group>
+                            <group string="Stage 7 - Agreement">
+                                <label for="x_tnh_agreement_doc_ids"/>
+                                <div class="o_row">
+                                    <field name="x_tnh_agreement_doc_ids" widget="many2many_binary"/>
+                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_tnh_agreement_doc_ids,' in x_current_stage_gate_fields)">*</span>
+                                </div>
+                                <field name="x_tnh_msa_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_tnh_sow_attachment_ids" widget="many2many_binary"/>
+                            </group>
+                            <group string="Stage 8 - Won / Lost">
+                            </group>
+                            <group string="Stage 9 - Project State">
+                                <field name="x_project_start_date"/>
+                                <field name="x_project_start_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_project_completed_date"/>
+                                <field name="x_project_completed_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_workorder_completion_date"/>
+                                <field name="x_deviation_days"/>
+                            </group>
+                        </div>
+                    </page>
+                    <!-- DMT Details snapshot tab (client instruction, 2026-09-13): once a
+                         DMT-originated lead is handed off, its "Pipeline Fields" tab above
+                         switches to whichever OTHER team now owns it - x_team_bu_category
+                         drives which of that page's divs shows, so DMT's own answers stop
+                         being visible there (still on the record, just hidden - a view's
+                         invisible= never deletes anything) the instant team_id changes. Two
+                         of those fields (source_id, x_product_service) are ALSO reused by
+                         the receiving team's own stage-gate rules and get genuinely
+                         overwritten once they start working the lead. This tab shows a
+                         frozen COPY instead (x_dmt_snap_*, captured once at handoff time by
+                         write()'s own DMT Details Snapshot block) - always read-only, and
+                         only appears once there's actually something in it. -->
+                    <page name="mz_dmt_details" string="DMT Details" invisible="not x_dmt_snap_captured">
+                        <group>
+                            <group string="Stage 1 - New Lead / Source">
+                                <field name="x_dmt_snap_organic_inorganic" readonly="1"/>
+                                <field name="x_dmt_snap_source_id" readonly="1"/>
+                                <field name="x_dmt_snap_referred" readonly="1"/>
+                            </group>
+                            <group string="Stage 2 - Lead Validation">
+                                <field name="x_dmt_snap_company_or_individual" readonly="1"/>
+                                <field name="x_dmt_snap_contact_purpose" readonly="1"/>
+                                <field name="x_dmt_snap_product_service" readonly="1"/>
+                                <field name="x_dmt_snap_employee_count" readonly="1"/>
+                                <field name="x_dmt_snap_company_turnover" readonly="1"/>
+                            </group>
+                            <group string="Stage 3 - Transfer to BU">
+                                <field name="x_dmt_snap_transfer_notes" readonly="1"/>
+                                <field name="x_dmt_snap_target_team_id" readonly="1"/>
+                            </group>
+                        </group>
+                    </page>
+                </xpath>
+
+                <!-- Technology-only partner/customer creation restriction (Agents/ATLs
+                     select-only, TL/Manager could create) reversed by client instruction
+                     2026-09-25 - x_can_create_partner is now unconditionally True
+                     (crm_lead.py), so the field[@name='partner_id'] tag below (with
+                     no_create/no_create_edit) is permanently invisible and the one above it
+                     always renders instead. Left in place rather than removed: if a future
+                     instruction reinstates a tier restriction here, only
+                     _compute_x_can_create_partner needs to change back, not this view. Two
+                     field tags over the same partner_id since a Many2one's
+                     no_create/no_create_edit widget options are static per tag, not
+                     expression-evaluable.
+
+                     Scoped to group[@name='opportunity_partner'] specifically (2026-09-14
+                     fix) - stock's own form has TWO partner_id fields (the other one lives in
+                     group[@name='lead_partner'], invisible="type == 'opportunity'" - i.e.
+                     never shown at all, since every lead in this module is always type
+                     'opportunity'). The old //field[@name='partner_id'][1]/[no index] xpaths
+                     were ambiguous across both and landed this whole customization - Company
+                     rename, required, and the tech-only swap - inside the ALWAYS-INVISIBLE
+                     group, so none of it ever actually rendered. -->
+                <xpath expr="//group[@name='opportunity_partner']/field[@name='partner_id']" position="before">
+                    <field name="x_can_create_partner" invisible="1"/>
+                </xpath>
+                <xpath expr="//group[@name='opportunity_partner']/field[@name='partner_id']" position="attributes">
+                    <attribute name="invisible" add="x_team_bu_category == 'tech' and not x_can_create_partner" separator="or"/>
+                    <!-- Renamed Contact -> Company and made mandatory (client instruction,
+                         2026-09-14). Applied to both partner_id tags below, toggled by
+                         x_team_bu_category == 'tech' - only one is ever visible at a time,
+                         but both need it since either could be the one on screen. -->
+                    <attribute name="string">Company</attribute>
+                    <attribute name="required">1</attribute>
+                </xpath>
+                <xpath expr="//group[@name='opportunity_partner']/field[@name='partner_id']" position="after">
+                    <field name="partner_id" widget="res_partner_many2one" string="Company" required="1"
+                           options="{'no_create': True, 'no_create_edit': True}"
+                           invisible="not (x_team_bu_category == 'tech' and not x_can_create_partner)"/>
                 </xpath>
             </field>
         </record>
@@ -83,9 +1268,29 @@
             <field name="model">crm.lead</field>
             <field name="inherit_id" ref="crm.crm_case_kanban_view_leads"/>
             <field name="arch" type="xml">
+                <!-- Cards sorted by next activity, earliest on top, within each stage -
+                     scoped to just this Kanban view (default_order), not crm.lead's
+                     model-level _order, which would affect every list/pivot/calendar
+                     view of leads. id asc as the tiebreaker so two activities due at the
+                     exact same moment always render in the same, stable order. Leads
+                     with no open activity (x_next_activity_datetime is NULL) sort to the
+                     bottom for free - PostgreSQL puts NULLs last on ASC. -->
+                <xpath expr="//kanban" position="attributes">
+                    <attribute name="default_order">x_next_activity_datetime asc, id asc</attribute>
+                    <!-- "New" opens the full lead form instead of the inline quick-create
+                         card (client instruction, 2026-09-12) - stock's own kanban sets
+                         on_create="quick_create" + quick_create_view, which is what
+                         renders that small in-column card in the first place. Dropping
+                         both falls back to the web client's normal "no quick-create
+                         configured" behavior: opening the real form view in a dialog. -->
+                    <attribute name="on_create"></attribute>
+                    <attribute name="quick_create_view"></attribute>
+                </xpath>
                 <xpath expr="//kanban" position="inside">
                     <field name="x_is_locked"/>
                     <field name="activity_state"/>
+                    <field name="x_activity_card_state"/>
+                    <field name="x_team_transfer_readonly"/>
                 </xpath>
                 <xpath expr="//t[@t-name='card']/*[1]" position="before">
                     <!-- Small corner ribbon + a subtle tint/border (via kanban_red.css, keyed off
@@ -94,7 +1299,307 @@
                          read as too aggressive for a simple overdue/locked indicator. -->
                     <widget name="web_ribbon" id="mz_red_lock_ribbon" title="Overdue" bg_color="text-bg-danger" invisible="not x_is_locked and activity_state != 'overdue'"/>
                     <span t-if="record.x_is_locked.raw_value or record.activity_state.raw_value == 'overdue'" class="mz-red-locked-card d-none"/>
+                    <!-- Client instruction (2026-09-21) - x_activity_card_state
+                         (crm_lead.py), a 4-stage countdown to the lead's next activity:
+                         GREEN = activity scheduled (more than 30 min away), YELLOW =
+                         30-10 min before, ORANGE = 10 min before through to the RED
+                         lock, RED is the same signal as x_is_locked above so it's not
+                         repeated here. Stored and cron-recomputed (data/cron.xml), so -
+                         unlike the old per-viewer x_activity_warning this replaces -
+                         every viewer sees the same colour, not just the owner. Only
+                         ever set for DMT/Tally/Technology leads. -->
+                    <span t-if="record.x_activity_card_state.raw_value == 'green'" class="mz-activity-green-card d-none"/>
+                    <span t-if="record.x_activity_card_state.raw_value == 'yellow'" class="mz-activity-yellow-card d-none"/>
+                    <span t-if="record.x_activity_card_state.raw_value == 'orange'" class="mz-activity-orange-card d-none"/>
+                    <!-- Read-only because Sales Team moved off whoever's browsing (not a
+                         RED lock - that already gets the red treatment above) - grey tint,
+                         same marker-span pattern, see kanban_red.css. -->
+                    <span t-if="record.x_team_transfer_readonly.raw_value" class="mz-team-transferred-card d-none"/>
                 </xpath>
+                <!-- "Source Team" badge (client instruction, 2026-09-26): when a lead gets
+                     handed off to another team (e.g. DMT -> Tally), show where it came from
+                     right on the receiving team's kanban card - same visual language as
+                     tag_ids's own colored pills just above, placed right after it. Only
+                     ever visible once x_source_team_id is actually set (write()'s own
+                     "Source Team Tag" block, crm_lead.py) - a lead that's never been
+                     transferred shows nothing here, same as tag_ids showing nothing when
+                     there are no tags. -->
+                <xpath expr="//t[@t-name='card']/field[@name='tag_ids']" position="after">
+                    <span t-if="record.x_source_team_id.raw_value" class="badge rounded-pill text-bg-info me-1">
+                        From <field name="x_source_team_id"/>
+                    </span>
+                </xpath>
+            </field>
+        </record>
+
+        <!-- Pipeline (Opportunities) Search View: stock crm.view_crm_case_opportunities_filter
+             has "Lost" (which already implies active=False) but no standalone "Archived"
+             filter like the Leads search view does - add it so archived opportunities
+             (e.g. via the CTO mandatory-reason archive wizard) can be found directly. -->
+        <record id="view_crm_case_opportunities_filter_inherit_mz" model="ir.ui.view">
+            <field name="name">crm.lead.search.opportunity.inherit.mz</field>
+            <field name="model">crm.lead</field>
+            <field name="inherit_id" ref="crm.view_crm_case_opportunities_filter"/>
+            <field name="arch" type="xml">
+                <filter name="filter_won_status_lost" position="after">
+                    <filter string="Archived" name="inactive" domain="[('active', '=', False)]"/>
+                </filter>
+                <!-- Sales Team removed from Group By - team selection now happens via the
+                     search panel sidebar below instead of grouping. -->
+                <filter name="saleschannel" position="replace"/>
+                <!-- Sales Team search panel section: native single-select sidebar (category)
+                     with a built-in "All" entry, so clicking a team shows only that team's
+                     records and "All" resets. Salesperson is grouped UNDER it instead of
+                     being its own flat section - clicking a team expands its salespeople as
+                     checkboxes right below it (same nested-dropdown shape as the "Creation
+                     Date" filter's own options submenu), so picking a salesperson narrows
+                     within whichever team is selected. No custom widget/JS needed - both
+                     are native searchpanel behavior.
+                     groupby MUST name a field on user_id's own comodel (res.users) -
+                     search_panel_select_multi_range does Comodel._fields[group_by], where
+                     Comodel is res.users, NOT crm.lead - "team_id" doesn't exist there
+                     (KeyError: 'team_id', hit locally). res_users.py's x_mz_team_id
+                     exists purely to give it one.
+
+                     Sales Team stays CTO/Admin+MD+Corporate BU Manager only (groups= on
+                     the field itself, NOT the whole <searchpanel> - two sibling
+                     <searchpanel> nodes would each restart their own section-id counter
+                     at 1 and collide, silently dropping one section's data; the
+                     field-level groups= is the same generic view-node stripping every
+                     other node in this file already uses) - they're the only roles with
+                     cross-team visibility to begin with, so "pick any team" only makes
+                     sense for them; everyone else only ever sees their own team's leads
+                     regardless. Corporate BU Manager added 2026-09-21 (client bug
+                     report: "why for corp.mgr@test.mazenet nothing is showing") -
+                     confirmed live they genuinely read across all 5 Corporate sub-teams
+                     (Hunter/AM/Corp Training/LMS/TNH, via mazenet_access_rights'
+                     implied_ids), same shape of cross-team visibility as CTO/Admin/MD,
+                     just scoped to those 5 instead of the whole company - the other BU
+                     Managers (dmt.mgr, tally.mgr, etc.) don't need this since each of
+                     them only ever has ONE crm.team to begin with. Keep this list in
+                     sync with crm_lead.py's search_panel_select_multi_range, which has
+                     the exact same three-group check for the nested Salesperson
+                     section.
+
+                     Salesperson (user_id) is open to EVERYONE now (2026-09-04) - every
+                     login gets it, but crm_lead.py's search_panel_select_multi_range
+                     override scopes the comodel_domain to the CURRENT user's own team
+                     for anyone who isn't CTO/Admin/MD/Corporate BU Manager, so a DMT
+                     member's filter only ever lists DMT members, a Tech member's only
+                     lists Tech members, etc. - never the whole company.
+
+                     Corporate excluded from the Sales Team list (2026-09-04): not in use
+                     yet, needed again in a future phase - the team record itself stays,
+                     only hidden from this picker. -->
+                <search position="inside">
+                    <searchpanel>
+                        <field name="team_id" string="Sales Team" icon="fa-users" enable_counters="1"
+                               groups="mazenet_access_rights.group_mzr_cto_admin,mazenet_access_rights.group_mzr_md,mazenet_access_rights.group_mzr_corporate_manager"/>
+                        <field name="user_id" string="Salesperson" select="multi" icon="fa-user"
+                               enable_counters="1" groupby="x_mz_team_id"/>
+                    </searchpanel>
+                </search>
+            </field>
+        </record>
+
+        <!-- Kanban Quick-Create Form: show Sales Team - stock CRM ships this field but
+             keeps it invisible="1". Since write() now requires being a member of a
+             lead's CURRENT team_id to touch it at all, whatever team_id a lead gets
+             created with has to be right from the start; surfacing the field here lets
+             the creator pick/confirm it themselves (e.g. TL/ATL/Manager assigning
+             straight to a different team). team_id has no default value anymore
+             (removed 2026-09-12, client instruction) - it starts empty and must be
+             filled in explicitly, same as the main form. -->
+        <record id="view_crm_lead_quick_create_inherit_mz" model="ir.ui.view">
+            <field name="name">crm.lead.form.quick_create.inherit.mz</field>
+            <field name="model">crm.lead</field>
+            <field name="inherit_id" ref="crm.quick_create_opportunity_form"/>
+            <field name="arch" type="xml">
+                <xpath expr="//field[@name='team_id']" position="replace">
+                    <div class="d-flex align-items-center" colspan="2">
+                        <i class="fa fa-users" title="Sales Team"/>
+                        <field name="team_id" nolabel="1" class="o_field_highlight w-100 mb-0"
+                               options="{'no_create': True, 'no_open': True}"/>
+                    </div>
+                </xpath>
+            </field>
+        </record>
+
+        <!-- DMT's OWN dedicated Pipeline (2026-09-12, client instruction): groups by
+             x_dmt_pipeline_stage_id instead of the real stage_id, so a lead DMT handed
+             off to another team still shows up under DMT's own "Follow-up's" column -
+             without touching the real stage_id everyone else's kanban/reporting/
+             stage-gates rely on (see crm_lead.py's x_dmt_pipeline_stage_id and the
+             Cross-Team Handoff Stage Advance in write() for the full mechanics).
+             Inherits view_crm_lead_kanban_inherit_mz (not the stock view directly) so
+             every existing kanban customization - "New" opening the full form, the
+             activity-time ordering, RED lock ribbon, etc. - carries over unchanged. -->
+        <record id="view_crm_lead_kanban_dmt_pipeline" model="ir.ui.view">
+            <field name="name">crm.lead.kanban.dmt.pipeline</field>
+            <field name="model">crm.lead</field>
+            <field name="inherit_id" ref="view_crm_lead_kanban_inherit_mz"/>
+            <!-- mode="primary" is essential here (2026-09-12 fix, found live: Tally's
+                 OWN standard Pipeline started grouping by x_dmt_pipeline_stage_id too,
+                 showing a real Tally lead under DMT's "Follow-up's" column even though
+                 its real stage_id/statusbar correctly said "New Lead") - an ordinary
+                 (mode="extension", the default) inheriting view merges into EVERY
+                 action that resolves the same base view id, including the standard
+                 Pipeline that also descends from crm.crm_case_kanban_view_leads via
+                 view_crm_lead_kanban_inherit_mz. primary mode seeds this view ONCE from
+                 the combined mz-customized base arch, then makes it a genuinely
+                 separate, standalone view from then on - used only by whichever action
+                 explicitly references THIS view id (crm_lead_action_pipeline_dmt), and
+                 no longer part of the shared inheritance chain everyone else resolves. -->
+            <field name="mode">primary</field>
+            <field name="arch" type="xml">
+                <xpath expr="//kanban" position="attributes">
+                    <attribute name="default_group_by">x_dmt_pipeline_stage_id</attribute>
+                    <!-- Drag-and-drop works here same as the standard Pipeline
+                         (2026-09-12) - x_dmt_pipeline_stage_id has its own guarded
+                         inverse that converts a drag into a real stage_id write for a
+                         lead still on DMT; dragging an already-handed-off lead (pinned
+                         to Follow-up's) still can't move it anywhere - write()'s
+                         existing "transferred, read-only" guard rejects that before
+                         the inverse even runs. See the field's own help text. -->
+                </xpath>
+                <xpath expr="//field[@name='stage_id']" position="after">
+                    <field name="x_dmt_pipeline_stage_id" options='{"group_by_tooltip": {"requirements": "Description"}}'/>
+                </xpath>
+            </field>
+        </record>
+
+        <record id="crm_lead_action_pipeline_dmt" model="ir.actions.act_window">
+            <field name="name">DMT Pipeline</field>
+            <field name="res_model">crm.lead</field>
+            <field name="view_mode">kanban,list,form,calendar,graph,pivot</field>
+            <field name="domain">[('type', '=', 'opportunity')]</field>
+            <field name="context" eval="{
+                    'default_type': 'opportunity',
+                    'default_team_id': ref('team_dmt'),
+                }"/>
+            <field name="search_view_id" ref="crm.view_crm_case_opportunities_filter"/>
+        </record>
+        <record id="crm_lead_action_pipeline_dmt_view_kanban" model="ir.actions.act_window.view">
+            <field name="sequence" eval="0"/>
+            <field name="view_mode">kanban</field>
+            <field name="view_id" ref="view_crm_lead_kanban_dmt_pipeline"/>
+            <field name="act_window_id" ref="crm_lead_action_pipeline_dmt"/>
+        </record>
+
+        <!-- Every DMT group variant listed explicitly (2026-09-12 fix, found live: demo
+             user "DMT Agent 1" holds group_mzr_dmt_manager_direct_agent, a separate
+             "reports straight to the Manager" branch that does NOT imply
+             group_mzr_dmt_agent - this module's own DMT-ness check (_mz_user_is_dmt)
+             is based on crm.team membership, not any one specific group, so the menu
+             needs the same breadth: both "direct agent" branches plus the regular
+             agent/atl/tl/manager chain, or a DMT member on one of the direct-agent
+             branches never saw this menu at all). -->
+        <menuitem
+            id="menu_crm_opportunities_dmt_pipeline"
+            name="DMT Pipeline"
+            parent="crm.crm_menu_sales"
+            action="crm_lead_action_pipeline_dmt"
+            groups="mazenet_access_rights.group_mzr_dmt_agent,mazenet_access_rights.group_mzr_dmt_tl_direct_agent,mazenet_access_rights.group_mzr_dmt_manager_direct_agent"
+            sequence="3"/>
+
+        <!-- CTO/Admin and MD: no create access at all (client instruction, 2026-09-21 -
+             "no need create lead access... hide the New button for them"). The actual
+             access block is the create() guard in crm_lead.py's create() (ir.rule
+             can't do this alone - CTO/Admin qualifies for perm_create=True through
+             dozens of OTHER teams' own rules via implied_ids, and MD/CTO both hold
+             base.group_user, which already grants create=1 model-wide - neither can
+             be "subtracted" from for one subgroup via ir.model.access.csv, since ACL
+             rows OR-combine across a user's groups).
+
+             Hiding the New button itself needs a THIRD mechanism, and it's NOT
+             group_ids on this view: the list/kanban "create" arch attribute is a
+             static per-view boolean with no per-user expression, and mode="primary"
+             + default_view() picks the single LOWEST-PRIORITY primary view for a
+             model+type UNCONDITIONALLY - group_ids plays no part in that selection
+             at all (confirmed live: with two primary kanban views for crm.lead, a
+             lower-priority one with group_ids set here was picked for EVERY user,
+             not just its own groups - group_ids only gates a DIRECT, explicit
+             request to open that exact view by id, via _check_view_access, which
+             ordinary Pipeline/Leads rendering never calls). So this view carries no
+             group_ids and an ordinary (high, non-competing) priority - it is NEVER
+             picked automatically. It's targeted explicitly, by id, only for
+             CTO/Admin/MD/Corporate BU Manager, via the generic
+             ir.actions.act_window._get_action_dict() override
+             (models/ir_actions_act_window.py), which swaps the matching entry in
+             ANY crm.lead action's 'views' list for whichever of these views
+             corresponds - covers the Pipeline kanban, the Leads list, the
+             Opportunities list, and (2026-09-21) the lead FORM's own New button
+             too, uniformly from one place, rather than a one-off swap wired into
+             a single action method the way DMT's own redirect is.
+             mode="primary" is still needed so each of these is a complete,
+             independently-addressable arch (an ordinary extension view has no
+             standalone arch of its own to point an action at). -->
+        <record id="mz_crm_lead_kanban_no_create_cto_md" model="ir.ui.view">
+            <field name="name">crm.lead.kanban.no.create.cto.md</field>
+            <field name="model">crm.lead</field>
+            <field name="mode">primary</field>
+            <!-- Explicit, high, non-competing priority - MUST stay higher than
+                 crm.crm_case_kanban_view_leads's own priority (1), or this becomes
+                 the system-wide default kanban for crm.lead via default_view() for
+                 EVERY action that doesn't pin its own view_id, not just the ones
+                 the ir_actions_act_window.py override targets explicitly. Removing
+                 this field from the XML instead of setting it does NOT reset it
+                 back on -u - Odoo's data loader only overwrites fields present in
+                 the current XML, so an earlier, since-removed priority="0" here
+                 kept silently winning until this was made explicit again (hit live
+                 2026-09-21). -->
+            <field name="priority">99</field>
+            <field name="inherit_id" ref="crm.crm_case_kanban_view_leads"/>
+            <field name="arch" type="xml">
+                <kanban position="attributes">
+                    <attribute name="create">false</attribute>
+                </kanban>
+            </field>
+        </record>
+        <record id="mz_crm_lead_list_no_create_cto_md_oppor" model="ir.ui.view">
+            <field name="name">crm.lead.list.no.create.cto.md.oppor</field>
+            <field name="model">crm.lead</field>
+            <field name="mode">primary</field>
+            <field name="priority">99</field>
+            <field name="inherit_id" ref="crm.crm_case_tree_view_oppor"/>
+            <field name="arch" type="xml">
+                <list position="attributes">
+                    <attribute name="create">false</attribute>
+                </list>
+            </field>
+        </record>
+        <record id="mz_crm_lead_list_no_create_cto_md_leads" model="ir.ui.view">
+            <field name="name">crm.lead.list.no.create.cto.md.leads</field>
+            <field name="model">crm.lead</field>
+            <field name="mode">primary</field>
+            <field name="priority">99</field>
+            <field name="inherit_id" ref="crm.crm_case_tree_view_leads"/>
+            <field name="arch" type="xml">
+                <list position="attributes">
+                    <attribute name="create">false</attribute>
+                </list>
+            </field>
+        </record>
+        <!-- Form view companion (2026-09-21 client bug report: "in corporate bu manager
+             login, if i go inside existing lead, in there new button is visible") - the
+             kanban/list swaps above only ever hid the New button in list/kanban VIEWS;
+             opening an existing lead's FORM still showed its own separate "New" control
+             in the top toolbar, since ir.actions.act_window's 'views' list carried
+             (False, 'form') for every action here (no explicit form view id pinned,
+             just "use whatever the default form view resolves to") - _get_action_dict()
+             below now substitutes crm.crm_lead_view_form's own id in that slot first, so
+             it can go through the exact same _MZ_NO_CREATE_VIEW_MAP replacement lookup
+             as the kanban/list ones instead of silently passing through unswapped. -->
+        <record id="mz_crm_lead_form_no_create_cto_md" model="ir.ui.view">
+            <field name="name">crm.lead.form.no.create.cto.md</field>
+            <field name="model">crm.lead</field>
+            <field name="mode">primary</field>
+            <field name="priority">99</field>
+            <field name="inherit_id" ref="crm.crm_lead_view_form"/>
+            <field name="arch" type="xml">
+                <form position="attributes">
+                    <attribute name="create">false</attribute>
+                </form>
             </field>
         </record>
     </data>
