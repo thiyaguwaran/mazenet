@@ -15,12 +15,33 @@
             <field name="name">crm.lead.report.pivot</field>
             <field name="model">crm.lead.report</field>
             <field name="arch" type="xml">
-                <pivot string="Lead Report (Team → Stage → Salesperson, by Month)" disable_linking="True" sample="1">
+                <pivot string="Lead Report (Team → Stage → Salesperson, by Month)" sample="1">
                     <field name="team_id" type="row"/>
                     <field name="stage_id" type="row"/>
                     <field name="user_id" type="row"/>
                     <field name="create_date" interval="month" type="col"/>
                 </pivot>
+            </field>
+        </record>
+
+        <!-- Drill-down target for the pivot above (clicking a cell opens this list of
+             the actual leads behind that count/measure) - needs name + partner_id to be
+             useful for identifying which leads, not just the aggregate fields. -->
+        <record id="crm_lead_report_view_list" model="ir.ui.view">
+            <field name="name">crm.lead.report.list</field>
+            <field name="model">crm.lead.report</field>
+            <field name="arch" type="xml">
+                <list string="Leads" create="0" edit="0" delete="0">
+                    <field name="name"/>
+                    <field name="partner_id"/>
+                    <field name="user_id"/>
+                    <field name="team_id"/>
+                    <field name="stage_id"/>
+                    <field name="type"/>
+                    <field name="priority" optional="hide"/>
+                    <field name="expected_revenue" sum="Total"/>
+                    <field name="create_date"/>
+                </list>
             </field>
         </record>
 
@@ -57,7 +78,7 @@
         <record id="crm_lead_report_action" model="ir.actions.act_window">
             <field name="name">Lead Report</field>
             <field name="res_model">crm.lead.report</field>
-            <field name="view_mode">pivot,graph</field>
+            <field name="view_mode">pivot,list,graph</field>
             <field name="search_view_id" ref="crm_lead_report_view_search"/>
             <field name="context">{
                 'search_default_filter_active': 1,

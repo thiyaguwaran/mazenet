@@ -8,6 +8,8 @@ class CrmLeadReport(models.Model):
     _auto = False
     _order = 'create_date desc'
 
+    name = fields.Char(string='Lead', readonly=True)
+    partner_id = fields.Many2one('res.partner', string='Customer', readonly=True)
     user_id = fields.Many2one('res.users', string='Salesperson', readonly=True)
     team_id = fields.Many2one('crm.team', string='Sales Team', readonly=True)
     stage_id = fields.Many2one('crm.stage', string='Stage', readonly=True)
@@ -28,6 +30,8 @@ class CrmLeadReport(models.Model):
             CREATE OR REPLACE VIEW crm_lead_report AS (
                 SELECT
                     l.id AS id,
+                    l.name AS name,
+                    l.partner_id AS partner_id,
                     l.user_id AS user_id,
                     l.team_id AS team_id,
                     l.stage_id AS stage_id,
@@ -40,5 +44,6 @@ class CrmLeadReport(models.Model):
                     c.currency_id AS currency_id
                 FROM crm_lead l
                 LEFT JOIN res_company c ON c.id = l.company_id
+                WHERE l.type = 'opportunity'
             )
         """)
