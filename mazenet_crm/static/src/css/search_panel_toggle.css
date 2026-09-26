@@ -1,0 +1,54 @@
+/* Mazenet CRM - Search Panel collapse/expand toggle (client instruction, 2026-09-26:
+   "the icon on the left side panel, change that to something attractive").
+
+   This is stock Odoo's own web.SearchPanelContent / web.SearchPanel.Sidebar template
+   (addons/web/static/src/search/search_panel/search_panel.xml) - the little button that
+   collapses/expands the left grouping panel (e.g. "SALESPERSON" on the CRM Pipeline).
+   It's a shared, global `web` component used on every list/kanban view across the whole
+   app, not something owned by this module - so this is a pure CSS restyle (no template
+   override, no behavior change), matching it everywhere it appears rather than only in
+   CRM. Targets the button by its child icon (.oi-panel-right) since that's the only
+   thing distinguishing it from every other .btn-light in the search panel - the button
+   itself carries no distinguishing class of its own in the stock template. Both the
+   collapsed-sidebar button and the expanded-panel button use the exact same icon markup
+   (<i class="oi oi-fw oi-panel-right fa-flip-horizontal"/>), so one rule covers both. */
+.o_search_panel_sidebar button:has(> .oi-panel-right),
+.o_search_panel button:has(> .oi-panel-right) {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0 !important;
+    border: none !important;
+    border-radius: 50% !important;
+    background-color: #714B67 !important;
+    box-shadow: 0 2px 6px rgba(113, 75, 103, 0.4);
+    transition: background-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.o_search_panel_sidebar button:has(> .oi-panel-right) > .oi-panel-right,
+.o_search_panel button:has(> .oi-panel-right) > .oi-panel-right {
+    color: #fff !important;
+    font-size: 14px;
+}
+
+.o_search_panel_sidebar button:has(> .oi-panel-right):hover,
+.o_search_panel button:has(> .oi-panel-right):hover {
+    background-color: #5b3b53 !important;
+    transform: scale(1.1);
+    box-shadow: 0 3px 8px rgba(113, 75, 103, 0.55);
+}
+
+@media (prefers-color-scheme: dark) {
+    .o_search_panel_sidebar button:has(> .oi-panel-right),
+    .o_search_panel button:has(> .oi-panel-right) {
+        background-color: #8a5f7d !important;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+    }
+
+    .o_search_panel_sidebar button:has(> .oi-panel-right):hover,
+    .o_search_panel button:has(> .oi-panel-right):hover {
+        background-color: #a1748f !important;
+    }
+}
