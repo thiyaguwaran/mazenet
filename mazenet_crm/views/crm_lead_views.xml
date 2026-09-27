@@ -1206,6 +1206,9 @@
                                 <field name="x_dmt_snap_organic_inorganic" readonly="1"/>
                                 <field name="x_dmt_snap_source_id" readonly="1"/>
                                 <field name="x_dmt_snap_referred" readonly="1"/>
+                                <field name="x_team_assign_note"
+                                    placeholder="Why is this lead going to the team rather than a specific person?"
+                                    readonly="1" invisible="not x_team_assign_note_logged"/>
                             </group>
                             <group string="Stage 2 - Lead Validation">
                                 <field name="x_dmt_snap_company_or_individual" readonly="1"/>
