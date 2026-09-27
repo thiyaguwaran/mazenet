@@ -107,6 +107,19 @@ class MzLeadSpinoffWizard(models.TransientModel):
             'stage_id': first_stage.id,
             'description': self.description,
             'x_related_lead_id': self.source_lead_id.id,
+            # Source Team tag (client instruction, 2026-09-27): a spin-off routed to a
+            # DIFFERENT team than the source lead's own is, functionally, the same kind
+            # of cross-team handoff write()'s "Source Team Tag" block already tags for a
+            # plain team_id transfer - just via create() instead of write(), so that
+            # block never fires for this path. Set directly here instead, same
+            # semantics: only tagged when the target team actually differs from the
+            # source lead's team (spinning off within the SAME team gets no badge,
+            # nothing was handed cross-team).
+            'x_source_team_id': (
+                self.source_lead_id.team_id.id
+                if self.source_lead_id.team_id and self.source_lead_id.team_id != self.team_id
+                else False
+            ),
         }
         for fname in self.DETAIL_FIELDS:
             field = self._fields[fname]

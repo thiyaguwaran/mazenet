@@ -743,7 +743,12 @@ class CrmLead(models.Model):
              "-> MIS ends up showing 'From Tally' on MIS's kanban, not 'From DMT'). "
              "Never self-expires, unlike x_dmt_originated - it's just a where-did-"
              "this-come-from label, not an access grant, so there's nothing that "
-             "needs to time out."
+             "needs to time out.\n"
+             "Also set at CREATE time (client instruction, 2026-09-27) by the 'Create "
+             "New Opportunity' spin-off wizard (lead_spinoff_wizard.py), when the "
+             "spin-off is routed to a different team than its source lead's own - "
+             "that's a cross-team handoff too, just via create() instead of write(), "
+             "so write()'s own capture below never fires for it."
     )
 
     @api.depends('stage_id', 'team_id', 'x_dmt_originated')
