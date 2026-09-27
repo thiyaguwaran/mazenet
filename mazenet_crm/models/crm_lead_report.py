@@ -23,6 +23,16 @@ class CrmLeadReport(models.Model):
     create_date = fields.Datetime(string='Created On', readonly=True)
     expected_revenue = fields.Monetary(string='Expected Revenue', readonly=True)
     currency_id = fields.Many2one('res.currency', string='Currency', readonly=True)
+    won_status = fields.Selection([
+        ('won', 'Won'), ('lost', 'Lost'), ('pending', 'Pending')],
+        string='Won/Lost', readonly=True)
+    activity_count = fields.Integer(string='Activities', readonly=True)
+    deviation_days = fields.Integer(
+        string='Project Deviation (Days)', readonly=True,
+        help="Project Actual End Date minus Project End Date.")
+    age_months = fields.Integer(
+        string='Age (Months)', readonly=True,
+        help="Full months elapsed since the lead was created.")
 
     def init(self):
         tools.drop_view_if_exists(self.env.cr, self._table)
@@ -41,7 +51,17 @@ class CrmLeadReport(models.Model):
                     l.active AS active,
                     l.create_date AS create_date,
                     l.expected_revenue AS expected_revenue,
-                    c.currency_id AS currency_id
+                    c.currency_id AS currency_id,
+                    l.won_status AS won_status,
+                    l.x_deviation_days AS deviation_days,
+                    (
+                        SELECT COUNT(*) FROM mail_activity ma
+                        WHERE ma.res_model = 'crm.lead' AND ma.res_id = l.id
+                    ) AS activity_count,
+                    (
+                        EXTRACT(YEAR FROM age(now(), l.create_date)) * 12
+                        + EXTRACT(MONTH FROM age(now(), l.create_date))
+                    )::integer AS age_months
                 FROM crm_lead l
                 LEFT JOIN res_company c ON c.id = l.company_id
                 WHERE l.type = 'opportunity'

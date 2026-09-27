@@ -39,7 +39,11 @@
                     <field name="stage_id"/>
                     <field name="type"/>
                     <field name="priority" optional="hide"/>
+                    <field name="won_status"/>
                     <field name="expected_revenue" sum="Total"/>
+                    <field name="deviation_days" optional="show"/>
+                    <field name="activity_count" optional="show"/>
+                    <field name="age_months" optional="hide"/>
                     <field name="create_date"/>
                 </list>
             </field>
@@ -64,12 +68,20 @@
                     <field name="user_id"/>
                     <field name="team_id"/>
                     <field name="stage_id"/>
+                    <field name="won_status"/>
+                    <field name="expected_revenue"/>
                     <filter string="Active" name="filter_active" domain="[('active', '=', True)]"/>
                     <filter string="Archived" name="filter_archived" domain="[('active', '=', False)]"/>
+                    <separator/>
+                    <filter string="Won" name="filter_won" domain="[('won_status', '=', 'won')]"/>
+                    <filter string="Lost" name="filter_lost" domain="[('won_status', '=', 'lost')]"/>
+                    <separator/>
+                    <filter string="Older than 3 Months" name="filter_older_3m" domain="[('age_months', '>', 3)]"/>
                     <group>
                         <filter string="Salesperson" name="group_by_user" context="{'group_by': 'user_id'}"/>
                         <filter string="Stage" name="group_by_stage" context="{'group_by': 'stage_id'}"/>
                         <filter string="Sales Team" name="group_by_team" context="{'group_by': 'team_id'}"/>
+                        <filter string="Won/Lost" name="group_by_won_status" context="{'group_by': 'won_status'}"/>
                     </group>
                 </search>
             </field>
@@ -82,7 +94,7 @@
             <field name="search_view_id" ref="crm_lead_report_view_search"/>
             <field name="context">{
                 'search_default_filter_active': 1,
-                'pivot_measures': ['__count', 'expected_revenue'],
+                'pivot_measures': ['__count', 'expected_revenue', 'activity_count', 'deviation_days'],
             }</field>
         </record>
 
