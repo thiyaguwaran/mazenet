@@ -1081,6 +1081,8 @@
                                 <field name="x_project_completed_attachment_ids" widget="many2many_binary"/>
                                 <field name="x_workorder_completion_date"/>
                                 <field name="x_deviation_days"/>
+                                <field name="x_lms_kt_uploaded_all_weeks"/>
+                                <field name="x_lms_skill_uploaded_all_weeks"/>
                             </group>
                         </div>
 

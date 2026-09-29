@@ -1754,6 +1754,22 @@ class CrmLead(models.Model):
     x_lms_week_ids = fields.One2many(
         'crm.lead.lms.week', 'lead_id', string="Weekly KT / Skill Upload Tracking"
     )
+    x_lms_kt_uploaded_all_weeks = fields.Boolean(
+        string="KT Uploaded for all weeks",
+        help="Closing sign-off checkbox for Stage 8 - Project State: confirms KT has "
+             "genuinely been uploaded for EVERY row in Weekly KT / Skill Upload Tracking "
+             "above, not just some of them. Deliberately a separate field from each week's "
+             "own kt_uploaded (crm_lead_lms_week.py) - that one tracks a single week, this "
+             "one is the overall final confirmation, not derived/computed from the week "
+             "rows since the number of weeks varies per lead."
+    )
+    x_lms_skill_uploaded_all_weeks = fields.Boolean(
+        string="Skill Uploaded for all weeks",
+        help="Closing sign-off checkbox for Stage 8 - Project State: confirms Skill "
+             "content has genuinely been uploaded for EVERY row in Weekly KT / Skill "
+             "Upload Tracking above, not just some of them. Same relationship to each "
+             "week's own skill_uploaded as x_lms_kt_uploaded_all_weeks has to kt_uploaded."
+    )
 
     capture_dmt_lead_id = fields.Many2one(
         'res.users', string='DMT Person (Transferred By)', ondelete='set null', copy=False,
