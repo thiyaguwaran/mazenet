@@ -1346,6 +1346,21 @@
             <field name="arch" type="xml">
                 <filter name="filter_won_status_lost" position="after">
                     <filter string="Archived" name="inactive" domain="[('active', '=', False)]"/>
+                    <!-- "My Follow-up's" (client instruction, 2026-09-29): once a DMT user
+                         hands a lead off to another team, its user_id gets cleared (the
+                         receiving team assigns it) - so a plain "assigned to me" filter can't
+                         answer "how many leads have I personally transferred out, that are now
+                         sitting in Follow-up's". capture_dmt_lead_id (crm_lead.py) is the right
+                         field instead - the DMT user who performed the handoff, captured once,
+                         at that moment, and never cleared even if the lead moves on to a THIRD
+                         team later. DMT-only (groups=): same three groups the DMT Pipeline menu
+                         itself uses (menu_crm_opportunities_dmt_pipeline) - group_mzr_dmt_agent
+                         covers the whole ATL/TL/Manager chain transitively (each tier implies
+                         the one below), the other two are separate direct-agent branches that
+                         don't imply it. -->
+                    <filter string="My Follow-up's" name="filter_my_dmt_followups"
+                            domain="[('capture_dmt_lead_id', '=', uid)]"
+                            groups="mazenet_access_rights.group_mzr_dmt_agent,mazenet_access_rights.group_mzr_dmt_tl_direct_agent,mazenet_access_rights.group_mzr_dmt_manager_direct_agent"/>
                 </filter>
                 <!-- Sales Team removed from Group By - team selection now happens via the
                      search panel sidebar below instead of grouping. -->
