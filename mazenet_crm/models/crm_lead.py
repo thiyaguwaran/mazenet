@@ -1752,23 +1752,14 @@ class CrmLead(models.Model):
              "Read-only - drives how many rows _mz_sync_lms_weeks generates below."
     )
     x_lms_week_ids = fields.One2many(
-        'crm.lead.lms.week', 'lead_id', string="Weekly KT / Skill Upload Tracking"
-    )
-    x_lms_kt_uploaded_all_weeks = fields.Boolean(
-        string="KT Uploaded for all weeks",
-        help="Closing sign-off checkbox for Stage 8 - Project State: confirms KT has "
-             "genuinely been uploaded for EVERY row in Weekly KT / Skill Upload Tracking "
-             "above, not just some of them. Deliberately a separate field from each week's "
-             "own kt_uploaded (crm_lead_lms_week.py) - that one tracks a single week, this "
-             "one is the overall final confirmation, not derived/computed from the week "
-             "rows since the number of weeks varies per lead."
-    )
-    x_lms_skill_uploaded_all_weeks = fields.Boolean(
-        string="Skill Uploaded for all weeks",
-        help="Closing sign-off checkbox for Stage 8 - Project State: confirms Skill "
-             "content has genuinely been uploaded for EVERY row in Weekly KT / Skill "
-             "Upload Tracking above, not just some of them. Same relationship to each "
-             "week's own skill_uploaded as x_lms_kt_uploaded_all_weeks has to kt_uploaded."
+        'crm.lead.lms.week', 'lead_id', string="Weekly KT / Skill Upload Tracking",
+        help="4 checkboxes per week now (client correction, 2026-09-29): KT/Skill "
+             "Included (was this in that week's plan) and KT/Skill Uploaded (has the "
+             "content actually been uploaded for that week) - see "
+             "crm_lead_lms_week.py. An earlier version of the Uploaded pair briefly "
+             "lived here as two lead-level 'for all weeks' summary checkboxes on Stage "
+             "8 - that never made sense once the number of weeks varies per lead, so "
+             "they moved into this table instead, same day."
     )
 
     capture_dmt_lead_id = fields.Many2one(
