@@ -63,7 +63,7 @@ SYSTEM_FIELDS = {
     "message_needaction_counter", "message_is_follower", "message_partner_ids", "activity_state",
     "activity_user_id", "activity_type_id", "activity_date_deadline", "activity_summary",
     "activity_exception_type", "activity_exception_decoration", "active",
-    "x_is_locked", "x_lock_date",
+    "x_is_locked", "x_lock_date", "x_activity_card_state",
 }
 
 # M3: mandatory-field-on-stage-change gate (Mazenet_CRM_M2_Build_Tasks.xlsx's per-stage
@@ -1323,9 +1323,12 @@ class CrmLead(models.Model):
              "transfer action and this check, whether the lead is owned or not (an "
              "unowned lead just always fails the 'am I the owner' half of "
              "_mz_can_edit_owned, so it needs ATL/TL/Manager tier same as a non-owner "
-             "editing someone else's lead). CTO/Admin bypass everything. While LOCKED "
-             "specifically, the owner is excluded even on their own team - being "
-             "locked out is the whole point of RED lock for them. Not stored - it "
+             "editing someone else's lead). CTO/Admin bypass everything. While LOCKED, "
+             "it's True for EVERYONE else (client instruction, 2026-09-30: 'once red "
+             "lock is happened no one should be able to edit the record, only after "
+             "the red lock' - release first via action_release_lock, then edit as a "
+             "separate step; can_user_release_lock is no longer consulted here, "
+             "matching write()'s own unconditional LOCKED rejection). Not stored - it "
              "reflects whoever has the form open, same pattern as "
              "x_can_assign_beyond_self."
     )
@@ -1339,7 +1342,7 @@ class CrmLead(models.Model):
             if self.env.su or is_cto_admin:
                 lead.x_content_readonly_for_me = False
             elif lead.x_is_locked:
-                lead.x_content_readonly_for_me = not lead._mz_can_edit_by_team(u)
+                lead.x_content_readonly_for_me = True
             else:
                 lead.x_content_readonly_for_me = not lead._mz_can_edit_owned(u)
 
@@ -2382,22 +2385,21 @@ class CrmLead(models.Model):
 
             content_touched = set(vals.keys()) - SYSTEM_FIELDS
 
-            # RED Lock Enforcement: a locked lead is read-only until released via
-            # action_release_lock() - EXCEPT for whoever is authorized to RELEASE it
-            # (can_user_release_lock: the owner's head group - one tier above the
-            # owner's own tier - or CTO/Admin; a Manager-tier owner self-releases).
-            # Deliberately NOT _mz_can_edit_by_team here: that check only asks "is this
-            # user ATL/TL/Manager on the CURRENT team_id", which doesn't exclude the
-            # locked owner themselves if they happen to hold ATL/TL/Manager tier, and
-            # doesn't require them to be the owner's specific superior either - either
-            # gap would let the very person the lock is meant to freeze (or an unrelated
-            # peer ATL/TL) keep editing. Using can_user_release_lock keeps "who can edit
-            # while locked" and "who can release the lock" the same person, which is the
-            # actual intent (e.g. an ATL who missed a meeting gets RED-locked and can no
-            # longer edit their own lead even though they're ATL-tier; only their TL can
-            # edit/release it). Only bookkeeping/system fields (chatter, activities, and
-            # the lock fields themselves - so the release action can clear them) are
-            # exempt regardless.
+            # RED Lock Enforcement: a locked lead is read-only for EVERYONE, including
+            # whoever is authorized to release it (can_user_release_lock: the owner's
+            # head, or CTO/Admin) - client instruction, 2026-09-30: "once red lock is
+            # happened no one should be able to edit the record, only after the red
+            # lock" - i.e. release first (action_release_lock, which only ever touches
+            # the exempt lock/card-state fields below), then edit as a separate, later
+            # action. This REPLACES the previous design (2026-08-24 fix) where the
+            # release-authority person could edit content directly while still locked,
+            # without releasing first - can_user_release_lock is no longer consulted
+            # here at all; it's still the sole authority check inside
+            # action_release_lock() itself and is_show_redlock_btn, both unchanged.
+            # Only bookkeeping/system fields (chatter, activities, the lock fields -
+            # so the release action can clear them - and x_activity_card_state - so
+            # it can reset the kanban colour, see action_release_lock()) are exempt
+            # regardless.
             #
             # Team-Transfer Enforcement: the SAME team_id-scoping applies even when the
             # lead isn't locked - stock CRM's own "Sales: All Documents" ir.rule
@@ -2420,11 +2422,10 @@ class CrmLead(models.Model):
             if content_touched:
                 for lead in self:
                     if lead.x_is_locked:
-                        if not lead.can_user_release_lock(u):
-                            raise AccessError(_(
-                                "Lead '%s' is RED-locked and read-only. Use 'Release RED Lock' "
-                                "before it can be edited again."
-                            ) % lead.name)
+                        raise AccessError(_(
+                            "Lead '%s' is RED-locked and read-only. Use 'Release RED Lock' "
+                            "before it can be edited again."
+                        ) % lead.name)
                     elif not lead._mz_can_edit_owned(u):
                         # Same distinction as _compute_x_team_transfer_readonly
                         # (2026-09-11 fix): "not on this team at all" (a genuine
@@ -2921,8 +2922,9 @@ class CrmLead(models.Model):
         it does for every other team's team-transfer readonly, including the
         narrow "reassign salesperson only" waiver this used to preserve - team_id
         moving off DMT ends DMT's involvement entirely, full read-only, same as
-        anyone else. RED-lock read-only (_mz_can_edit_by_team, used directly in
-        write() while locked) is untouched by this either way.
+        anyone else. RED-lock read-only (write() rejects everyone unconditionally
+        while x_is_locked - see write()'s own comment) is untouched by this either
+        way.
 
         MD gets a narrower waiver, scoped to leads they personally own: MD isn't
         a member of any crm.team at all (by design - global read-only role), so
@@ -2953,7 +2955,20 @@ class CrmLead(models.Model):
 
     def action_release_lock(self):
         """Clears the RED lock, making the lead editable again - only for whoever
-        can_user_release_lock() authorizes (the owner's head/superior, or CTO/Admin)."""
+        can_user_release_lock() authorizes (the owner's head/superior, or CTO/Admin).
+
+        Also resets x_activity_card_state straight to 'green' (client instruction,
+        2026-09-30: "after release red lock, the lead should go back to first color
+        what we had" - green being the field's own documented baseline, "whenever
+        there's a scheduled activity at all"). This is a one-time visual reset, not
+        a genuine re-evaluation: the activity that made the lead overdue in the
+        first place is still open, so x_next_activity_datetime is unchanged, and
+        _compute_x_activity_card_state's normal time-based logic would otherwise
+        put it straight back to orange. The explicit write here overrides that
+        until something re-triggers the compute - a new/edited/completed activity
+        (@api.depends), or ir_cron_mz_recompute_activity_card_state if
+        x_next_activity_datetime is still within its 1-day window by then - at
+        which point it naturally resumes the ordinary countdown."""
         for lead in self:
             if not lead.can_user_release_lock():
                 raise AccessError(_(
@@ -2962,6 +2977,7 @@ class CrmLead(models.Model):
                 ) % lead.name)
 
             lead.write({'x_is_locked': False, 'x_lock_date': False})
+            lead.write({'x_activity_card_state': 'green'})
             lead.message_post(body=_("RED lock released by %s. Lead is editable again.") % self.env.user.name)
 
             if lead.user_id:
