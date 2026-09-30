@@ -17,7 +17,7 @@ Mazenet CRM - Pipeline Customizations
     """,
     'author': 'Mazenet Tech / Development Team',
     'website': 'https://www.mazenet.com',
-    'depends': ['crm', 'mail', 'calendar', 'mazenet_access_rights'],
+    'depends': ['crm', 'mail', 'calendar', 'phone_validation', 'mazenet_access_rights'],
     "data": [
         "data/alarms.xml",
         "data/cron.xml",

@@ -6,8 +6,8 @@ import pytz
 
 from odoo import models, fields, api, _
 from odoo.exceptions import AccessError, UserError, ValidationError
+from odoo.addons.phone_validation.tools import phone_validation
 
-MZ_PHONE_RE = re.compile(r'^\d{10}$')
 MZ_EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
 
 # Build-notes format validation ("Format validation only: valid 10-digit number" /
@@ -1545,17 +1545,46 @@ class CrmLead(models.Model):
         real-number/real-address check. Scoped to the 5 M2 BUs
         (MZ_FORMAT_VALIDATED_BU_CATEGORIES); empty values are fine here (mandatory-ness
         is the stage gate's job, see MZ_STAGE_GATE_RULES) - this only fires once
-        something has actually been typed in."""
+        something has actually been typed in.
+
+        Phone re-added 2026-09-30 (client asked to evaluate OCA's base_phone,
+        decided to reuse core's own `phonenumbers`-backed phone_validation tools
+        instead - not installable on 19.0 anyway, see that session). REPLACES the
+        old MZ_PHONE_RE 10-digit regex (removed 2026-09-16, same root problem this
+        fixes): a real per-country numbering-plan check accepts every legitimately-
+        formatted variant (spaces, dashes, leading 0, a +91 prefix, ...), not just
+        one rigid pattern, so it doesn't keep breaking on inputs that were always
+        valid.
+
+        Deliberately does NOT call `_phone_format()`/rewrite `lead.phone` to E.164 -
+        validate only, leave the stored value exactly as typed. Region is
+        `lead.country_id.code or 'IN'`, NEVER `self.env.company.country_id` (core's
+        own fallback in `_phone_get_country()`) - staging's company record has
+        country_id wrongly set to United States (currency is correctly INR, country
+        was never fixed - confirmed still live 2026-09-30), which is the exact bug
+        that made a plain 10-digit Indian number silently become '+1 984-337-1611'
+        under the old stock phone widget (see the widget-removal comment on the
+        'opportunity_partner' phone field in crm_lead_views.xml) - falling back to
+        that same company field here would reintroduce it. Defaulting to 'IN'
+        matches this business being India-only in practice; a lead with its own
+        country_id set validates against that country instead, so this is still
+        genuinely per-lead/per-country, just with a safe default instead of the
+        broken one."""
         for lead in self:
             if lead.team_id.x_bu_category not in MZ_FORMAT_VALIDATED_BU_CATEGORIES:
                 continue
-            # 10-digit phone format check removed for now (client instruction,
-            # 2026-09-16) - the phone widget's own auto-formatting (removed
-            # 2026-09-15, see the "Contact Number" field's own view comment) was
-            # only ONE way a number could end up not matching this pattern; rather
-            # than keep chasing every input path that could produce a differently-
-            # formatted-but-legitimate number, the format check itself is dropped.
-            # Email format validation is unaffected, still enforced below.
+            if lead.phone and lead.phone.strip():
+                country_code = lead.country_id.code or 'IN'
+                try:
+                    phone_validation.phone_parse(lead.phone.strip(), country_code)
+                except UserError as e:
+                    raise ValidationError(_(
+                        "'%(lead)s': Contact Number is not a valid %(country)s phone "
+                        "number (got '%(value)s'). %(reason)s"
+                    ) % {
+                        'lead': lead.name, 'country': country_code,
+                        'value': lead.phone, 'reason': str(e),
+                    })
             if lead.email_from and not MZ_EMAIL_RE.fullmatch(lead.email_from.strip()):
                 raise ValidationError(_(
                     "'%(lead)s': Email must be a valid email address (got '%(value)s')."
