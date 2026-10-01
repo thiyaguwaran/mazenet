@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Mazenet CRM - Search Panel toggle icon glyph swap (client instruction, 2026-09-27:
+     "change that icon entirely like similar to how gmail has" - Gmail's own sidebar
+     toggle is a plain hamburger, fa-bars here).
+
+     Yesterday's search_panel_toggle.css only RESTYLED the button (purple circle,
+     hover effect) around stock Odoo's own icon (oi-panel-right, a "collapse this
+     panel" glyph) - CSS can't swap the glyph itself, only an actual template
+     override can. web.SearchPanel.Sidebar / web.SearchPanelContent
+     (addons/web/static/src/search/search_panel/search_panel.xml) are OWL
+     component templates, extendable the same way backend ir.ui.views are -
+     t-inherit + t-inherit-mode="extension" patches the ORIGINAL template in
+     place, so this applies everywhere that toggle appears app-wide, same as
+     yesterday's CSS restyle, no JS component override needed.
+
+     mz-search-panel-toggle-icon is a marker class, not styling - keeps
+     search_panel_toggle.css decoupled from which specific icon font/glyph is in
+     use, so a future icon change only touches this file, not the CSS too.
+
+     web.SearchPanel.Regular ALSO needs its own patch here, separately from
+     web.SearchPanelContent (confirmed live 2026-09-27: patching only
+     SearchPanelContent left the EXPANDED panel's toggle showing the old icon,
+     while the COLLAPSED sidebar's - patched via SearchPanel.Sidebar above -
+     correctly showed the new one). Reason: web.SearchPanel.Regular is itself
+     defined as `t-inherit="web.SearchPanelContent" t-inherit-mode="primary"`
+     with an empty body, in web's OWN search_panel.xml - a primary-mode
+     inheritance snapshots its base at that template's own registration, which
+     happens before this module's extension patch to SearchPanelContent is
+     applied, so Regular's snapshot never picks it up. It's what the EXPANDED
+     panel actually renders (web.SearchPanel's own t-name, `t-if="sidebarExpanded"`
+     branch, calls Regular, not SearchPanelContent directly) - patching it
+     directly, as its own separately-named template, sidesteps the snapshot-
+     timing gap entirely. -->
+<templates id="template" xml:space="preserve">
+
+    <t t-inherit="web.SearchPanel.Sidebar" t-inherit-mode="extension">
+        <i class="oi oi-fw oi-panel-right fa-flip-horizontal" position="replace">
+            <i class="fa fa-bars mz-search-panel-toggle-icon"/>
+        </i>
+    </t>
+
+    <t t-inherit="web.SearchPanelContent" t-inherit-mode="extension">
+        <i class="oi oi-fw oi-panel-right fa-flip-horizontal" position="replace">
+            <i class="fa fa-bars mz-search-panel-toggle-icon"/>
+        </i>
+    </t>
+
+    <t t-inherit="web.SearchPanel.Regular" t-inherit-mode="extension">
+        <i class="oi oi-fw oi-panel-right fa-flip-horizontal" position="replace">
+            <i class="fa fa-bars mz-search-panel-toggle-icon"/>
+        </i>
+    </t>
+
+</templates>

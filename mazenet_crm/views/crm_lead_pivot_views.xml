@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+
+        <!-- Default Pipeline Analysis pivot (crm.crm_lead_view_pivot), reused
+             across every Pipeline action in this module - rows grouped by
+             Team then Salesperson, columns by Stage, with Probability added
+             alongside Expected Revenue as a measure (Count is automatic). -->
+        <record id="crm_lead_view_pivot_inherit_mz" model="ir.ui.view">
+            <field name="name">crm.lead.view.pivot.inherit.mz</field>
+            <field name="model">crm.lead</field>
+            <field name="inherit_id" ref="crm.crm_lead_view_pivot"/>
+            <field name="arch" type="xml">
+                <field name="create_date" position="replace">
+                    <field name="team_id" type="row"/>
+                    <field name="user_id" type="row"/>
+                </field>
+                <field name="probability" position="attributes">
+                    <attribute name="invisible">0</attribute>
+                </field>
+            </field>
+        </record>
+
+        <!-- "Leads Analysis" (CRM > Reporting > Leads) - the actual screenshot's
+             view: crm_opportunity_report_view_pivot_lead, NOT crm_lead_view_pivot
+             above (different action, different default view_id - confirmed via
+             the "Leads Analysis" title and crm_opportunity_report_action_lead's
+             view_ids in addons/crm/report/crm_opportunity_report_views.xml).
+             Default arch has team_id as the column axis and create_date as rows,
+             which is why team names showed up where stages were expected.
+
+             Stage moved onto the row axis, nested under Team (not columns) -
+             each team here has its OWN distinct stage set (8 different
+             pipeline stage sets across teams, per this module's own data),
+             so a flat stage_id column axis mixes every team's stages into
+             one wide, mostly-empty grid (a DMT lead never has a Tally
+             stage). Nesting stage under team means each team only ever
+             shows its own relevant stages, expandable per row.
+
+             No explicit type="measure" field is added here on purpose - the base
+             arch has none either, and Odoo's pivot view only auto-activates
+             Count as the default measure when activeMeasures is empty
+             (addons/web/static/src/views/pivot/pivot_view.js:32-33). Declaring
+             one in the arch would silently replace that default Count instead
+             of adding to it. Expected Revenue is added as a SECOND default
+             measure below instead, via the action's own context
+             (pivot_measures) - the one path that lets both Count and Expected
+             Revenue be active together (addons/web/static/src/views/pivot/
+             pivot_model.js:655-656: context.pivot_measures REPLACES
+             activeMeasures wholesale, so it has to list both, not just add
+             one). Probability stays available (not invisible) as an optional
+             measure someone can turn on manually, without being active by
+             default. -->
+        <record id="crm_opportunity_report_view_pivot_lead_inherit_mz" model="ir.ui.view">
+            <field name="name">crm.opportunity.report.view.pivot.lead.inherit.mz</field>
+            <field name="model">crm.lead</field>
+            <field name="inherit_id" ref="crm.crm_opportunity_report_view_pivot_lead"/>
+            <field name="arch" type="xml">
+                <field name="team_id" position="replace"/>
+                <field name="create_date" position="replace">
+                    <field name="team_id" type="row"/>
+                    <field name="stage_id" type="row"/>
+                    <field name="user_id" type="row"/>
+                    <field name="create_date" interval="month" type="col"/>
+                </field>
+                <field name="probability" position="attributes">
+                    <attribute name="invisible">0</attribute>
+                </field>
+                <xpath expr="//pivot" position="attributes">
+                    <attribute name="string">Leads Analysis (Team → Stage → Salesperson, by Month)</attribute>
+                </xpath>
+            </field>
+        </record>
+
+        <!-- Expected Revenue alongside Count by default (see the view record's
+             own comment above for why this has to happen here, via context,
+             rather than as an arch measure field). Every other context key
+             kept as-is from crm's own action - only pivot_measures is new. -->
+        <record id="crm.crm_opportunity_report_action_lead" model="ir.actions.act_window">
+            <field name="context">{
+                'search_default_filter_active': 1,
+                'search_default_filter_inactive': 1,
+                'search_default_filter_create_date': 1,
+                'pivot_measures': ['__count', 'expected_revenue'],
+            }</field>
+        </record>
+
+    </data>
+</odoo>

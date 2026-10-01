@@ -13,7 +13,7 @@ class MzArchiveWizard(models.TransientModel):
     def action_archive(self):
         self.ensure_one()
         u = self.env.user
-        if not u.has_group("mazenet_crm.group_mz_admin") and not self.env.su:
+        if not u.has_group("mazenet_access_rights.group_mzr_cto_admin") and not self.env.su:
             raise AccessError(_("Only CTO / Admin can archive a lead."))
 
         lead = self.lead_id
