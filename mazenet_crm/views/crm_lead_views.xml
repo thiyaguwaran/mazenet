@@ -299,25 +299,6 @@
                                 </div>
                                 <field name="priority" widget="priority" string="Lead Fit"/>
                             </group>
-                            <group string="Stage 3 - Transfer to BU">
-                                <label for="x_transfer_notes"/>
-                                <div class="o_row">
-                                    <field name="x_transfer_notes"/>
-                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_transfer_notes,' in x_current_stage_gate_fields)">*</span>
-                                </div>
-                                <label for="x_target_team_id"/>
-                                <div class="o_row">
-                                    <!-- Same fix as team_id's own field tag above (client
-                                         bug report, 2026-09-21) - x_target_team_id's
-                                         model-level domain=_get_team_id_domain is
-                                         evaluated by fields_get() against an empty
-                                         recordset, so it never actually excluded the
-                                         lead's current team in the live dropdown. A
-                                         view-level domain string works reliably. -->
-                                    <field name="x_target_team_id" domain="[('id', '!=', team_id)]"/>
-                                    <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_target_team_id,' in x_current_stage_gate_fields)">*</span>
-                                </div>
-                            </group>
                             <group string="Stage 4 - Follow-up's">
                                 <div class="text-muted" colspan="2">
                                     Follow-up activities live in the Activities/Chatter area below -
@@ -1218,10 +1199,6 @@
                                 <field name="x_dmt_snap_product_service" readonly="1"/>
                                 <field name="x_dmt_snap_employee_count" readonly="1"/>
                                 <field name="x_dmt_snap_company_turnover" readonly="1"/>
-                            </group>
-                            <group string="Stage 3 - Transfer to BU">
-                                <field name="x_dmt_snap_transfer_notes" readonly="1"/>
-                                <field name="x_dmt_snap_target_team_id" readonly="1"/>
                             </group>
                         </group>
                     </page>

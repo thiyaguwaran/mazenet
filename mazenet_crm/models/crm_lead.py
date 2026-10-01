@@ -2089,7 +2089,6 @@ class CrmLead(models.Model):
                             problems.append(f"{stage.name}: {labels}")
 
         if problems:
-            print("///////////////")
             raise UserError(_(
                 "'%(lead)s' can't move to '%(target)s' yet - required fields are still "
                 "empty:\n%(details)s"
@@ -2120,8 +2119,6 @@ class CrmLead(models.Model):
             return
         missing = [f for f in required if not self._mz_resolve_gate_value(f, vals)]
         if missing:
-            print("*****************")
-
             labels = ', '.join(self._mz_gate_field_label(f) for f in missing)
             raise UserError(_(
                 "'%(lead)s' can't move to '%(target)s' yet - missing required "
