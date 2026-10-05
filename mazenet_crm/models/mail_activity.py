@@ -39,6 +39,15 @@ class MailActivity(models.Model):
              "combined picker, so the user never edits this one directly."
     )
 
+    mz_is_lock_notice = fields.Boolean(
+        string="RED Lock Notice", default=False, copy=False,
+        help="Set on the to-dos the RED lock itself creates ('Release RED Lock: ...' for the "
+             "owner, 'Red Lock Release Pending' for the escalation chain). They are "
+             "bookkeeping, not scheduled work, so crm.lead's x_next_activity_datetime "
+             "ignores them - otherwise, having no time, they resolve to the 9 AM default "
+             "(already past) and the cron re-locks the lead right after every release."
+    )
+
     mz_activity_datetime = fields.Datetime(
         string="Scheduled For",
         compute="_compute_mz_activity_datetime",

@@ -16,12 +16,14 @@ MZ_EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
 # other teams (Corporate/LMS/TNH/Hunter...) aren't newly constrained by this build.
 MZ_FORMAT_VALIDATED_BU_CATEGORIES = {'dmt', 'tally', 'tech', 'swdev', 'mis'}
 
-# The RED lock's own grace period - an activity's real due moment (x_next_activity_datetime)
+# The RED lock's grace period - an activity's real due moment (x_next_activity_datetime)
 # has to be this many minutes in the past before x_is_locked actually flips (a 10:00 AM
-# activity locks at 10:20, not the instant 10:00 passes). Previously this was
-# res.company.grace_time (a separate, user-configurable field defaulting to 15 minutes) -
-# replaced with this fixed 20-minute constant, matching the client's explicit "20 minutes"
-# spec rather than whatever happens to be configured on the company record.
+# activity locks at 10:20 with 20 minutes, not the instant 10:00 passes). Read from
+# res.company.grace_time (CRM Settings tab on the company form) via
+# crm.lead._mz_grace_minutes(). That setting was briefly bypassed by a fixed 20-minute
+# constant (client's "20 minutes" spec); it is the source of truth again, so the company
+# value must be 20 to match that spec. This constant is only the fallback for a lead
+# with no company at all.
 MZ_ACTIVITY_WINDOW_MINUTES = 20
 
 # Activity card colour thresholds (client instruction, 2026-09-21: "if activity is there for
@@ -1291,11 +1293,14 @@ class CrmLead(models.Model):
     @api.depends(
         'activity_ids.date_deadline', 'activity_ids.calendar_event_id.start',
         'activity_ids.mz_activity_time', 'activity_ids.user_id', 'activity_ids.active',
+        'activity_ids.mz_is_lock_notice',
     )
     def _compute_x_next_activity_datetime(self):
         for lead in self:
             candidates = []
-            for activity in lead.activity_ids.filtered('active'):
+            # RED-lock notice to-dos are skipped: they have no time, so they'd resolve to
+            # the 9 AM default (already past) and re-lock the lead after every release.
+            for activity in lead.activity_ids.filtered(lambda a: a.active and not a.mz_is_lock_notice):
                 candidates.append(activity._mz_resolve_activity_datetime())
             candidates = [c for c in candidates if c]
             lead.x_next_activity_datetime = min(candidates) if candidates else False
@@ -1389,8 +1394,8 @@ class CrmLead(models.Model):
              "stage, so this doesn't apply to them; False/'Normal' for every other lead "
              "regardless of team). Client instruction (2026-09-21), a 4-stage countdown to "
              "x_next_activity_datetime, precedence top to bottom:\n"
-             "- RED: same signal as x_is_locked (the RED lock) - " + str(MZ_ACTIVITY_WINDOW_MINUTES) + " minutes "
-             "past the activity's real moment with it still open. Deliberately reuses "
+             "- RED: same signal as x_is_locked (the RED lock) - the company's Grace Time "
+             "(res.company.grace_time, minutes) past the activity's real moment with it still open. Deliberately reuses "
              "x_is_locked rather than its own independent timer, so there's exactly one "
              "'is this overdue' answer in the whole module.\n"
              "- ORANGE: from " + str(MZ_ACTIVITY_ORANGE_MINUTES) + " minutes before the activity, "
@@ -3215,14 +3220,24 @@ class CrmLead(models.Model):
                 summary=_("Release RED Lock: %s") % self.name,
                 note=_("This lead is overdue and RED-locked. Review it and use 'Release RED Lock' to make it editable again."),
                 user_id=owner.id,
+                mz_is_lock_notice=True,
             )
+
+    @api.model
+    def _mz_grace_minutes(self, company=None):
+        """RED-lock grace period in minutes: the company's Grace Time setting
+        (res.company.grace_time). Never negative; 0 means lock the moment it is overdue."""
+        company = company or self.env.company
+        if not company:
+            return MZ_ACTIVITY_WINDOW_MINUTES
+        return max(0, company.sudo().grace_time)
 
     @api.model
     def _cron_trigger_red_locks(self):
         """Auto-trigger the RED lock on leads whose next activity's real moment
         (x_next_activity_datetime - already resolved per-activity-type, see mail_activity.py)
-        is more than MZ_ACTIVITY_WINDOW_MINUTES (20) in the past. A 10:00 AM activity locks
-        at 10:20, not the instant 10:00 passes - gives the owner a short window to still
+        is more than the company's Grace Time (res.company.grace_time) in the past. With 20
+        minutes, a 10:00 AM activity locks at 10:20, not the instant 10:00 passes - gives the owner a short window to still
         make it before it counts against them. Scoped to MZ_ACTIVITY_CARD_BU_CATEGORIES
         (DMT/Tally/Technology) - client rework spec (2026-09-08): Software Dev and MIS have
         no Follow-up's stage, so the RED lock itself no longer applies there, not just its
@@ -3231,16 +3246,20 @@ class CrmLead(models.Model):
         period of its own before escalating to the Team Lead - the client wants the TL
         notified together with RED triggering, not some extra minutes after that."""
         now = fields.Datetime.now()
-        cutoff = now - timedelta(minutes=MZ_ACTIVITY_WINDOW_MINUTES)
 
-        leads = self.sudo().search([
-            ('x_next_activity_datetime', '!=', False),
-            ('x_next_activity_datetime', '<', cutoff),
-            ('x_is_locked', '=', False),
-            ('active', '=', True),
-            ('user_id', '!=', False),
-            ('team_id.x_bu_category', 'in', list(MZ_ACTIVITY_CARD_BU_CATEGORIES)),
-        ])
+        # One search per company, since each company has its own Grace Time.
+        leads = self.sudo().browse()
+        for company in self.env['res.company'].sudo().search([]):
+            cutoff = now - timedelta(minutes=self._mz_grace_minutes(company))
+            leads |= self.sudo().search([
+                ('company_id', '=', company.id),
+                ('x_next_activity_datetime', '!=', False),
+                ('x_next_activity_datetime', '<', cutoff),
+                ('x_is_locked', '=', False),
+                ('active', '=', True),
+                ('user_id', '!=', False),
+                ('team_id.x_bu_category', 'in', list(MZ_ACTIVITY_CARD_BU_CATEGORIES)),
+            ])
         for lead in leads:
             lead.write({
                 'x_is_locked': True,
@@ -3358,10 +3377,11 @@ class CrmLead(models.Model):
                         note=(
                             f"<p><strong>Alert:</strong> No one has released the Red Lock on lead "
                             f"<strong>{lead.name}</strong> assigned to <strong>{user.name}</strong>.</p>"
-                            f"<p>Overdue by more than {MZ_ACTIVITY_WINDOW_MINUTES} minutes.</p>"
+                            f"<p>Overdue by more than {self._mz_grace_minutes(lead.company_id)} minutes.</p>"
                         ),
                         user_id=parent_user.id,
-                        date_deadline=fields.Date.context_today(self),)
+                        date_deadline=fields.Date.context_today(self),
+                        mz_is_lock_notice=True,)
 
 
 
