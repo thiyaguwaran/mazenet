@@ -48,6 +48,43 @@ class MailActivity(models.Model):
              "(already past) and the cron re-locks the lead right after every release."
     )
 
+    mz_due_datetime = fields.Datetime(
+        string="Due Moment", compute="_compute_mz_countdown",
+        help="The activity's real due moment (_mz_resolve_activity_datetime) - drives the live "
+             "countdown shown next to the activity in the chatter. Not stored. Empty for "
+             "non-lead activities and for the RED lock's own notice to-dos."
+    )
+    mz_has_red_lock = fields.Boolean(
+        compute="_compute_mz_countdown",
+        help="Whether the lead's BU pipeline carries the RED lock (so the countdown also "
+             "shows the lock window after the due moment)."
+    )
+    mz_grace_minutes = fields.Integer(
+        compute="_compute_mz_countdown",
+        help="The company's RED-lock grace period, in minutes."
+    )
+
+    @api.depends('res_model', 'res_id', 'date_deadline', 'mz_activity_time', 'activity_type_id',
+                 'calendar_event_id.start', 'user_id.tz', 'mz_is_lock_notice')
+    def _compute_mz_countdown(self):
+        from .crm_lead import MZ_ACTIVITY_CARD_BU_CATEGORIES
+        Lead = self.env['crm.lead']
+        for activity in self:
+            activity.mz_due_datetime = False
+            activity.mz_has_red_lock = False
+            activity.mz_grace_minutes = 0
+            if activity.res_model != 'crm.lead' or not activity.res_id or activity.mz_is_lock_notice:
+                continue
+            lead = Lead.browse(activity.res_id)
+            activity.mz_due_datetime = activity._mz_resolve_activity_datetime() or False
+            activity.mz_has_red_lock = lead.team_id.x_bu_category in MZ_ACTIVITY_CARD_BU_CATEGORIES
+            activity.mz_grace_minutes = Lead._mz_grace_minutes(lead.company_id)
+
+    def _to_store_defaults(self, target):
+        return super()._to_store_defaults(target) + [
+            "mz_due_datetime", "mz_has_red_lock", "mz_grace_minutes", "mz_is_lock_notice",
+        ]
+
     mz_activity_datetime = fields.Datetime(
         string="Scheduled For",
         compute="_compute_mz_activity_datetime",

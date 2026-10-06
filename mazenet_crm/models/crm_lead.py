@@ -1305,6 +1305,22 @@ class CrmLead(models.Model):
             candidates = [c for c in candidates if c]
             lead.x_next_activity_datetime = min(candidates) if candidates else False
 
+    x_has_red_lock = fields.Boolean(
+        compute="_compute_x_countdown_info",
+        help="Whether this lead's BU pipeline carries the RED lock - lets the live countdown "
+             "widget show the lock window. Not stored."
+    )
+    x_grace_minutes = fields.Integer(
+        compute="_compute_x_countdown_info",
+        help="The company's RED-lock grace period in minutes, for the live countdown widget. Not stored."
+    )
+
+    @api.depends('team_id.x_bu_category', 'company_id.grace_time')
+    def _compute_x_countdown_info(self):
+        for lead in self:
+            lead.x_has_red_lock = lead.team_id.x_bu_category in MZ_ACTIVITY_CARD_BU_CATEGORIES
+            lead.x_grace_minutes = self._mz_grace_minutes(lead.company_id)
+
     x_is_locked = fields.Boolean(
         string="RED Lock Active",
         default=False,

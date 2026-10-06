@@ -45,6 +45,9 @@ Mazenet CRM - Pipeline Customizations
             'mazenet_crm/static/src/css/search_panel_toggle.css',
             'mazenet_crm/static/src/xml/search_panel_toggle_icon.xml',
             'mazenet_crm/static/src/js/search_panel_team_all_count.js',
+            'mazenet_crm/static/src/css/mz_countdown.css',
+            'mazenet_crm/static/src/js/mz_countdown.js',
+            'mazenet_crm/static/src/xml/mz_countdown.xml',
         ],
     },
     'demo': [

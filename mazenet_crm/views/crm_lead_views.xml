@@ -191,6 +191,11 @@
                         <i class="fa fa-lock me-1" title="RED Lock"/>
                         <b>RED LOCKED</b> - this lead is overdue and read-only until released.
                     </div>
+                    <field name="x_next_activity_datetime" invisible="1"/>
+                    <field name="x_grace_minutes" invisible="1"/>
+                    <field name="x_has_red_lock" invisible="1"/>
+                    <!-- Live countdown to the next activity's due moment, then to the RED lock -->
+                    <div class="px-3 py-1"><widget name="mz_countdown"/></div>
                     <div class="alert alert-secondary mb-0" role="alert" invisible="not x_team_transfer_readonly">
                         <i class="fa fa-arrow-right-arrow-left me-1" title="Transferred"/>
                         <b>TRANSFERRED</b> - this lead has moved to another Sales Team and is read-only for you.
@@ -1273,6 +1278,9 @@
                     <field name="activity_state"/>
                     <field name="x_activity_card_state"/>
                     <field name="x_team_transfer_readonly"/>
+                    <field name="x_next_activity_datetime"/>
+                    <field name="x_grace_minutes"/>
+                    <field name="x_has_red_lock"/>
                 </xpath>
                 <xpath expr="//t[@t-name='card']/*[1]" position="before">
                     <!-- Small corner ribbon + a subtle tint/border (via kanban_red.css, keyed off
@@ -1310,6 +1318,9 @@
                     <span t-if="record.x_source_team_id.raw_value" class="badge rounded-pill text-bg-info me-1">
                         From <field name="x_source_team_id"/>
                     </span>
+                    <!-- Live countdown to the lead's NEXT (earliest) activity - the same one
+                         the card colour and the RED lock follow - then to the lock itself. -->
+                    <div class="mt-1"><widget name="mz_countdown"/></div>
                 </xpath>
             </field>
         </record>
@@ -1600,4 +1611,19 @@
             </field>
         </record>
     </data>
+
+    <!-- Live countdown column in the Activity Overview list (Settings > Technical >
+         Activities), same badge as the Pipeline card / lead form / chatter. Blank for
+         non-lead activities, done activities and the RED lock's own notice to-dos. -->
+    <record id="mail_activity_view_tree_mz_countdown" model="ir.ui.view">
+        <field name="name">mail.activity.view.list.mz.countdown</field>
+        <field name="model">mail.activity</field>
+        <field name="inherit_id" ref="mail.mail_activity_view_tree"/>
+        <field name="arch" type="xml">
+            <field name="date_deadline" position="after">
+                <widget name="mz_activity_countdown"/>
+            </field>
+        </field>
+    </record>
+
 </odoo>
