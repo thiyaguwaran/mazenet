@@ -1049,8 +1049,11 @@
                             <group string="Stage 7 - Content Availability in LMS">
                                 <field name="x_lms_training_weeks"/>
                             </group>
+                            <!-- Rows are generated from the Training Duration dates
+                                 (_mz_sync_lms_weeks) - users can only tick the checkboxes,
+                                 not add or delete week lines by hand (client instruction). -->
                             <field name="x_lms_week_ids" nolabel="1" colspan="2">
-                                <list editable="bottom">
+                                <list editable="bottom" create="0" delete="0">
                                     <field name="week_number" readonly="1" string="Week"/>
                                     <field name="kt_uploaded"/>
                                     <field name="skill_uploaded"/>
