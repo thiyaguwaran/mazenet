@@ -65,7 +65,7 @@ SYSTEM_FIELDS = {
     "message_needaction_counter", "message_is_follower", "message_partner_ids", "activity_state",
     "activity_user_id", "activity_type_id", "activity_date_deadline", "activity_summary",
     "activity_exception_type", "activity_exception_decoration", "active",
-    "x_is_locked", "x_lock_date", "x_activity_card_state",
+    "x_is_locked", "x_lock_date", "x_lock_released_at", "x_activity_card_state",
 }
 
 # M3: mandatory-field-on-stage-change gate (Mazenet_CRM_M2_Build_Tasks.xlsx's per-stage
@@ -1330,6 +1330,15 @@ class CrmLead(models.Model):
     x_lock_date = fields.Datetime(
         string="RED Lock Date",
         help="Timestamp when RED lock was triggered."
+    )
+
+    x_lock_released_at = fields.Datetime(
+        string="RED Lock Released At",
+        copy=False,
+        help="When the RED lock was last released. The lock cron treats it as a fresh start: "
+             "the lead can't re-lock until the company's Grace Time (res.company.grace_time) "
+             "has passed since this moment, so the owner gets the same grace window to "
+             "finish or reschedule the overdue activity."
     )
 
     x_content_readonly_for_me = fields.Boolean(
@@ -3018,7 +3027,11 @@ class CrmLead(models.Model):
         until something re-triggers the compute - a new/edited/completed activity
         (@api.depends), or ir_cron_mz_recompute_activity_card_state if
         x_next_activity_datetime is still within its 1-day window by then - at
-        which point it naturally resumes the ordinary countdown."""
+        which point it naturally resumes the ordinary countdown.
+
+        Stamps x_lock_released_at too: the overdue activity is still open, so the lock
+        cron would otherwise re-lock the lead on its very next tick. With the stamp it
+        waits out a fresh company Grace Time (res.company.grace_time) first."""
         for lead in self:
             if not lead.can_user_release_lock():
                 raise AccessError(_(
@@ -3026,7 +3039,11 @@ class CrmLead(models.Model):
                     "the owner's Team Lead/Manager (or CTO/Admin) can release it."
                 ) % lead.name)
 
-            lead.write({'x_is_locked': False, 'x_lock_date': False})
+            lead.write({
+                'x_is_locked': False,
+                'x_lock_date': False,
+                'x_lock_released_at': fields.Datetime.now(),
+            })
             lead.write({'x_activity_card_state': 'green'})
             lead.message_post(body=_("RED lock released by %s. Lead is editable again.") % self.env.user.name)
 
@@ -3271,6 +3288,9 @@ class CrmLead(models.Model):
                 ('company_id', '=', company.id),
                 ('x_next_activity_datetime', '!=', False),
                 ('x_next_activity_datetime', '<', cutoff),
+                # After a release the lead gets a fresh grace window: the overdue activity is
+                # still open, so without this it would re-lock on the very next cron tick.
+                '|', ('x_lock_released_at', '=', False), ('x_lock_released_at', '<', cutoff),
                 ('x_is_locked', '=', False),
                 ('active', '=', True),
                 ('user_id', '!=', False),

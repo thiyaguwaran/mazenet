@@ -54,6 +54,7 @@ export class MzCountdown extends Component {
     static template = "mazenet_crm.MzCountdown";
     static props = {
         due: { optional: true }, // luxon DateTime, or falsy when there's no activity
+        released: { optional: true }, // luxon DateTime of the last RED-lock release, if any
         graceMinutes: { type: Number, optional: true },
         hasRedLock: { type: Boolean, optional: true },
         locked: { type: Boolean, optional: true },
@@ -80,7 +81,9 @@ export class MzCountdown extends Component {
         if (!hasRedLock) {
             return { cls: "mz-cd-red", icon: "fa-exclamation-circle", text: `Overdue ${formatDuration(over)}` };
         }
-        const left = (this.props.graceMinutes || 0) * 60 - over;
+        // A release restarts the grace window, so the lock moment is the later of the two.
+        const start = this.props.released ? Math.max(due.toMillis(), this.props.released.toMillis()) : due.toMillis();
+        const left = Math.floor((start - this.ticker.now) / 1000) + (this.props.graceMinutes || 0) * 60;
         if (left > 0) {
             return {
                 cls: "mz-cd-orange",
@@ -110,6 +113,7 @@ registry.category("view_widgets").add("mz_countdown", {
         { name: "x_grace_minutes", type: "integer" },
         { name: "x_has_red_lock", type: "boolean" },
         { name: "x_is_locked", type: "boolean" },
+        { name: "x_lock_released_at", type: "datetime" },
     ],
 });
 
@@ -130,6 +134,7 @@ registry.category("view_widgets").add("mz_activity_countdown", {
         { name: "mz_due_datetime", type: "datetime" },
         { name: "mz_grace_minutes", type: "integer" },
         { name: "mz_has_red_lock", type: "boolean" },
+        { name: "mz_lock_released_at", type: "datetime" },
         { name: "active", type: "boolean" },
     ],
 });
@@ -141,6 +146,7 @@ patch(ActivityModel.prototype, {
         this.mz_due_datetime = fields.Datetime();
         this.mz_has_red_lock = fields.Attr(false);
         this.mz_grace_minutes = fields.Attr(0);
+        this.mz_lock_released_at = fields.Datetime();
         this.mz_is_lock_notice = fields.Attr(false);
     },
 });

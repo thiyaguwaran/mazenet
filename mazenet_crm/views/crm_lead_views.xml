@@ -194,6 +194,7 @@
                     <field name="x_next_activity_datetime" invisible="1"/>
                     <field name="x_grace_minutes" invisible="1"/>
                     <field name="x_has_red_lock" invisible="1"/>
+                    <field name="x_lock_released_at" invisible="1"/>
                     <!-- Live countdown to the next activity's due moment, then to the RED lock -->
                     <div class="px-3 py-1"><widget name="mz_countdown"/></div>
                     <div class="alert alert-secondary mb-0" role="alert" invisible="not x_team_transfer_readonly">
@@ -1284,6 +1285,7 @@
                     <field name="x_next_activity_datetime"/>
                     <field name="x_grace_minutes"/>
                     <field name="x_has_red_lock"/>
+                    <field name="x_lock_released_at"/>
                 </xpath>
                 <xpath expr="//t[@t-name='card']/*[1]" position="before">
                     <!-- Small corner ribbon + a subtle tint/border (via kanban_red.css, keyed off
