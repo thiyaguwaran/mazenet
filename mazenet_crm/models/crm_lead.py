@@ -308,6 +308,9 @@ MZ_WON_GATE_RULES = {
 class CrmLead(models.Model):
     _inherit = "crm.lead"
 
+    skill_type_id = fields.Many2one('skill.type',
+    string="Skill",copy=False,ondelete="cascade")
+
     x_next_activity_datetime = fields.Datetime(
         string="Next Activity Time",
         compute="_compute_x_next_activity_datetime",

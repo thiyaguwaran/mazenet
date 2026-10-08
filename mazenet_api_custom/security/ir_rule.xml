@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="api_server_details_company_rule" model="ir.rule">
+        <field name="name">API Server Details: multi-company</field>
+        <field name="model_id" ref="model_api_server_details"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
+</odoo>
