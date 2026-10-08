@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- List View -->
+    <record id="view_skill_type_list" model="ir.ui.view">
+        <field name="name">skill.type.list</field>
+        <field name="model">skill.type</field>
+        <field name="arch" type="xml">
+            <list string="Skill Type" editable="bottom" >
+                <field name="name"/>
+                <field name="company_id" optional="hide" readonly="1"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Action -->
+    <record id="action_skill_type" model="ir.actions.act_window">
+        <field name="name">Many2One Fields Restrict</field>
+        <field name="res_model">skill.type</field>
+        <field name="view_mode">list</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Add a model to restrict
+            </p>
+            <p>
+                Every many2one field pointing to the chosen model loses its open-record link, except for the users in the exempt groups.
+            </p>
+        </field>
+    </record>
+
+    <!-- Menu: Settings > Users &amp; Companies > Notifications -->
+    <menuitem id="menu_skill_type_main"
+              name="Skill Type"
+              parent="crm.crm_menu_config"
+              action="action_skill_type"
+              sequence="100"/>
+
+</odoo>

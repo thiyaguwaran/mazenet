@@ -19,6 +19,12 @@
              domain_force's own runtime-eval context (which only has `user`).
         ================================================================= -->
 
+        <record id="skill_type_company_rule" model="ir.rule">
+            <field name="name">Skill type: multi-company</field>
+            <field name="model_id" ref="model_skill_type"/>
+            <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+        </record>
+
         <!-- dmt: base tier (view/create team-wide) -->
         <record id="rule_crm_lead_dmt_base" model="ir.rule">
             <field name="name">Mazenet CRM Lead: dmt (Team View/Create)</field>
