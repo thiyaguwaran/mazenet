@@ -1,0 +1,12 @@
+/* Live countdown badge (mz_countdown widget / chatter activity row). Colours follow the
+   Pipeline card states: green > 30 min, yellow 30-10 min, orange last 10 min and the
+   lock window, red once overdue/locked. */
+.mz-countdown {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    color: #fff;
+}
+.mz-countdown.mz-cd-green  { background-color: #2e9e5b; }
+.mz-countdown.mz-cd-yellow { background-color: #e0a800; color: #1f1f1f; }
+.mz-countdown.mz-cd-orange { background-color: #e8710a; }
+.mz-countdown.mz-cd-red    { background-color: #c0392b; }

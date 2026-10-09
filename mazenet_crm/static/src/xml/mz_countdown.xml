@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+<t t-name="mazenet_crm.MzCountdown">
+    <t t-set="cd" t-value="info"/>
+    <span t-if="cd" class="mz-countdown badge rounded-pill" t-att-class="cd.cls">
+        <i class="fa me-1" t-att-class="cd.icon"/><t t-out="cd.text"/>
+    </span>
+</t>
+
+<t t-name="mazenet_crm.MzCountdownWidget">
+    <MzCountdown due="data.x_next_activity_datetime"
+                 released="data.x_lock_released_at"
+                 graceMinutes="data.x_grace_minutes"
+                 hasRedLock="data.x_has_red_lock"
+                 locked="data.x_is_locked"/>
+</t>
+
+<t t-name="mazenet_crm.MzActivityCountdownWidget">
+    <MzCountdown t-if="data.active !== false and data.mz_due_datetime"
+                 due="data.mz_due_datetime"
+                 released="data.mz_lock_released_at"
+                 graceMinutes="data.mz_grace_minutes"
+                 hasRedLock="data.mz_has_red_lock"/>
+</t>
+
+<!-- Chatter activity row: countdown under the "Today: Call for X" line. Skipped for
+     activities with no due moment (non-lead, or the RED lock's own notice to-dos). -->
+<t t-inherit="mail.Activity" t-inherit-mode="extension">
+    <xpath expr="//div[hasclass('o-mail-Activity-info')]" position="after">
+        <div t-if="props.activity.mz_due_datetime and !props.activity.mz_is_lock_notice" class="mb-1">
+            <MzCountdown due="props.activity.mz_due_datetime"
+                         released="props.activity.mz_lock_released_at"
+                         graceMinutes="props.activity.mz_grace_minutes"
+                         hasRedLock="props.activity.mz_has_red_lock"/>
+        </div>
+    </xpath>
+</t>
+
+</templates>

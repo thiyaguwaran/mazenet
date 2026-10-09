@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- List -->
+    <record id="view_api_server_details_list" model="ir.ui.view">
+        <field name="name">api.server.details.list</field>
+        <field name="model">api.server.details</field>
+        <field name="arch" type="xml">
+            <list string="Server Details">
+                <field name="name"/>
+                <field name="server_type" widget="badge"/>
+                <field name="host"/>
+                <field name="port"/>
+                <field name="auth_type"/>
+                <field name="company_id" groups="base.group_multi_company" optional="show"/>
+                <field name="active" widget="boolean_toggle"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Form -->
+    <record id="view_api_server_details_form" model="ir.ui.view">
+        <field name="name">api.server.details.form</field>
+        <field name="model">api.server.details</field>
+        <field name="arch" type="xml">
+            <form string="Server Details">
+                <sheet>
+                    <widget name="web_ribbon" title="Archived" bg_color="text-bg-danger" invisible="active"/>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1><field name="name" placeholder="e.g. Partner SFTP"/></h1>
+                    </div>
+                    <group>
+                        <group string="General">
+                            <field name="server_type"/>
+                            <field name="company_id" groups="base.group_multi_company"/>
+                            <field name="active"/>
+                        </group>
+                        <group string="Connection">
+                            <field name="host" placeholder="api.example.com"/>
+                            <field name="port"/>
+                            <field name="use_ssl" invisible="server_type not in ('rest_api', 'soap')"/>
+                            <field name="verify_ssl" invisible="server_type not in ('rest_api', 'soap') or not use_ssl"/>
+                            <field name="timeout"/>
+                            <field name="base_url"/>
+                        </group>
+                    </group>
+                    <group string="Authentication">
+                        <group>
+                            <field name="auth_type"/>
+                            <field name="user_name" invisible="auth_type not in ('basic', 'ssh_key')"/>
+                            <field name="password" password="True" invisible="auth_type != 'basic'"/>
+                        </group>
+                        <group>
+                            <field name="api_key_header" invisible="auth_type != 'api_key'"/>
+                            <field name="api_key" password="True" invisible="auth_type != 'api_key'"/>
+                            <field name="token" password="True" invisible="auth_type != 'bearer'"/>
+                        </group>
+                    </group>
+                    <group invisible="auth_type != 'ssh_key'">
+                        <field name="private_key" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"/>
+                    </group>
+                    <notebook>
+                        <page string="Notes" name="notes">
+                            <field name="notes" placeholder="Anything useful about this server..."/>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Search -->
+    <record id="view_api_server_details_search" model="ir.ui.view">
+        <field name="name">api.server.details.search</field>
+        <field name="model">api.server.details</field>
+        <field name="arch" type="xml">
+            <search string="Server Details">
+                <field name="name"/>
+                <field name="host"/>
+                <filter name="filter_rest" string="REST API" domain="[('server_type', '=', 'rest_api')]"/>
+                <filter name="filter_sftp" string="SFTP" domain="[('server_type', '=', 'sftp')]"/>
+                <separator/>
+                <filter name="filter_inactive" string="Archived" domain="[('active', '=', False)]"/>
+                <group>
+                    <filter name="group_server_type" string="Server Type" context="{'group_by': 'server_type'}"/>
+                    <filter name="group_auth_type" string="Authentication" context="{'group_by': 'auth_type'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- Action -->
+    <record id="action_api_server_details" model="ir.actions.act_window">
+        <field name="name">Server Details</field>
+        <field name="res_model">api.server.details</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Add your first server</p>
+            <p>Keep the host, port and authentication details needed to connect to an external server.</p>
+        </field>
+    </record>
+
+    <!-- Menu: inside the API menu -->
+    <menuitem id="menu_api_server_details" name="Server Details" parent="menu_api_root"
+              action="action_api_server_details" sequence="20"/>
+
+</odoo>
