@@ -1293,8 +1293,8 @@
                          the .mz-red-locked-card marker) - the card's own content stays visible.
                          A previous version covered the whole card with a solid red block; that
                          read as too aggressive for a simple overdue/locked indicator. -->
-                    <widget name="web_ribbon" id="mz_red_lock_ribbon" title="Overdue" bg_color="text-bg-danger" invisible="not x_is_locked and activity_state != 'overdue'"/>
-                    <span t-if="record.x_is_locked.raw_value or record.activity_state.raw_value == 'overdue'" class="mz-red-locked-card d-none"/>
+                    <widget name="web_ribbon" id="mz_red_lock_ribbon" title="Overdue" bg_color="text-bg-danger" invisible="not x_is_locked"/>
+                    <span t-if="record.x_is_locked.raw_value" class="mz-red-locked-card d-none"/>
                     <!-- Client instruction (2026-09-21) - x_activity_card_state
                          (crm_lead.py), a 4-stage countdown to the lead's next activity:
                          GREEN = activity scheduled (more than 30 min away), YELLOW =
