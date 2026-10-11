@@ -309,7 +309,7 @@ class CrmLead(models.Model):
     _inherit = "crm.lead"
 
     skill_type_id = fields.Many2one('skill.type',
-    string="Skill",copy=False,ondelete="cascade")
+    string="Skill",copy=False,ondelete="cascade",domain="[('team_id', '=', team_id)]")
 
     x_next_activity_datetime = fields.Datetime(
         string="Next Activity Time",
