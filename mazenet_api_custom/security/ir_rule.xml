@@ -5,4 +5,9 @@
         <field name="model_id" ref="model_api_server_details"/>
         <field name="domain_force">[('company_id', 'in', company_ids)]</field>
     </record>
+    <record id="api_log_company_rule" model="ir.rule">
+        <field name="name">API Log: multi-company</field>
+        <field name="model_id" ref="model_api_log"/>
+        <field name="domain_force">['|', ('company_id', '=', False), ('company_id', 'in', company_ids)]</field>
+    </record>
 </odoo>

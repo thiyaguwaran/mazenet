@@ -13,7 +13,8 @@ class SkillType(models.Model):
         'res.company',string="company",required=True,
         default=lambda self: self.env.company,ondelete="cascade")
     team_id = fields.Many2one(
-            'crm.team',string="Team",required=True,ondelete="cascade")
+            'crm.team',string="Team",ondelete="set null")
+    bu_id = fields.Integer(string="BU ID",required=True)
 
     @api.constrains('name', 'short_name', 'team_id')
     def check_unique(self):
@@ -28,7 +29,6 @@ class SkillType(models.Model):
                     "A record with name '%(name)s' and short name '%(short)s' "
                     "already exists for team '%(team)s'.",name=rec.name,
                     short=rec.short_name,team=rec.team_id.display_name,))
-
 
 
 

@@ -622,6 +622,7 @@
                                 </div>
                             </group>
                             <group string="Stage 4 - Quote">
+                                <field name="skill_type_id"/>
                                 <label for="x_quote_document_ids"/>
                                 <div class="o_row">
                                     <field name="x_quote_document_ids" widget="many2many_binary"/>

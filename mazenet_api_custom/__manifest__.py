@@ -11,12 +11,13 @@
     """,
     'author': 'Mazenet Tech / Development Team',
     'website': 'https://www.mazenet.com',
-    'depends': ['base'],
+    'depends': ['base', 'mazenet_crm'],
     'data': [
         'security/ir.model.access.csv',
         'security/ir_rule.xml',
         'views/api_configuration_views.xml',
         'views/server_details_views.xml',
+        'views/api_log_views.xml',
     ],
     'assets': {
         'web.assets_backend': [],

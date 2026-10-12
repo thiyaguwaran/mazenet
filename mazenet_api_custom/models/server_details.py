@@ -1,9 +1,7 @@
 # -*- coding: utf-8 -*-
 from odoo import _, api, fields, models
 from odoo.exceptions import ValidationError
-
 DEFAULT_PORTS = {'sftp': 22, 'ftp': 21, 'soap': 443, 'rest_api': 443}
-
 
 class ApiServerDetails(models.Model):
     _name = 'api.server.details'
@@ -51,7 +49,6 @@ class ApiServerDetails(models.Model):
     api_key_header = fields.Char(string='API Key Header', default='X-API-Key')
     token = fields.Char(string='Bearer Token')
     private_key = fields.Text(string='SSH Private Key')
-
     notes = fields.Text(string='Notes')
 
     _name_company_uniq = models.Constraint(
@@ -59,7 +56,10 @@ class ApiServerDetails(models.Model):
 
     @api.depends('server_type', 'use_ssl')
     def _compute_port(self):
+        usual_ports = {0, 21, 22, 80, 443}
         for rec in self:
+            if rec.port not in usual_ports:
+                continue                  
             if rec.server_type == 'rest_api':
                 rec.port = 443 if rec.use_ssl else 80
             else:
@@ -89,3 +89,20 @@ class ApiServerDetails(models.Model):
         for rec in self:
             if rec.timeout < 0:
                 raise ValidationError(_("The timeout cannot be negative."))
+
+    # api header ########################
+    def _get_headers(self):
+        self.ensure_one()
+        headers = {"Content-Type": "application/json", "Accept": "application/json"}
+        if self.auth_type == "bearer" and self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+        elif self.auth_type == "api_key" and self.api_key:
+            headers[self.api_key_header or "X-API-Key"] = self.api_key
+        return headers
+
+    def _get_auth(self):
+        """ (user name, password) for HTTP Basic authentication, otherwise None. """
+        self.ensure_one()
+        if self.auth_type == "basic" and self.user_name:
+            return (self.user_name, self.password or "")
+        return None
