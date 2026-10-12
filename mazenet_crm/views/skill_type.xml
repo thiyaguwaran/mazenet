@@ -6,10 +6,10 @@
         <field name="name">skill.type.list</field>
         <field name="model">skill.type</field>
         <field name="arch" type="xml">
-            <list string="Skill Type" editable="bottom" >
+            <list string="Skill Type" editable="bottom" create="0">
                 <field name="name"/>
                 <field name="short_name"/>
-                <field name="team_id"/>
+                <field name="team_id" required="1"/>
                 <field name="company_id" optional="hide" readonly="1"/>
             </list>
         </field>

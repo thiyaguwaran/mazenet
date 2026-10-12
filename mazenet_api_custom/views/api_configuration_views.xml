@@ -14,6 +14,9 @@
                        decoration-warning="direction == 'outgoing'"/>
                 <field name="http_method" widget="badge"/>
                 <field name="operation_type" widget="badge"/>
+                <field name="state" widget="badge"
+                       decoration-success="state == 'success'" decoration-danger="state == 'failed'"/>
+                <field name="last_sync" optional="show"/>
                 <field name="active" widget="boolean_toggle"/>
             </list>
         </field>
@@ -25,8 +28,18 @@
         <field name="model">api.configuration</field>
         <field name="arch" type="xml">
             <form string="API Configuration">
-                <sheet>
+                <header>
+                    <button name="sync_data" string="Sync" type="object" class="btn-primary"
+                            invisible="direction != 'outgoing'"/>
+                    <field name="state" widget="statusbar" statusbar_visible="draft,success,failed"/>
+                </header>
+                <sheet>  
                     <widget name="web_ribbon" title="Archived" bg_color="text-bg-danger" invisible="active"/>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_view_logs" type="object" class="oe_stat_button" icon="fa-list">
+                            <field name="log_count" widget="statinfo" string="Logs"/>
+                        </button>
+                    </div>
                     <div class="oe_title">
                         <label for="name"/>
                         <h1><field name="name" placeholder="e.g. Create CRM lead"/></h1>
@@ -34,13 +47,19 @@
                     <group>
                         <group string="Endpoint">
                             <field name="direction" widget="radio" options="{'horizontal': true}"/>
+                            <field name="server_id" placeholder="Select the Server...."/>
                             <field name="route" placeholder="/api/v1/leads"/>
+                            <field name="payload" placeholder="Paste a valid json data !!!"/>
                         </group>
                         <group string="Request">
                             <field name="http_method"/>
                             <field name="operation_type"/>
+                            <field name="save_in" invisible="direction != 'outgoing'"/>
                             <field name="active"/>
                         </group>
+                    </group>
+                    <group string="Last sync" invisible="state == 'draft'">
+                        <field name="last_sync"/>
                     </group>
                 </sheet>
             </form>
