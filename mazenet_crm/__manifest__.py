@@ -49,6 +49,8 @@ Mazenet CRM - Pipeline Customizations
             'mazenet_crm/static/src/css/mz_countdown.css',
             'mazenet_crm/static/src/js/mz_countdown.js',
             'mazenet_crm/static/src/xml/mz_countdown.xml',
+            'mazenet_crm/static/src/js/mz_attachment_datetime.js',
+            'mazenet_crm/static/src/xml/mz_attachment_datetime.xml',
         ],
     },
     'demo': [

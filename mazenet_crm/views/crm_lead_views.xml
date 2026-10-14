@@ -347,7 +347,7 @@
                                 </div>
                                 <label for="x_requirements_attachment_ids"/>
                                 <div class="o_row">
-                                    <field name="x_requirements_attachment_ids" widget="many2many_binary"/>
+                                    <field name="x_requirements_attachment_ids" widget="mz_many2many_binary"/>
                                     <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_requirements_attachment_ids,' in x_current_stage_gate_fields)">*</span>
                                 </div>
                             </group>
@@ -359,7 +359,7 @@
                                 </div>
                                 <label for="x_quote_document_ids"/>
                                 <div class="o_row">
-                                    <field name="x_quote_document_ids" widget="many2many_binary"/>
+                                    <field name="x_quote_document_ids" widget="mz_many2many_binary"/>
                                     <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_quote_document_ids,' in x_current_stage_gate_fields)">*</span>
                                 </div>
                             </group>
@@ -373,9 +373,9 @@
                             </group>
                             <group string="Stage 7 - Project State">
                                 <field name="x_project_start_date"/>
-                                <field name="x_project_start_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_project_start_attachment_ids" widget="mz_many2many_binary"/>
                                 <field name="x_project_completed_date"/>
-                                <field name="x_project_completed_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_project_completed_attachment_ids" widget="mz_many2many_binary"/>
                                 <field name="x_workorder_completion_date"/>
                                 <field name="x_deviation_days"/>
                             </group>
@@ -421,19 +421,19 @@
                                 </div>
                                 <label for="x_requirements_attachment_ids"/>
                                 <div class="o_row">
-                                    <field name="x_requirements_attachment_ids" widget="many2many_binary"/>
+                                    <field name="x_requirements_attachment_ids" widget="mz_many2many_binary"/>
                                     <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_requirements_attachment_ids,' in x_current_stage_gate_fields)">*</span>
                                 </div>
                             </group>
                             <group string="Stage 4 - Quote">
                                 <label for="x_bom_attachment_ids"/>
                                 <div class="o_row">
-                                    <field name="x_bom_attachment_ids" widget="many2many_binary"/>
+                                    <field name="x_bom_attachment_ids" widget="mz_many2many_binary"/>
                                     <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_bom_attachment_ids,' in x_current_stage_gate_fields)">*</span>
                                 </div>
                                 <label for="x_boq_attachment_ids"/>
                                 <div class="o_row">
-                                    <field name="x_boq_attachment_ids" widget="many2many_binary"/>
+                                    <field name="x_boq_attachment_ids" widget="mz_many2many_binary"/>
                                     <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_boq_attachment_ids,' in x_current_stage_gate_fields)">*</span>
                                 </div>
                                 <label for="x_quote_shared_checkbox"/>
@@ -453,7 +453,7 @@
                                 </div>
                                 <label for="x_quote_document_ids"/>
                                 <div class="o_row">
-                                    <field name="x_quote_document_ids" widget="many2many_binary"/>
+                                    <field name="x_quote_document_ids" widget="mz_many2many_binary"/>
                                     <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_quote_document_ids,' in x_current_stage_gate_fields)">*</span>
                                 </div>
                             </group>
@@ -467,9 +467,9 @@
                             </group>
                             <group string="Stage 7 - Project State">
                                 <field name="x_project_start_date"/>
-                                <field name="x_project_start_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_project_start_attachment_ids" widget="mz_many2many_binary"/>
                                 <field name="x_project_completed_date"/>
-                                <field name="x_project_completed_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_project_completed_attachment_ids" widget="mz_many2many_binary"/>
                                 <field name="x_workorder_completion_date"/>
                                 <field name="x_deviation_days"/>
                             </group>
@@ -524,7 +524,7 @@
                                 </div>
                                 <label for="x_system_study_attachment_ids"/>
                                 <div class="o_row">
-                                    <field name="x_system_study_attachment_ids" widget="many2many_binary"/>
+                                    <field name="x_system_study_attachment_ids" widget="mz_many2many_binary"/>
                                     <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_system_study_attachment_ids,' in x_current_stage_gate_fields)">*</span>
                                 </div>
                                 <label for="x_feasibility"/>
@@ -547,7 +547,7 @@
                                 </div>
                                 <label for="x_quote_document_ids"/>
                                 <div class="o_row">
-                                    <field name="x_quote_document_ids" widget="many2many_binary"/>
+                                    <field name="x_quote_document_ids" widget="mz_many2many_binary"/>
                                     <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_quote_document_ids,' in x_current_stage_gate_fields)">*</span>
                                 </div>
                             </group>
@@ -555,9 +555,9 @@
                             </group>
                             <group string="Stage 6 - Project State">
                                 <field name="x_project_start_date"/>
-                                <field name="x_project_start_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_project_start_attachment_ids" widget="mz_many2many_binary"/>
                                 <field name="x_project_completed_date"/>
-                                <field name="x_project_completed_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_project_completed_attachment_ids" widget="mz_many2many_binary"/>
                                 <field name="x_workorder_completion_date"/>
                                 <field name="x_deviation_days"/>
                             </group>
@@ -595,7 +595,7 @@
                                 </div>
                                 <label for="x_requirements_attachment_ids"/>
                                 <div class="o_row">
-                                    <field name="x_requirements_attachment_ids" widget="many2many_binary" string="Client Expectations Attachment"/>
+                                    <field name="x_requirements_attachment_ids" widget="mz_many2many_binary" string="Client Expectations Attachment"/>
                                     <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_requirements_attachment_ids,' in x_current_stage_gate_fields)">*</span>
                                 </div>
                             </group>
@@ -607,7 +607,7 @@
                                 </div>
                                 <label for="x_system_study_attachment_ids"/>
                                 <div class="o_row">
-                                    <field name="x_system_study_attachment_ids" widget="many2many_binary"/>
+                                    <field name="x_system_study_attachment_ids" widget="mz_many2many_binary"/>
                                     <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_system_study_attachment_ids,' in x_current_stage_gate_fields)">*</span>
                                 </div>
                                 <label for="x_feasibility"/>
@@ -625,7 +625,7 @@
                                 <field name="skill_type_id"/>
                                 <label for="x_quote_document_ids"/>
                                 <div class="o_row">
-                                    <field name="x_quote_document_ids" widget="many2many_binary"/>
+                                    <field name="x_quote_document_ids" widget="mz_many2many_binary"/>
                                     <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_quote_document_ids,' in x_current_stage_gate_fields)">*</span>
                                 </div>
                             </group>
@@ -633,9 +633,9 @@
                             </group>
                             <group string="Stage 6 - Project State">
                                 <field name="x_project_start_date"/>
-                                <field name="x_project_start_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_project_start_attachment_ids" widget="mz_many2many_binary"/>
                                 <field name="x_project_completed_date"/>
-                                <field name="x_project_completed_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_project_completed_attachment_ids" widget="mz_many2many_binary"/>
                                 <field name="x_workorder_completion_date"/>
                                 <field name="x_deviation_days"/>
                             </group>
@@ -659,7 +659,7 @@
                             <group string="Stage 2 - Lead Validation">
                                 <label for="x_client_expectations_attachment_ids"/>
                                 <div class="o_row">
-                                    <field name="x_client_expectations_attachment_ids" widget="many2many_binary"/>
+                                    <field name="x_client_expectations_attachment_ids" widget="mz_many2many_binary"/>
                                     <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_client_expectations_attachment_ids,' in x_current_stage_gate_fields)">*</span>
                                 </div>
                                 <label for="x_product_service"/>
@@ -693,7 +693,7 @@
                             <group string="Stage 4 - Proposal &amp; Follow-up's">
                                 <label for="x_quote_document_ids"/>
                                 <div class="o_row">
-                                    <field name="x_quote_document_ids" widget="many2many_binary" string="Quote Shared (Tagged Quotation)"/>
+                                    <field name="x_quote_document_ids" widget="mz_many2many_binary" string="Quote Shared (Tagged Quotation)"/>
                                     <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_quote_document_ids,' in x_current_stage_gate_fields)">*</span>
                                 </div>
                             </group>
@@ -731,22 +731,22 @@
                                 <div class="o_row">
                                     <field name="x_po_received_date"/>
                                 </div>
-                                <field name="x_po_received_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_po_received_attachment_ids" widget="mz_many2many_binary"/>
                                 <label for="x_po_issued_trainer_date"/>
                                 <div class="o_row">
                                     <field name="x_po_issued_trainer_date"/>
                                 </div>
-                                <field name="x_po_issued_trainer_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_po_issued_trainer_attachment_ids" widget="mz_many2many_binary"/>
                             </group>
                             <group string="Stage 7 - Project State">
                                 <field name="x_training_commenced_date"/>
-                                <field name="x_training_commenced_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_training_commenced_attachment_ids" widget="mz_many2many_binary"/>
                                 <field name="x_training_completed_date"/>
-                                <field name="x_training_completed_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_training_completed_attachment_ids" widget="mz_many2many_binary"/>
                                 <field name="x_project_start_date"/>
-                                <field name="x_project_start_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_project_start_attachment_ids" widget="mz_many2many_binary"/>
                                 <field name="x_project_completed_date"/>
-                                <field name="x_project_completed_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_project_completed_attachment_ids" widget="mz_many2many_binary"/>
                                 <field name="x_workorder_completion_date"/>
                                 <field name="x_deviation_days"/>
                             </group>
@@ -764,7 +764,7 @@
                             <group string="Stage 2 - Lead Validation">
                                 <label for="x_client_expectations_attachment_ids"/>
                                 <div class="o_row">
-                                    <field name="x_client_expectations_attachment_ids" widget="many2many_binary"/>
+                                    <field name="x_client_expectations_attachment_ids" widget="mz_many2many_binary"/>
                                     <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_client_expectations_attachment_ids,' in x_current_stage_gate_fields)">*</span>
                                 </div>
                                 <label for="x_product_service"/>
@@ -798,7 +798,7 @@
                             <group string="Stage 4 - Proposal &amp; Follow-up's">
                                 <label for="x_quote_document_ids"/>
                                 <div class="o_row">
-                                    <field name="x_quote_document_ids" widget="many2many_binary" string="Quote Shared (Tagged Quotation)"/>
+                                    <field name="x_quote_document_ids" widget="mz_many2many_binary" string="Quote Shared (Tagged Quotation)"/>
                                     <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_quote_document_ids,' in x_current_stage_gate_fields)">*</span>
                                 </div>
                             </group>
@@ -836,22 +836,22 @@
                                 <div class="o_row">
                                     <field name="x_po_received_date"/>
                                 </div>
-                                <field name="x_po_received_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_po_received_attachment_ids" widget="mz_many2many_binary"/>
                                 <label for="x_po_issued_trainer_date"/>
                                 <div class="o_row">
                                     <field name="x_po_issued_trainer_date"/>
                                 </div>
-                                <field name="x_po_issued_trainer_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_po_issued_trainer_attachment_ids" widget="mz_many2many_binary"/>
                             </group>
                             <group string="Stage 7 - Project State">
                                 <field name="x_training_commenced_date"/>
-                                <field name="x_training_commenced_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_training_commenced_attachment_ids" widget="mz_many2many_binary"/>
                                 <field name="x_training_completed_date"/>
-                                <field name="x_training_completed_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_training_completed_attachment_ids" widget="mz_many2many_binary"/>
                                 <field name="x_project_start_date"/>
-                                <field name="x_project_start_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_project_start_attachment_ids" widget="mz_many2many_binary"/>
                                 <field name="x_project_completed_date"/>
-                                <field name="x_project_completed_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_project_completed_attachment_ids" widget="mz_many2many_binary"/>
                                 <field name="x_workorder_completion_date"/>
                                 <field name="x_deviation_days"/>
                             </group>
@@ -869,7 +869,7 @@
                             <group string="Stage 2 - Lead Validation">
                                 <label for="x_client_expectations_attachment_ids"/>
                                 <div class="o_row">
-                                    <field name="x_client_expectations_attachment_ids" widget="many2many_binary"/>
+                                    <field name="x_client_expectations_attachment_ids" widget="mz_many2many_binary"/>
                                     <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_client_expectations_attachment_ids,' in x_current_stage_gate_fields)">*</span>
                                 </div>
                                 <label for="x_product_service"/>
@@ -903,7 +903,7 @@
                             <group string="Stage 4 - Proposal &amp; Follow-up's">
                                 <label for="x_quote_document_ids"/>
                                 <div class="o_row">
-                                    <field name="x_quote_document_ids" widget="many2many_binary" string="Quote Shared (Tagged Quotation)"/>
+                                    <field name="x_quote_document_ids" widget="mz_many2many_binary" string="Quote Shared (Tagged Quotation)"/>
                                     <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_quote_document_ids,' in x_current_stage_gate_fields)">*</span>
                                 </div>
                             </group>
@@ -941,22 +941,22 @@
                                 <div class="o_row">
                                     <field name="x_po_received_date"/>
                                 </div>
-                                <field name="x_po_received_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_po_received_attachment_ids" widget="mz_many2many_binary"/>
                                 <label for="x_po_issued_trainer_date"/>
                                 <div class="o_row">
                                     <field name="x_po_issued_trainer_date"/>
                                 </div>
-                                <field name="x_po_issued_trainer_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_po_issued_trainer_attachment_ids" widget="mz_many2many_binary"/>
                             </group>
                             <group string="Stage 7 - Project State">
                                 <field name="x_training_commenced_date"/>
-                                <field name="x_training_commenced_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_training_commenced_attachment_ids" widget="mz_many2many_binary"/>
                                 <field name="x_training_completed_date"/>
-                                <field name="x_training_completed_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_training_completed_attachment_ids" widget="mz_many2many_binary"/>
                                 <field name="x_project_start_date"/>
-                                <field name="x_project_start_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_project_start_attachment_ids" widget="mz_many2many_binary"/>
                                 <field name="x_project_completed_date"/>
-                                <field name="x_project_completed_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_project_completed_attachment_ids" widget="mz_many2many_binary"/>
                                 <field name="x_workorder_completion_date"/>
                                 <field name="x_deviation_days"/>
                             </group>
@@ -978,7 +978,7 @@
                             <group string="Stage 2 - Lead Validation">
                                 <label for="x_client_expectations_attachment_ids"/>
                                 <div class="o_row">
-                                    <field name="x_client_expectations_attachment_ids" widget="many2many_binary"/>
+                                    <field name="x_client_expectations_attachment_ids" widget="mz_many2many_binary"/>
                                     <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_client_expectations_attachment_ids,' in x_current_stage_gate_fields)">*</span>
                                 </div>
                                 <label for="x_product_service"/>
@@ -1012,7 +1012,7 @@
                             <group string="Stage 4 - Proposal &amp; Follow-up's">
                                 <label for="x_quote_document_ids"/>
                                 <div class="o_row">
-                                    <field name="x_quote_document_ids" widget="many2many_binary" string="Quote Shared (Tagged Quotation)"/>
+                                    <field name="x_quote_document_ids" widget="mz_many2many_binary" string="Quote Shared (Tagged Quotation)"/>
                                     <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_quote_document_ids,' in x_current_stage_gate_fields)">*</span>
                                 </div>
                                 <div class="text-muted" colspan="2">
@@ -1066,13 +1066,13 @@
                             </field>
                             <group string="Stage 8 - Project State">
                                 <field name="x_training_commenced_date"/>
-                                <field name="x_training_commenced_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_training_commenced_attachment_ids" widget="mz_many2many_binary"/>
                                 <field name="x_training_completed_date"/>
-                                <field name="x_training_completed_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_training_completed_attachment_ids" widget="mz_many2many_binary"/>
                                 <field name="x_project_start_date"/>
-                                <field name="x_project_start_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_project_start_attachment_ids" widget="mz_many2many_binary"/>
                                 <field name="x_project_completed_date"/>
-                                <field name="x_project_completed_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_project_completed_attachment_ids" widget="mz_many2many_binary"/>
                                 <field name="x_workorder_completion_date"/>
                                 <field name="x_deviation_days"/>
                             </group>
@@ -1115,7 +1115,7 @@
                                 </div>
                                 <label for="x_tnh_meeting_attachment_ids"/>
                                 <div class="o_row">
-                                    <field name="x_tnh_meeting_attachment_ids" widget="many2many_binary"/>
+                                    <field name="x_tnh_meeting_attachment_ids" widget="mz_many2many_binary"/>
                                     <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_tnh_meeting_attachment_ids,' in x_current_stage_gate_fields)">*</span>
                                 </div>
                                 <label for="x_tnh_service_fte" string="Service"/>
@@ -1151,7 +1151,7 @@
                                 </div>
                                 <label for="x_quote_document_ids"/>
                                 <div class="o_row">
-                                    <field name="x_quote_document_ids" widget="many2many_binary" string="Quote / Proposal Attachment (Tagged)"/>
+                                    <field name="x_quote_document_ids" widget="mz_many2many_binary" string="Quote / Proposal Attachment (Tagged)"/>
                                 </div>
                             </group>
                             <group string="Stage 6 - Follow-up's">
@@ -1164,19 +1164,19 @@
                             <group string="Stage 7 - Agreement">
                                 <label for="x_tnh_agreement_doc_ids"/>
                                 <div class="o_row">
-                                    <field name="x_tnh_agreement_doc_ids" widget="many2many_binary"/>
+                                    <field name="x_tnh_agreement_doc_ids" widget="mz_many2many_binary"/>
                                     <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_tnh_agreement_doc_ids,' in x_current_stage_gate_fields)">*</span>
                                 </div>
-                                <field name="x_tnh_msa_attachment_ids" widget="many2many_binary"/>
-                                <field name="x_tnh_sow_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_tnh_msa_attachment_ids" widget="mz_many2many_binary"/>
+                                <field name="x_tnh_sow_attachment_ids" widget="mz_many2many_binary"/>
                             </group>
                             <group string="Stage 8 - Won / Lost">
                             </group>
                             <group string="Stage 9 - Project State">
                                 <field name="x_project_start_date"/>
-                                <field name="x_project_start_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_project_start_attachment_ids" widget="mz_many2many_binary"/>
                                 <field name="x_project_completed_date"/>
-                                <field name="x_project_completed_attachment_ids" widget="many2many_binary"/>
+                                <field name="x_project_completed_attachment_ids" widget="mz_many2many_binary"/>
                                 <field name="x_workorder_completion_date"/>
                                 <field name="x_deviation_days"/>
                             </group>
