@@ -310,6 +310,16 @@ class CrmLead(models.Model):
 
     skill_type_id = fields.Many2one('skill.type',
     string="Skill",copy=False,ondelete="cascade",domain="[('team_id', '=', team_id)]")
+    business_service_id = fields.Many2one(
+        'business.service', string="Business Service", copy=False,
+        compute='_compute_business_service_id', store=True, readonly=False,
+        domain="[('skill_type_id', '=', skill_type_id)]")
+
+    @api.depends('skill_type_id')
+    def _compute_business_service_id(self):
+        for lead in self:
+            if lead.business_service_id.skill_type_id != lead.skill_type_id:
+                lead.business_service_id = False
 
     x_next_activity_datetime = fields.Datetime(
         string="Next Activity Time",

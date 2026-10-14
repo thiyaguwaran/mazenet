@@ -8,10 +8,8 @@
         <field name="arch" type="xml">
             <list string="API Configuration">
                 <field name="name"/>
+                <field name="api_type"/>
                 <field name="route"/>
-                <field name="direction" widget="badge"
-                       decoration-info="direction == 'incoming'"
-                       decoration-warning="direction == 'outgoing'"/>
                 <field name="http_method" widget="badge"/>
                 <field name="operation_type" widget="badge"/>
                 <field name="state" widget="badge"
@@ -30,7 +28,7 @@
             <form string="API Configuration">
                 <header>
                     <button name="sync_data" string="Sync" type="object" class="btn-primary"
-                            invisible="direction != 'outgoing'"/>
+                            invisible="api_type in ('create_work_order', 'fetch_dates')"/>
                     <field name="state" widget="statusbar" statusbar_visible="draft,success,failed"/>
                 </header>
                 <sheet>  
@@ -46,15 +44,27 @@
                     </div>
                     <group>
                         <group string="Endpoint">
-                            <field name="direction" widget="radio" options="{'horizontal': true}"/>
-                            <field name="server_id" placeholder="Select the Server...."/>
+                            <field name="api_type" placeholder="Select the Direction type...."/>
+                            <field name="server_id" placeholder="Select the Server...."
+                                   invisible="api_type == 'fetch_dates'"
+                                   required="api_type != 'fetch_dates'"/>
                             <field name="route" placeholder="/api/v1/leads"/>
-                            <field name="payload" placeholder="Paste a valid json data !!!"/>
+                            <field name="payload" placeholder="Paste a valid json data !!!"
+                                   invisible="api_type == 'fetch_dates'"/>
+                            <field name="incoming_url" widget="CopyClipboardChar"
+                                   invisible="api_type != 'fetch_dates'"/>
+                            <label for="incoming_token" invisible="api_type != 'fetch_dates'"/>
+                            <div class="o_row" invisible="api_type != 'fetch_dates'">
+                                <field name="incoming_token" widget="CopyClipboardChar"
+                                       required="api_type == 'fetch_dates'"/>
+                                <button name="action_generate_token" type="object"
+                                        string="Generate" class="btn-secondary"/>
+                            </div>
                         </group>
                         <group string="Request">
                             <field name="http_method"/>
-                            <field name="operation_type"/>
-                            <field name="save_in" invisible="direction != 'outgoing'"/>
+                            <field name="operation_type" invisible="api_type == 'fetch_dates'"/>
+                            <field name="save_in" invisible="api_type in ('buisiness_services', 'fetch_dates')"/>
                             <field name="active"/>
                         </group>
                     </group>
@@ -74,12 +84,8 @@
             <search string="API Configuration">
                 <field name="name"/>
                 <field name="route"/>
-                <filter name="filter_incoming" string="Incoming" domain="[('direction', '=', 'incoming')]"/>
-                <filter name="filter_outgoing" string="Outgoing" domain="[('direction', '=', 'outgoing')]"/>
-                <separator/>
                 <filter name="filter_inactive" string="Archived" domain="[('active', '=', False)]"/>
                 <group>
-                    <filter name="group_direction" string="Direction" context="{'group_by': 'direction'}"/>
                     <filter name="group_http_method" string="HTTP Method" context="{'group_by': 'http_method'}"/>
                     <filter name="group_operation_type" string="Operation Type" context="{'group_by': 'operation_type'}"/>
                 </group>
@@ -94,7 +100,7 @@
         <field name="view_mode">list,form</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">Configure your first API</p>
-            <p>Define the route, direction (incoming / outgoing), HTTP method and operation of each API.</p>
+            <p>Define the route, HTTP method and operation of each API.</p>
         </field>
     </record>
 

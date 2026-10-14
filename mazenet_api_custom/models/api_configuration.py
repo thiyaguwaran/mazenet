@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
+import hmac
 import json
+import secrets
 import time
+from datetime import date
 import requests
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError, ValidationError
@@ -12,15 +15,19 @@ class ApiConfiguration(models.Model):
     _order = 'name'
 
     name = fields.Char(string='Name', required=True)
-    server_id = fields.Many2one("api.server.details", required=True, ondelete="cascade")
+    server_id = fields.Many2one(
+        "api.server.details", ondelete="cascade",
+        help="The server that is called. Not used by incoming APIs (Fetch Dates).")
     route = fields.Char(
         string='Route', required=True,
-        help="Incoming: the route this server exposes (e.g. /api/v1/leads). "
-             "Outgoing: the route / URL of the other system that is called.")
-    direction = fields.Selection(
-        selection=[('incoming', 'Incoming'), ('outgoing', 'Outgoing')],
-        string='Direction', required=True, default='incoming',
-        help="Incoming: other systems call us. Outgoing: we call another system.")
+        help="The route / URL of the other system that is called.")
+
+    api_type = fields.Selection(
+        selection=[('buisiness_units', 'Buisiness Units'), 
+        ('buisiness_services', 'Buisiness Services'),('create_work_order', 'Create work Order'),
+        ('fetch_dates', 'Fetch Dates (incoming)')],
+        string='API Identification', required=True,
+        help="This is to know which API call")
     http_method = fields.Selection(
         selection=[
             ('get', 'GET'),
@@ -41,10 +48,16 @@ class ApiConfiguration(models.Model):
         help="What the API does with the data.")
 
     save_in = fields.Selection(
-        [('none', 'Only keep it in the API log'), ('skill_type', 'Skill Type (create / update)')],
+        [('none', 'Only keep it in the API log'), 
+        ('skill_type', 'Skill Type (create / update)')],
         string='Save the answer in', default='none', required=True,
         help="Skill Type: every item of the answer is created, or updated when its bu_id already exists. "
              "The answer must contain name, short_name, team and bu_id for each item.")
+
+    incoming_token = fields.Char(
+        string='Token', copy=False,
+        help="Bearer token the other system must send to call this incoming API (Fetch Dates).")
+    incoming_url = fields.Char(string='API URL', compute='_compute_incoming_url')
 
     payload = fields.Text(
         help="JSON body for POST, or query params for GET")
@@ -59,6 +72,25 @@ class ApiConfiguration(models.Model):
 
     log_ids = fields.One2many('api.log', 'configuration_id', string='Logs')
     log_count = fields.Integer(compute='_compute_log_count')
+
+    def _compute_incoming_url(self):
+        base_url = self.env['ir.config_parameter'].sudo().get_param('web.base.url', '')
+        for rec in self:
+            rec.incoming_url = ('%s/api/mazenet/%s' % (base_url, rec.route.strip('/'))
+                                if rec.api_type == 'fetch_dates' and rec.route else False)
+
+    def action_generate_token(self):
+        for rec in self:
+            rec.incoming_token = secrets.token_urlsafe(32)
+
+    @api.constrains('api_type', 'server_id', 'incoming_token')
+    def _check_server_or_token(self):
+        for rec in self:
+            if rec.api_type == 'fetch_dates':
+                if not rec.incoming_token:
+                    raise ValidationError(_("Generate a token for the incoming API."))
+            elif not rec.server_id:
+                raise ValidationError(_("Select the server."))
 
     def _compute_log_count(self):
         counts = dict(self.env['api.log']._read_group(
@@ -100,7 +132,15 @@ class ApiConfiguration(models.Model):
     def sync_data(self):
         logs = self.env['api.log']
         for rec in self:
-            logs |= rec._call_api()
+            if rec.api_type == 'create_work_order':
+                raise UserError(_("Work orders are created from the lead, this API cannot be synced."))
+            if rec.api_type == 'fetch_dates':
+                raise UserError(_("This is an incoming API, the other system calls it. It cannot be synced."))
+            if rec.api_type == 'buisiness_services':
+                # one call per skill type, with its bu_id in the url
+                logs |= rec._sync_business_services(self.env['skill.type'].search([('bu_id', '!=', 0)]))
+            else:
+                logs |= rec._call_api()
         failed = logs.filtered(lambda log: log.status == 'failed')
         return {
             "type": "ir.actions.client",
@@ -114,16 +154,27 @@ class ApiConfiguration(models.Model):
             },
         }
 
-    def _call_api(self):
-        """ Call the API once and save the call (request and response) in the API log. """
+    def _call_api(self, extra_params=None, skill_type=None, path_param=None, payload=None, on_success=None):
+        """ Call the API once and save the call (request and response) in the API log.
+
+        :param extra_params: dict merged into the payload / query params (e.g. {'bu_id': 2}).
+        :param path_param: value added at the end of the route (or put in its {bu_id} placeholder).
+        :param payload: dict sent instead of the configured payload.
+        :param on_success: callable(answer) run with the JSON answer; an answer with
+                           ``success: false`` is treated as an error.
+        :param skill_type: skill.type record whose business services are saved from the answer
+                           (only for the 'Buisiness Services' API).
+        """
         self.ensure_one()
-        if self.direction != 'outgoing':
-            raise UserError(_("Only outgoing APIs can be synced."))
         server = self.server_id.sudo()
         method = self.http_method.upper()
         url = self._build_url()
+        if path_param is not None:                              # /api/crm/services/ -> /api/crm/services/2
+            url = (url.replace('{bu_id}', str(path_param)) if '{bu_id}' in url
+                   else '%s/%s' % (url.rstrip('/'), path_param))
         headers = server._get_headers()
-        data = self._get_payload() or None
+        data = (payload if payload is not None
+                else dict(self._get_payload() or {}, **(extra_params or {}))) or None
 
         log = {'direction': 'outgoing', 'http_method': method, 'url': url, 'status': 'failed',
                'request_headers': mask_headers(headers, server.api_key_header), 'request_body': data}
@@ -140,14 +191,37 @@ class ApiConfiguration(models.Model):
                 raise ValueError(_("The server redirected the call (HTTP %s) to %s. "
                                    "Check the host, the port and the route.",
                                    response.status_code, response.headers.get('Location')))
-            response.raise_for_status()                         # HTTP 4xx / 5xx -> error
-            if self.save_in == 'skill_type':
+            if not response.ok:                                 # HTTP 4xx / 5xx -> error, with the API's own message
+                try:
+                    api_message = response.json().get('message')
+                except (ValueError, AttributeError):
+                    api_message = None
+                if api_message:
+                    raise ValueError("HTTP %s: %s" % (response.status_code, api_message))
+            response.raise_for_status()
+            if self.save_in == 'skill_type' and self.api_type != 'buisiness_services':
                 try:
                     answer = response.json()
                 except ValueError:
                     raise ValueError(_("The answer is not JSON, it cannot be saved in Skill Type."))
                 with self.env.cr.savepoint():                   # all or nothing
                     self._save_skill_types(answer)
+            if skill_type and self.api_type == 'buisiness_services':
+                try:
+                    answer = response.json()
+                except ValueError:
+                    raise ValueError(_("The answer is not JSON, it cannot be saved in Business Services."))
+                with self.env.cr.savepoint():
+                    self._save_business_services(answer, skill_type)
+            if on_success:
+                try:
+                    answer = response.json()
+                except ValueError:
+                    raise ValueError(_("The answer is not JSON."))
+                if isinstance(answer, dict) and answer.get('success') is False:
+                    raise ValueError(answer.get('message') or _("The API returned an error."))
+                with self.env.cr.savepoint():
+                    on_success(answer)
             log['status'] = 'success'
         except Exception as e:                                  # connection error, HTTP error, redirect, bad answer
             log['error_message'] = str(e)
@@ -181,3 +255,117 @@ class ApiConfiguration(models.Model):
                 skill_type.write(vals)
             else:
                 self.env['skill.type'].create(vals)
+
+    def _save_business_services(self, answer, skill_type):
+        """ Create the business services of the answer under the skill type,
+        or update them when the same maze_id already exists for it. """
+        items = answer.get('data') if isinstance(answer, dict) else answer
+        if not isinstance(items, list):
+            raise UserError(_('The answer must be a list (or {"data": [...]}).'))
+        BusinessService = self.env['business.service']
+        for item in items:
+            missing = [key for key in ('id', 'services') if item.get(key) in (None, '')]
+            if missing:
+                raise UserError(_("%(fields)s missing in the answer for: %(item)s",
+                                  fields=', '.join(missing), item=json.dumps(item, ensure_ascii=False)))
+            vals = {'maze_id': int(item['id']), 'services': item['services'],
+                    'shortname': item.get('shortname') or False}
+            service = BusinessService.search([
+                ('skill_type_id', '=', skill_type.id), ('maze_id', '=', vals['maze_id'])], limit=1)
+            if service:
+                service.write(vals)
+            else:
+                BusinessService.create(dict(vals, skill_type_id=skill_type.id))
+
+    def _sync_business_services(self, skill_types):
+        """ Call this API once per skill type (bu_id in the url) and return the logs. """
+        logs = self.env['api.log']
+        for skill_type in skill_types:
+            logs |= self._call_api(path_param=skill_type.bu_id, skill_type=skill_type)
+        return logs
+
+    @api.model
+    def _fetch_business_services(self, skill_types):
+        """ Fetch the business services of new skill types with the configured 'Buisiness Services' API. """
+        config = self.sudo().search([('api_type', '=', 'buisiness_services')], limit=1)
+        if config:
+            config._sync_business_services(skill_types.filtered('bu_id'))
+
+    # incoming APIs (the other system calls Odoo) ###########################
+    @api.model
+    def _handle_incoming(self, route, headers, body, url=None):
+        """ Run the incoming API configured with this route and save the call in the API log.
+
+        :param route: route called, without /api/mazenet/.
+        :param headers: request headers (dict).
+        :param body: raw request body.
+        :param url: full url called (for the log).
+        :return: (response dict, http status)
+        """
+        start = time.monotonic()
+        configs = self.sudo().search([('api_type', '=', 'fetch_dates')])
+        config = configs.filtered(lambda c: (c.route or '').strip('/') == route.strip('/'))[:1]
+        if not config:
+            return {'success': False, 'message': "Unknown API."}, 404
+        authorization = headers.get('Authorization', '')
+        if not config._check_incoming_token(authorization):
+            payload, status = {'success': False, 'message': "Invalid or missing token."}, 401
+        else:
+            try:
+                with self.env.cr.savepoint():
+                    payload, status = config._update_work_order_dates(body)
+            except Exception as e:      # never lose the log because of an unexpected error
+                payload, status = {'success': False, 'message': str(e)}, 500
+        # the call is saved whatever the result (the caller gets a status, not an exception)
+        self.env['api.log'].sudo().create({
+            'configuration_id': config.id,
+            'server_id': config.server_id.id,
+            'company_id': config.server_id.company_id.id or self.env.company.id,
+            'direction': 'incoming',
+            'http_method': 'POST',
+            'url': url or route,
+            'request_headers': mask_headers(dict(headers)),
+            'request_body': body,
+            'response_code': status,
+            'response_body': payload,
+            'status': 'success' if status == 200 else 'failed',
+            'error_message': payload.get('message') if status != 200 else False,
+            'duration': time.monotonic() - start,
+        })
+        config.write({'state': 'success' if status == 200 else 'failed',
+                      'last_sync': fields.Datetime.now()})
+        return payload, status
+
+    def _check_incoming_token(self, authorization):
+        """ Bearer token of this configuration; no token configured = closed. """
+        self.ensure_one()
+        expected = self.incoming_token or ''
+        given = authorization[7:].strip() if (authorization or '').lower().startswith('bearer ') else ''
+        return bool(expected) and hmac.compare_digest(given, expected)
+
+    def _update_work_order_dates(self, body):
+        """ Body: {"work_id": 928, "work_start_date": "2026-10-20", "work_end_date": "2026-10-25"}
+        Finds the lead(s) created with that work order id and stores the dates. """
+        self.ensure_one()
+        try:
+            body = json.loads(body or '{}')
+            work_order_id = int(body.get('work_id', body.get('work_order_id')))
+            start = date.fromisoformat(body['work_start_date'])
+            end = date.fromisoformat(body['work_end_date'])
+        except (ValueError, KeyError, TypeError):
+            return {'success': False, 'message':
+                    "Body must be JSON with work_id (integer) and work_start_date / "
+                    "work_end_date (YYYY-MM-DD)."}, 400
+        if end < start:
+            return {'success': False, 'message': "work_end_date cannot be before work_start_date."}, 400
+
+        leads = self.env['crm.lead'].sudo().with_context(active_test=False).search(
+            [('work_order_id', '=', work_order_id)])
+        if not leads:
+            return {'success': False, 'message': "No lead found for work order %s." % work_order_id}, 404
+        leads.write({'work_start_date': start, 'work_end_date': end})
+        return {
+            'success': True, 'message': "Work order dates updated.",
+            'data': {'work_order_id': work_order_id, 'leads': leads.ids,
+                     'work_start_date': start.isoformat(), 'work_end_date': end.isoformat()},
+        }, 200

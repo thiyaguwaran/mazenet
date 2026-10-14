@@ -9,3 +9,4 @@ access_mz_lead_spinoff_wizard_user,mz.lead.spinoff.wizard.user,model_mz_lead_spi
 access_crm_lead_lms_week_user,crm.lead.lms.week.user,model_crm_lead_lms_week,base.group_user,1,1,1,1
 access_crm_lead_report_user,crm.lead.report.user,model_crm_lead_report,base.group_user,1,0,0,0
 access_skill_type,skill.type.access,model_skill_type,base.group_user,1,1,1,1
+access_business_service,business.service.access,model_business_service,base.group_user,1,1,1,1
