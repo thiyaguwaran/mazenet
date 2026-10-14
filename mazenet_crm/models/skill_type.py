@@ -15,6 +15,19 @@ class SkillType(models.Model):
     team_id = fields.Many2one(
             'crm.team',string="Team",ondelete="set null")
     bu_id = fields.Integer(string="BU ID",required=True)
+    business_service_ids = fields.One2many(
+        'business.service', 'skill_type_id', string="Business Services")
+
+    def action_open_form(self):
+        self.ensure_one()
+        return {
+            'type': 'ir.actions.act_window',
+            'name': self.display_name,
+            'res_model': 'skill.type',
+            'res_id': self.id,
+            'view_mode': 'form',
+            'target': 'current',
+        }
 
     @api.constrains('name', 'short_name', 'team_id')
     def check_unique(self):

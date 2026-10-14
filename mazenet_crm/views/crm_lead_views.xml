@@ -540,6 +540,8 @@
                             </group>
                             <group string="Stage 4 - Quote">
                                 <field name="skill_type_id"/>
+                                <field name="business_service_id" invisible="not skill_type_id"
+                                       options="{'no_create': True, 'no_open': True}"/>
                                 <label for="x_quote_date"/>
                                 <div class="o_row">
                                     <field name="x_quote_date"/>
@@ -623,6 +625,8 @@
                             </group>
                             <group string="Stage 4 - Quote">
                                 <field name="skill_type_id"/>
+                                <field name="business_service_id" invisible="not skill_type_id"
+                                       options="{'no_create': True, 'no_open': True}"/>
                                 <label for="x_quote_document_ids"/>
                                 <div class="o_row">
                                     <field name="x_quote_document_ids" widget="many2many_binary"/>
