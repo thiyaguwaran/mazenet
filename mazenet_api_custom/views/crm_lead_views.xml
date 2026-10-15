@@ -17,17 +17,6 @@
                 <field name="work_start_date" invisible="not maze_query_id"/>
                 <field name="work_end_date" invisible="not maze_query_id"/>
             </xpath>
-            <xpath expr="(//field[@name='business_service_id'])[2]" position="after">
-                <button name="action_create_work_order" type="object" string="Create Work Order"
-                        class="btn-secondary"
-                        invisible="not skill_type_id or not business_service_id or maze_query_id"/>
-                <!-- <field name="work_order_id" invisible="not work_order_id"/> -->
-                <field name="maze_query_id" invisible="not maze_query_id"/>
-                <field name="maze_wo_no" invisible="not maze_wo_no"/>
-                <field name="work_order_url" widget="url" invisible="not maze_query_id"/>
-                <field name="work_start_date" invisible="not maze_query_id"/>
-                <field name="work_end_date" invisible="not maze_query_id"/>
-            </xpath>
         </field>
     </record>
 </odoo>
