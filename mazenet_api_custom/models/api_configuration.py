@@ -344,30 +344,29 @@ class ApiConfiguration(models.Model):
         return bool(expected) and hmac.compare_digest(given, expected)
 
     def _update_work_order_dates(self, body):
-        """ Body: {"work_id": 928, "work_start_date": "2026-10-20", "work_end_date": "2026-10-25"}
-        Finds the lead(s) created with that work order id and stores the dates. """
+        """ Body: {"query_id": 928, "wo_no": 12, "work_start_date": "2026-10-20", "work_end_date": "2026-10-25"}
+        Finds the lead(s) created with that query id and work order number and stores the dates. """
         self.ensure_one()
         try:
             body = json.loads(body or '{}')
-            # work_order_id = int(body.get('work_id', body.get('work_order_id')))
-            query_id = int(body.get('query_id', body.get('query_id')))
-            wo_no = int(body.get('wo_no', body.get('wo_no')))
+            query_id = int(body['query_id'])
+            wo_no = int(body['wo_no'])
             start = date.fromisoformat(body['work_start_date'])
             end = date.fromisoformat(body['work_end_date'])
         except (ValueError, KeyError, TypeError):
             return {'success': False, 'message':
-                    "Body must be JSON with work_id (integer) and work_start_date / "
+                    "Body must be JSON with query_id and wo_no (integers) and work_start_date / "
                     "work_end_date (YYYY-MM-DD)."}, 400
         if end < start:
             return {'success': False, 'message': "work_end_date cannot be before work_start_date."}, 400
 
         leads = self.env['crm.lead'].sudo().with_context(active_test=False).search(
-            [('maze_query_id', '=', query_id),('maze_wo_no', '=', wo_no)])
+            [('maze_query_id', '=', query_id), ('maze_wo_no', '=', wo_no)])
         if not leads:
-            return {'success': False, 'message': "No lead found for work order %s." % work_order_id}, 404
+            return {'success': False, 'message': "No lead found for query %s / work order %s." % (query_id, wo_no)}, 404
         leads.write({'work_start_date': start, 'work_end_date': end})
         return {
             'success': True, 'message': "Work order dates updated.",
-            'data': {'query_id': query_id, 'leads': leads.ids,
+            'data': {'query_id': query_id, 'wo_no': wo_no, 'leads': leads.ids,
                      'work_start_date': start.isoformat(), 'work_end_date': end.isoformat()},
         }, 200

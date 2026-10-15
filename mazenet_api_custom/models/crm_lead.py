@@ -38,10 +38,10 @@ class CrmLead(models.Model):
 
         def store_work_order(answer):
             data = answer.get('data') if isinstance(answer, dict) else None
-            if not data or not data.get('id'):
-                raise ValueError(_("The answer has no work order id."))
-            self.write({'maze_query_id': data['query_id'],'maze_wo_no': data['wo_no'],
-             'work_order_url': data.get('url') or False})
+            if not data or not data.get('query_id') or not data.get('wo_no'):
+                raise ValueError(_("The answer has no query id / work order number."))
+            self.write({'maze_query_id': data['query_id'], 'maze_wo_no': data['wo_no'],
+                        'work_order_url': data.get('url') or False})
 
         log = config._call_api(payload=payload, on_success=store_work_order)
         failed = log.status == 'failed'
