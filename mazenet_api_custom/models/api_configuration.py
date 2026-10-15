@@ -349,7 +349,9 @@ class ApiConfiguration(models.Model):
         self.ensure_one()
         try:
             body = json.loads(body or '{}')
-            work_order_id = int(body.get('work_id', body.get('work_order_id')))
+            # work_order_id = int(body.get('work_id', body.get('work_order_id')))
+            query_id = int(body.get('query_id', body.get('query_id')))
+            wo_no = int(body.get('wo_no', body.get('wo_no')))
             start = date.fromisoformat(body['work_start_date'])
             end = date.fromisoformat(body['work_end_date'])
         except (ValueError, KeyError, TypeError):
@@ -360,12 +362,12 @@ class ApiConfiguration(models.Model):
             return {'success': False, 'message': "work_end_date cannot be before work_start_date."}, 400
 
         leads = self.env['crm.lead'].sudo().with_context(active_test=False).search(
-            [('work_order_id', '=', work_order_id)])
+            [('maze_query_id', '=', query_id),('maze_wo_no', '=', wo_no)])
         if not leads:
             return {'success': False, 'message': "No lead found for work order %s." % work_order_id}, 404
         leads.write({'work_start_date': start, 'work_end_date': end})
         return {
             'success': True, 'message': "Work order dates updated.",
-            'data': {'work_order_id': work_order_id, 'leads': leads.ids,
+            'data': {'query_id': query_id, 'leads': leads.ids,
                      'work_start_date': start.isoformat(), 'work_end_date': end.isoformat()},
         }, 200
