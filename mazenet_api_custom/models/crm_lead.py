@@ -18,10 +18,10 @@ class CrmLead(models.Model):
             raise UserError(_("A work order is already created for this lead."))
         if not (self.skill_type_id and self.business_service_id):
             raise UserError(_("Select the Skill and the Business Service first."))
-        # the API expects the email of the Mazenet user creating the work order
-        email = (self.user_id.email or self.env.user.email or '').strip()
+        # the API expects the email of the lead (customer) the work order is created for
+        email = (self.email_from or '').strip()
         if not email:
-            raise UserError(_("The salesperson has no email."))
+            raise UserError(_("The lead has no email. Fill in the Email field first."))
         config = self.env['api.configuration'].sudo().search(
             [('api_type', '=', 'create_work_order')], limit=1)
         if not config:
