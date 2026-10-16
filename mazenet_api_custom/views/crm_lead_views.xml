@@ -1,19 +1,112 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Work order button and result next to the Business Service field of the lead (one common field for every team) -->
+    <!-- Work order button and result in the Won / Lost blocks of the lead, work dates in the Project State blocks -->
     <record id="view_crm_lead_form_work_order" model="ir.ui.view">
         <field name="name">crm.lead.form.work.order</field>
         <field name="model">crm.lead</field>
         <field name="inherit_id" ref="mazenet_crm.view_crm_lead_form_inherit_mz"/>
         <field name="arch" type="xml">
-            <xpath expr="(//field[@name='business_service_id'])[1]" position="after">
+            <!-- Create Work Order / work order result inside every "Won / Lost" block of the
+                 lead form (Stage 5 or Stage 6 depending on the team), one xpath for each. The
+                 work order url is kept hidden: the View Work Order button opens it. -->
+            <xpath expr="(//group[@name='mz_won_lost'])[1]" position="inside">
                 <button name="action_create_work_order" type="object" string="Create Work Order"
                         class="btn-secondary"
                         invisible="won_status != 'won' or not skill_type_id or not business_service_id or maze_query_id"/>
-                <!-- <field name="work_order_id" invisible="not work_order_id"/> -->
                 <field name="maze_query_id" invisible="won_status != 'won' or not maze_query_id"/>
                 <field name="maze_wo_no" invisible="won_status != 'won' or not maze_wo_no"/>
-                <field name="work_order_url" widget="url" invisible="won_status != 'won' or not maze_query_id"/>
+                <field name="work_order_url" invisible="1"/>
+                <button name="action_view_work_order" type="object" string="View Work Order"
+                        class="btn-link p-0" icon="fa-external-link"
+                        invisible="won_status != 'won' or not work_order_url"/>
+            </xpath>
+            <xpath expr="(//group[@name='mz_won_lost'])[2]" position="inside">
+                <button name="action_create_work_order" type="object" string="Create Work Order"
+                        class="btn-secondary"
+                        invisible="won_status != 'won' or not skill_type_id or not business_service_id or maze_query_id"/>
+                <field name="maze_query_id" invisible="won_status != 'won' or not maze_query_id"/>
+                <field name="maze_wo_no" invisible="won_status != 'won' or not maze_wo_no"/>
+                <field name="work_order_url" invisible="1"/>
+                <button name="action_view_work_order" type="object" string="View Work Order"
+                        class="btn-link p-0" icon="fa-external-link"
+                        invisible="won_status != 'won' or not work_order_url"/>
+            </xpath>
+            <xpath expr="(//group[@name='mz_won_lost'])[3]" position="inside">
+                <button name="action_create_work_order" type="object" string="Create Work Order"
+                        class="btn-secondary"
+                        invisible="won_status != 'won' or not skill_type_id or not business_service_id or maze_query_id"/>
+                <field name="maze_query_id" invisible="won_status != 'won' or not maze_query_id"/>
+                <field name="maze_wo_no" invisible="won_status != 'won' or not maze_wo_no"/>
+                <field name="work_order_url" invisible="1"/>
+                <button name="action_view_work_order" type="object" string="View Work Order"
+                        class="btn-link p-0" icon="fa-external-link"
+                        invisible="won_status != 'won' or not work_order_url"/>
+            </xpath>
+            <xpath expr="(//group[@name='mz_won_lost'])[4]" position="inside">
+                <button name="action_create_work_order" type="object" string="Create Work Order"
+                        class="btn-secondary"
+                        invisible="won_status != 'won' or not skill_type_id or not business_service_id or maze_query_id"/>
+                <field name="maze_query_id" invisible="won_status != 'won' or not maze_query_id"/>
+                <field name="maze_wo_no" invisible="won_status != 'won' or not maze_wo_no"/>
+                <field name="work_order_url" invisible="1"/>
+                <button name="action_view_work_order" type="object" string="View Work Order"
+                        class="btn-link p-0" icon="fa-external-link"
+                        invisible="won_status != 'won' or not work_order_url"/>
+            </xpath>
+            <xpath expr="(//group[@name='mz_won_lost'])[5]" position="inside">
+                <button name="action_create_work_order" type="object" string="Create Work Order"
+                        class="btn-secondary"
+                        invisible="won_status != 'won' or not skill_type_id or not business_service_id or maze_query_id"/>
+                <field name="maze_query_id" invisible="won_status != 'won' or not maze_query_id"/>
+                <field name="maze_wo_no" invisible="won_status != 'won' or not maze_wo_no"/>
+                <field name="work_order_url" invisible="1"/>
+                <button name="action_view_work_order" type="object" string="View Work Order"
+                        class="btn-link p-0" icon="fa-external-link"
+                        invisible="won_status != 'won' or not work_order_url"/>
+            </xpath>
+            <xpath expr="(//group[@name='mz_won_lost'])[6]" position="inside">
+                <button name="action_create_work_order" type="object" string="Create Work Order"
+                        class="btn-secondary"
+                        invisible="won_status != 'won' or not skill_type_id or not business_service_id or maze_query_id"/>
+                <field name="maze_query_id" invisible="won_status != 'won' or not maze_query_id"/>
+                <field name="maze_wo_no" invisible="won_status != 'won' or not maze_wo_no"/>
+                <field name="work_order_url" invisible="1"/>
+                <button name="action_view_work_order" type="object" string="View Work Order"
+                        class="btn-link p-0" icon="fa-external-link"
+                        invisible="won_status != 'won' or not work_order_url"/>
+            </xpath>
+            <xpath expr="(//group[@name='mz_won_lost'])[7]" position="inside">
+                <button name="action_create_work_order" type="object" string="Create Work Order"
+                        class="btn-secondary"
+                        invisible="won_status != 'won' or not skill_type_id or not business_service_id or maze_query_id"/>
+                <field name="maze_query_id" invisible="won_status != 'won' or not maze_query_id"/>
+                <field name="maze_wo_no" invisible="won_status != 'won' or not maze_wo_no"/>
+                <field name="work_order_url" invisible="1"/>
+                <button name="action_view_work_order" type="object" string="View Work Order"
+                        class="btn-link p-0" icon="fa-external-link"
+                        invisible="won_status != 'won' or not work_order_url"/>
+            </xpath>
+            <xpath expr="(//group[@name='mz_won_lost'])[8]" position="inside">
+                <button name="action_create_work_order" type="object" string="Create Work Order"
+                        class="btn-secondary"
+                        invisible="won_status != 'won' or not skill_type_id or not business_service_id or maze_query_id"/>
+                <field name="maze_query_id" invisible="won_status != 'won' or not maze_query_id"/>
+                <field name="maze_wo_no" invisible="won_status != 'won' or not maze_wo_no"/>
+                <field name="work_order_url" invisible="1"/>
+                <button name="action_view_work_order" type="object" string="View Work Order"
+                        class="btn-link p-0" icon="fa-external-link"
+                        invisible="won_status != 'won' or not work_order_url"/>
+            </xpath>
+            <xpath expr="(//group[@name='mz_won_lost'])[9]" position="inside">
+                <button name="action_create_work_order" type="object" string="Create Work Order"
+                        class="btn-secondary"
+                        invisible="won_status != 'won' or not skill_type_id or not business_service_id or maze_query_id"/>
+                <field name="maze_query_id" invisible="won_status != 'won' or not maze_query_id"/>
+                <field name="maze_wo_no" invisible="won_status != 'won' or not maze_wo_no"/>
+                <field name="work_order_url" invisible="1"/>
+                <button name="action_view_work_order" type="object" string="View Work Order"
+                        class="btn-link p-0" icon="fa-external-link"
+                        invisible="won_status != 'won' or not work_order_url"/>
             </xpath>
             <!-- Work Start / End Date inside every "Stage 6 - Project State" block (one per team
                  group in the parent view, so one xpath for each occurrence) -->
