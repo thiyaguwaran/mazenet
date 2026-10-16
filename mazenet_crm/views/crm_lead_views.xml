@@ -263,16 +263,6 @@
                              matching what _mz_stage_gate_check enforces on the NEXT forward
                              move; doesn't block saving while still on the current stage. -->
                         <field name="x_current_stage_gate_fields" invisible="1"/>
-                        <!-- Skill / Business Service: common to every team and stage (not
-                             inside a per-team block). Skill is filled in automatically from the lead's
-                             team (read only), Business Service lists the services of that Skill; shown only once
-                             the lead is Won; the Create Work Order button
-                             (mazenet_api_custom) is attached right after Business Service. -->
-                        <group string="Buisiness Unit / Business Service" invisible="won_status != 'won'">
-                            <field name="skill_type_id" readonly="1" string="Buisiness Unit"/>
-                            <field name="business_service_id"
-                                   options="{'no_create': True, 'no_open': True}"/>
-                        </group>
                         <div invisible="x_team_bu_category != 'dmt'">
                             <group string="Stage 1 - New Lead / Source">
                                 <label for="x_organic_inorganic"/>
@@ -380,6 +370,11 @@
                                 </div>
                             </group>
                             <group name="mz_won_lost" string="Stage 6 - Won / Lost">
+                                <!-- Business Unit (from the lead's team, read only) and its Business Service;
+                                     the Create Work Order button / result (mazenet_api_custom) follow them. -->
+                                <field name="skill_type_id" readonly="1" invisible="won_status != 'won'"/>
+                                <field name="business_service_id" invisible="won_status != 'won'"
+                                       options="{'no_create': True, 'no_open': True}"/>
                             </group>
                             <group string="Stage 7 - Project State">
                                 <field name="x_project_start_date"/>
@@ -474,6 +469,11 @@
                                 </div>
                             </group>
                             <group name="mz_won_lost" string="Stage 6 - Won / Lost">
+                                <!-- Business Unit (from the lead's team, read only) and its Business Service;
+                                     the Create Work Order button / result (mazenet_api_custom) follow them. -->
+                                <field name="skill_type_id" readonly="1" invisible="won_status != 'won'"/>
+                                <field name="business_service_id" invisible="won_status != 'won'"
+                                       options="{'no_create': True, 'no_open': True}"/>
                             </group>
                             <group string="Stage 7 - Project State">
                                 <field name="x_project_start_date"/>
@@ -561,6 +561,11 @@
                                 </div>
                             </group>
                             <group name="mz_won_lost" string="Stage 5 - Won / Lost">
+                                <!-- Business Unit (from the lead's team, read only) and its Business Service;
+                                     the Create Work Order button / result (mazenet_api_custom) follow them. -->
+                                <field name="skill_type_id" readonly="1" invisible="won_status != 'won'"/>
+                                <field name="business_service_id" invisible="won_status != 'won'"
+                                       options="{'no_create': True, 'no_open': True}"/>
                             </group>
                             <group string="Stage 6 - Project State">
                                 <field name="x_project_start_date"/>
@@ -638,6 +643,11 @@
                                 </div>
                             </group>
                             <group name="mz_won_lost" string="Stage 5 - Won / Lost">
+                                <!-- Business Unit (from the lead's team, read only) and its Business Service;
+                                     the Create Work Order button / result (mazenet_api_custom) follow them. -->
+                                <field name="skill_type_id" readonly="1" invisible="won_status != 'won'"/>
+                                <field name="business_service_id" invisible="won_status != 'won'"
+                                       options="{'no_create': True, 'no_open': True}"/>
                             </group>
                             <group string="Stage 6 - Project State">
                                 <field name="x_project_start_date"/>
@@ -735,6 +745,11 @@
                                 </div>
                             </group>
                             <group name="mz_won_lost" string="Stage 6 - Won / Lost">
+                                <!-- Business Unit (from the lead's team, read only) and its Business Service;
+                                     the Create Work Order button / result (mazenet_api_custom) follow them. -->
+                                <field name="skill_type_id" readonly="1" invisible="won_status != 'won'"/>
+                                <field name="business_service_id" invisible="won_status != 'won'"
+                                       options="{'no_create': True, 'no_open': True}"/>
                                 <label for="x_po_received_date"/>
                                 <div class="o_row">
                                     <field name="x_po_received_date"/>
@@ -840,6 +855,11 @@
                                 </div>
                             </group>
                             <group name="mz_won_lost" string="Stage 6 - Won / Lost">
+                                <!-- Business Unit (from the lead's team, read only) and its Business Service;
+                                     the Create Work Order button / result (mazenet_api_custom) follow them. -->
+                                <field name="skill_type_id" readonly="1" invisible="won_status != 'won'"/>
+                                <field name="business_service_id" invisible="won_status != 'won'"
+                                       options="{'no_create': True, 'no_open': True}"/>
                                 <label for="x_po_received_date"/>
                                 <div class="o_row">
                                     <field name="x_po_received_date"/>
@@ -945,6 +965,11 @@
                                 </div>
                             </group>
                             <group name="mz_won_lost" string="Stage 6 - Won / Lost">
+                                <!-- Business Unit (from the lead's team, read only) and its Business Service;
+                                     the Create Work Order button / result (mazenet_api_custom) follow them. -->
+                                <field name="skill_type_id" readonly="1" invisible="won_status != 'won'"/>
+                                <field name="business_service_id" invisible="won_status != 'won'"
+                                       options="{'no_create': True, 'no_open': True}"/>
                                 <label for="x_po_received_date"/>
                                 <div class="o_row">
                                     <field name="x_po_received_date"/>
@@ -1029,6 +1054,11 @@
                                 </div>
                             </group>
                             <group name="mz_won_lost" string="Stage 5 - Won / Lost">
+                                <!-- Business Unit (from the lead's team, read only) and its Business Service;
+                                     the Create Work Order button / result (mazenet_api_custom) follow them. -->
+                                <field name="skill_type_id" readonly="1" invisible="won_status != 'won'"/>
+                                <field name="business_service_id" invisible="won_status != 'won'"
+                                       options="{'no_create': True, 'no_open': True}"/>
                             </group>
                             <group string="Stage 6 - Delivery">
                                 <label for="x_lms_training_content"/>
@@ -1179,6 +1209,11 @@
                                 <field name="x_tnh_sow_attachment_ids" widget="mz_many2many_binary"/>
                             </group>
                             <group name="mz_won_lost" string="Stage 8 - Won / Lost">
+                                <!-- Business Unit (from the lead's team, read only) and its Business Service;
+                                     the Create Work Order button / result (mazenet_api_custom) follow them. -->
+                                <field name="skill_type_id" readonly="1" invisible="won_status != 'won'"/>
+                                <field name="business_service_id" invisible="won_status != 'won'"
+                                       options="{'no_create': True, 'no_open': True}"/>
                             </group>
                             <group string="Stage 9 - Project State">
                                 <field name="x_project_start_date"/>
