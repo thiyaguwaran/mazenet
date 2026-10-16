@@ -5,12 +5,13 @@ DEFAULT_PORTS = {'sftp': 22, 'ftp': 21, 'soap': 443, 'rest_api': 443}
 
 class ApiServerDetails(models.Model):
     _name = 'api.server.details'
+    _inherit = ['mail.thread']
     _description = 'API Server Details'
     _order = 'name'
 
     # ---- General
-    name = fields.Char(string='Server Name', required=True)
-    server_type = fields.Selection(
+    name = fields.Char(tracking=True, string='Server Name', required=True)
+    server_type = fields.Selection(tracking=True, 
         selection=[
             ('rest_api', 'REST API'),
             ('soap', 'SOAP'),
@@ -19,22 +20,22 @@ class ApiServerDetails(models.Model):
             ('other', 'Other'),
         ],
         string='Server Type', required=True, default='rest_api')
-    active = fields.Boolean(string='Active', default=True)
+    active = fields.Boolean(tracking=True, string='Active', default=True)
     company_id = fields.Many2one(
-        'res.company', string='Company', required=True, default=lambda self: self.env.company)
+        'res.company', tracking=True, string='Company', required=True, default=lambda self: self.env.company)
 
     # ---- Connection
-    host = fields.Char(string='Host', required=True, help="Host name or IP address, e.g. api.example.com")
-    port = fields.Integer(
+    host = fields.Char(tracking=True, string='Host', required=True, help="Host name or IP address, e.g. api.example.com")
+    port = fields.Integer(tracking=True, 
         string='Port', compute='_compute_port', store=True, readonly=False,
         help="Filled with the usual port of the server type (SFTP 22, FTP 21, HTTPS 443, HTTP 80); change it if needed.")
-    use_ssl = fields.Boolean(string='Use HTTPS / SSL', default=True)
-    verify_ssl = fields.Boolean(string='Verify SSL Certificate', default=True)
-    timeout = fields.Integer(string='Timeout (seconds)', default=30)
+    use_ssl = fields.Boolean(tracking=True, string='Use HTTPS / SSL', default=True)
+    verify_ssl = fields.Boolean(tracking=True, string='Verify SSL Certificate', default=True)
+    timeout = fields.Integer(tracking=True, string='Timeout (seconds)', default=30)
     base_url = fields.Char(string='Base URL', compute='_compute_base_url')
 
     # ---- Authentication
-    auth_type = fields.Selection(
+    auth_type = fields.Selection(tracking=True, 
         selection=[
             ('none', 'None'),
             ('basic', 'User Name / Password'),
@@ -43,7 +44,7 @@ class ApiServerDetails(models.Model):
             ('ssh_key', 'SSH Private Key'),
         ],
         string='Authentication', required=True, default='basic')
-    user_name = fields.Char(string='User Name')
+    user_name = fields.Char(tracking=True, string='User Name')
     password = fields.Char(string='Password')
     api_key = fields.Char(string='API Key')
     api_key_header = fields.Char(string='API Key Header', default='X-API-Key')

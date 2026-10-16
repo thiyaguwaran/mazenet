@@ -11,7 +11,7 @@
     """,
     'author': 'Mazenet Tech / Development Team',
     'website': 'https://www.mazenet.com',
-    'depends': ['base', 'mazenet_crm'],
+    'depends': ['base', 'mail', 'mazenet_crm'],
     'data': [
         'security/ir.model.access.csv',
         'security/ir_rule.xml',
