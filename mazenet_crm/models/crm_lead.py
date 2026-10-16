@@ -308,18 +308,34 @@ MZ_WON_GATE_RULES = {
 class CrmLead(models.Model):
     _inherit = "crm.lead"
 
-    skill_type_id = fields.Many2one('skill.type',
-    string="Skill",copy=False,ondelete="cascade",domain="[('team_id', '=', team_id)]")
+    skill_type_id = fields.Many2one(
+        'skill.type', string="Buisiness Unit", copy=False,
+        compute='_compute_skill_type_id', readonly=True,
+        help="Set automatically from the lead's team (a team belongs to one skill type). "
+             "Not stored: it is worked out every time the lead is opened.")
     business_service_id = fields.Many2one(
-        'business.service', string="Business Service", copy=False,
-        compute='_compute_business_service_id', store=True, readonly=False,
+        'business.service', string="Business Service", copy=False, store=True, readonly=False,
         domain="[('skill_type_id', '=', skill_type_id)]")
 
-    @api.depends('skill_type_id')
-    def _compute_business_service_id(self):
+    def _get_skill_type_from_team(self):
+        self.ensure_one()
+        if not self.team_id:
+            return self.env['skill.type']
+        return self.env['skill.type'].sudo().search(
+            [('team_ids', 'in', self.team_id.ids)], limit=1)
+
+    def _compute_skill_type_id(self):
         for lead in self:
-            if lead.business_service_id.skill_type_id != lead.skill_type_id:
-                lead.business_service_id = False
+            lead.skill_type_id = lead._get_skill_type_from_team()
+
+    @api.onchange('team_id')
+    def _onchange_team_id_skill_type(self):
+        """ Refresh the Buisiness Unit when the team changes in the open form, and drop a service
+        that belongs to another skill. """
+        skill = self._get_skill_type_from_team()
+        self.skill_type_id = skill
+        if self.business_service_id.skill_type_id != skill:
+            self.business_service_id = False
 
     x_next_activity_datetime = fields.Datetime(
         string="Next Activity Time",

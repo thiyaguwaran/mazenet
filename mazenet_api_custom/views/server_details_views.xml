@@ -25,47 +25,49 @@
         <field name="arch" type="xml">
             <form string="Server Details">
                 <sheet>
+                    <field name="can_edit_api_config" invisible="1"/>
                     <widget name="web_ribbon" title="Archived" bg_color="text-bg-danger" invisible="active"/>
                     <div class="oe_title">
                         <label for="name"/>
-                        <h1><field name="name" placeholder="e.g. Partner SFTP"/></h1>
+                        <h1><field name="name" readonly="not can_edit_api_config" placeholder="e.g. Partner SFTP"/></h1>
                     </div>
                     <group>
                         <group string="General">
-                            <field name="server_type"/>
-                            <field name="company_id" groups="base.group_multi_company"/>
-                            <field name="active"/>
+                            <field name="server_type" readonly="not can_edit_api_config"/>
+                            <field name="company_id" readonly="not can_edit_api_config" groups="base.group_multi_company"/>
+                            <field name="active" readonly="not can_edit_api_config"/>
                         </group>
                         <group string="Connection">
-                            <field name="host" placeholder="api.example.com"/>
-                            <field name="port"/>
-                            <field name="use_ssl" invisible="server_type not in ('rest_api', 'soap')"/>
-                            <field name="verify_ssl" invisible="server_type not in ('rest_api', 'soap') or not use_ssl"/>
-                            <field name="timeout"/>
+                            <field name="host" readonly="not can_edit_api_config" placeholder="api.example.com"/>
+                            <field name="port" readonly="not can_edit_api_config"/>
+                            <field name="use_ssl" readonly="not can_edit_api_config" invisible="server_type not in ('rest_api', 'soap')"/>
+                            <field name="verify_ssl" readonly="not can_edit_api_config" invisible="server_type not in ('rest_api', 'soap') or not use_ssl"/>
+                            <field name="timeout" readonly="not can_edit_api_config"/>
                             <field name="base_url"/>
                         </group>
                     </group>
                     <group string="Authentication">
                         <group>
-                            <field name="auth_type"/>
-                            <field name="user_name" invisible="auth_type not in ('basic', 'ssh_key')"/>
-                            <field name="password" password="True" invisible="auth_type != 'basic'"/>
+                            <field name="auth_type" readonly="not can_edit_api_config"/>
+                            <field name="user_name" readonly="not can_edit_api_config" invisible="auth_type not in ('basic', 'ssh_key')"/>
+                            <field name="password" readonly="not can_edit_api_config" password="True" invisible="auth_type != 'basic'"/>
                         </group>
                         <group>
-                            <field name="api_key_header" invisible="auth_type != 'api_key'"/>
-                            <field name="api_key" password="True" invisible="auth_type != 'api_key'"/>
-                            <field name="token" password="True" invisible="auth_type != 'bearer'"/>
+                            <field name="api_key_header" readonly="not can_edit_api_config" invisible="auth_type != 'api_key'"/>
+                            <field name="api_key" readonly="not can_edit_api_config" password="True" invisible="auth_type != 'api_key'"/>
+                            <field name="token" readonly="not can_edit_api_config" password="True" invisible="auth_type != 'bearer'"/>
                         </group>
                     </group>
                     <group invisible="auth_type != 'ssh_key'">
-                        <field name="private_key" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"/>
+                        <field name="private_key" readonly="not can_edit_api_config" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"/>
                     </group>
                     <notebook>
                         <page string="Notes" name="notes">
-                            <field name="notes" placeholder="Anything useful about this server..."/>
+                            <field name="notes" readonly="not can_edit_api_config" placeholder="Anything useful about this server..."/>
                         </page>
                     </notebook>
                 </sheet>
+                <chatter/>
             </form>
         </field>
     </record>

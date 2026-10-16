@@ -11,24 +11,25 @@ from .api_log import mask_headers
 
 class ApiConfiguration(models.Model):
     _name = 'api.configuration'
+    _inherit = ['api.edit.lock', 'mail.thread']
     _description = 'API Configuration'
     _order = 'name'
 
-    name = fields.Char(string='Name', required=True)
+    name = fields.Char(tracking=True, string='Name', required=True)
     server_id = fields.Many2one(
-        "api.server.details", ondelete="cascade",
+        "api.server.details", tracking=True, ondelete="cascade",
         help="The server that is called. Not used by incoming APIs (Fetch Dates).")
-    route = fields.Char(
+    route = fields.Char(tracking=True, 
         string='Route', required=True,
         help="The route / URL of the other system that is called.")
 
-    api_type = fields.Selection(
+    api_type = fields.Selection(tracking=True, 
         selection=[('buisiness_units', 'Buisiness Units'), 
         ('buisiness_services', 'Buisiness Services'),('create_work_order', 'Create work Order'),
         ('fetch_dates', 'Fetch Dates (incoming)')],
         string='API Identification', required=True,
         help="This is to know which API call")
-    http_method = fields.Selection(
+    http_method = fields.Selection(tracking=True, 
         selection=[
             ('get', 'GET'),
             ('post', 'POST'),
@@ -37,7 +38,7 @@ class ApiConfiguration(models.Model):
             ('delete', 'DELETE'),
         ],
         string='HTTP Method', required=True, default='post')
-    operation_type = fields.Selection(
+    operation_type = fields.Selection(tracking=True, 
         selection=[
             ('create', 'Create'),
             ('read', 'Read'),
@@ -50,7 +51,7 @@ class ApiConfiguration(models.Model):
     save_in = fields.Selection(
         [('none', 'Only keep it in the API log'), 
         ('skill_type', 'Skill Type (create / update)')],
-        string='Save the answer in', default='none', required=True,
+        tracking=True, string='Save the answer in', default='none', required=True,
         help="Skill Type: every item of the answer is created, or updated when its bu_id already exists. "
              "The answer must contain name, short_name, team and bu_id for each item.")
 
@@ -59,10 +60,10 @@ class ApiConfiguration(models.Model):
         help="Bearer token the other system must send to call this incoming API (Fetch Dates).")
     incoming_url = fields.Char(string='API URL', compute='_compute_incoming_url')
 
-    payload = fields.Text(
+    payload = fields.Text(tracking=True, 
         help="JSON body for POST, or query params for GET")
 
-    active = fields.Boolean(string='Active', default=True)
+    active = fields.Boolean(tracking=True, string='Active', default=True)
 
     # result of the last sync
     state = fields.Selection(
@@ -249,7 +250,7 @@ class ApiConfiguration(models.Model):
             # if not team:
             #     raise UserError(_("The team '%s' does not exist.", item.get('team')))
             vals = {'name': item.get('bu_name'), 'short_name': item.get('shortname'),
-                    'team_id': False, 'bu_id': int(item.get('id'))}
+                    'bu_id': int(item.get('id'))}
             skill_type = self.env['skill.type'].search([('bu_id', '=', vals['bu_id'])], limit=1)
             if skill_type:
                 skill_type.write(vals)
@@ -370,3 +371,12 @@ class ApiConfiguration(models.Model):
             'data': {'query_id': query_id, 'wo_no': wo_no, 'leads': leads.ids,
                      'work_start_date': start.isoformat(), 'work_end_date': end.isoformat()},
         }, 200
+
+    @api.ondelete(at_uninstall=False)
+    def restrict_deletion(self):
+        for rec in self:
+            if not rec.env.context.get('skip_validation') \
+            and rec.state in('success','failed'):
+                raise ValidationError(_("You cannot delete the records in Success or Failed State !! "))
+
+                

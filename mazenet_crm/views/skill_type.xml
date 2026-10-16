@@ -6,10 +6,10 @@
         <field name="name">skill.type.list</field>
         <field name="model">skill.type</field>
         <field name="arch" type="xml">
-            <list string="Skill Type" editable="bottom" create="0">
+            <list string="Buisiness Units" editable="bottom" create="0">
                 <field name="name"/>
                 <field name="short_name"/>
-                <field name="team_id" required="1"/>
+                <field name="team_ids" widget="many2many_tags" options="{'no_create': True}"/>
                 <field name="company_id" optional="hide" readonly="1"/>
                 <button name="action_open_form" type="object"
                         icon="fa-external-link" title="Open"/>
@@ -22,7 +22,7 @@
         <field name="name">skill.type.form</field>
         <field name="model">skill.type</field>
         <field name="arch" type="xml">
-            <form string="Skill Type">
+            <form string="Buisiness Unit">
                 <sheet>
                     <group>
                         <group>
@@ -31,7 +31,7 @@
                             <field name="bu_id"/>
                         </group>
                         <group>
-                            <field name="team_id"/>
+                            <field name="team_ids" widget="many2many_tags" options="{'no_create': True}"/>
                             <field name="company_id" readonly="1"/>
                         </group>
                     </group>
@@ -53,7 +53,7 @@
 
     <!-- Action -->
     <record id="action_skill_type" model="ir.actions.act_window">
-        <field name="name">Skill Type</field>
+        <field name="name">Buisiness Unit</field>
         <field name="res_model">skill.type</field>
         <field name="view_mode">list</field>
         <field name="help" type="html">
@@ -61,13 +61,13 @@
                 Add a model to restrict
             </p>
             <p>
-                Create Skill types
+                Create Buisiness Unit
             </p>
         </field>
     </record>
 
     <menuitem id="menu_skill_type_main"
-              name="Skill Type"
+              name="Buisiness Unit"
               parent="crm.crm_menu_config"
               action="action_skill_type"
               sequence="100"/>

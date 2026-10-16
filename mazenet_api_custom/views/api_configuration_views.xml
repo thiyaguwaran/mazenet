@@ -31,7 +31,8 @@
                             invisible="api_type in ('create_work_order', 'fetch_dates')"/>
                     <field name="state" widget="statusbar" statusbar_visible="draft,success,failed"/>
                 </header>
-                <sheet>  
+                <sheet>
+                    <field name="can_edit_api_config" invisible="1"/>  
                     <widget name="web_ribbon" title="Archived" bg_color="text-bg-danger" invisible="active"/>
                     <div class="oe_button_box" name="button_box">
                         <button name="action_view_logs" type="object" class="oe_stat_button" icon="fa-list">
@@ -40,38 +41,40 @@
                     </div>
                     <div class="oe_title">
                         <label for="name"/>
-                        <h1><field name="name" placeholder="e.g. Create CRM lead"/></h1>
+                        <h1><field name="name" readonly="not can_edit_api_config" placeholder="e.g. Create CRM lead"/></h1>
                     </div>
                     <group>
                         <group string="Endpoint">
-                            <field name="api_type" placeholder="Select the Direction type...."/>
-                            <field name="server_id" placeholder="Select the Server...."
+                            <field name="api_type" readonly="not can_edit_api_config" placeholder="Select the Direction type...."/>
+                            <field name="server_id" readonly="not can_edit_api_config" placeholder="Select the Server...."
                                    invisible="api_type == 'fetch_dates'"
                                    required="api_type != 'fetch_dates'"/>
-                            <field name="route" placeholder="/api/v1/leads"/>
-                            <field name="payload" placeholder="Paste a valid json data !!!"
+                            <field name="route" readonly="not can_edit_api_config" placeholder="/api/v1/leads"/>
+                            <field name="payload" readonly="not can_edit_api_config" placeholder="Paste a valid json data !!!"
                                    invisible="api_type == 'fetch_dates'"/>
                             <field name="incoming_url" widget="CopyClipboardChar"
                                    invisible="api_type != 'fetch_dates'"/>
                             <label for="incoming_token" invisible="api_type != 'fetch_dates'"/>
                             <div class="o_row" invisible="api_type != 'fetch_dates'">
-                                <field name="incoming_token" widget="CopyClipboardChar"
+                                <field name="incoming_token" readonly="not can_edit_api_config" widget="CopyClipboardChar"
                                        required="api_type == 'fetch_dates'"/>
                                 <button name="action_generate_token" type="object"
-                                        string="Generate" class="btn-secondary"/>
+                                        string="Generate" class="btn-secondary"
+                                        invisible="not can_edit_api_config"/>
                             </div>
                         </group>
                         <group string="Request">
-                            <field name="http_method"/>
-                            <field name="operation_type" invisible="api_type == 'fetch_dates'"/>
-                            <field name="save_in" invisible="api_type in ('buisiness_services', 'fetch_dates')"/>
-                            <field name="active"/>
+                            <field name="http_method" readonly="not can_edit_api_config"/>
+                            <field name="operation_type" readonly="not can_edit_api_config" invisible="api_type == 'fetch_dates'"/>
+                            <field name="save_in" readonly="not can_edit_api_config" invisible="api_type in ('buisiness_services', 'fetch_dates')"/>
+                            <field name="active" readonly="not can_edit_api_config"/>
                         </group>
                     </group>
                     <group string="Last sync" invisible="state == 'draft'">
                         <field name="last_sync"/>
                     </group>
                 </sheet>
+                <chatter/>
             </form>
         </field>
     </record>

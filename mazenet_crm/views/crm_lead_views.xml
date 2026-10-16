@@ -264,12 +264,13 @@
                              move; doesn't block saving while still on the current stage. -->
                         <field name="x_current_stage_gate_fields" invisible="1"/>
                         <!-- Skill / Business Service: common to every team and stage (not
-                             inside a per-team block). Skill is limited to the lead's own team,
-                             Business Service to the chosen Skill; the Create Work Order button
+                             inside a per-team block). Skill is filled in automatically from the lead's
+                             team (read only), Business Service lists the services of that Skill; shown only once
+                             the lead is Won; the Create Work Order button
                              (mazenet_api_custom) is attached right after Business Service. -->
-                        <group string="Skill / Business Service">
-                            <field name="skill_type_id"/>
-                            <field name="business_service_id" invisible="not skill_type_id"
+                        <group string="Buisiness Unit / Business Service" invisible="won_status != 'won'">
+                            <field name="skill_type_id" readonly="1" string="Buisiness Unit"/>
+                            <field name="business_service_id"
                                    options="{'no_create': True, 'no_open': True}"/>
                         </group>
                         <div invisible="x_team_bu_category != 'dmt'">
