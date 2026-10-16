@@ -12,8 +12,8 @@ class SkillType(models.Model):
     company_id = fields.Many2one(
         'res.company',string="company",required=True,
         default=lambda self: self.env.company,ondelete="cascade")
-    team_id = fields.Many2one(
-            'crm.team',string="Team",ondelete="set null")
+    # team_id = fields.Many2one(
+    #         'crm.team',string="Team",ondelete="set null")
     bu_id = fields.Integer(string="BU ID",required=True)
     business_service_ids = fields.One2many(
         'business.service', 'skill_type_id', string="Business Services")

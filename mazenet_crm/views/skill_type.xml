@@ -9,7 +9,7 @@
             <list string="Skill Type" editable="bottom" create="0">
                 <field name="name"/>
                 <field name="short_name"/>
-                <field name="team_id" required="1"/>
+                <!-- <field name="team_id" required="1"/> -->
                 <field name="company_id" optional="hide" readonly="1"/>
                 <button name="action_open_form" type="object"
                         icon="fa-external-link" title="Open"/>
@@ -31,7 +31,7 @@
                             <field name="bu_id"/>
                         </group>
                         <group>
-                            <field name="team_id"/>
+                            <!-- <field name="team_id"/> -->
                             <field name="company_id" readonly="1"/>
                         </group>
                     </group>

@@ -5,7 +5,7 @@ DEFAULT_PORTS = {'sftp': 22, 'ftp': 21, 'soap': 443, 'rest_api': 443}
 
 class ApiServerDetails(models.Model):
     _name = 'api.server.details'
-    _inherit = ['mail.thread']
+    _inherit = ['api.edit.lock', 'mail.thread']
     _description = 'API Server Details'
     _order = 'name'
 

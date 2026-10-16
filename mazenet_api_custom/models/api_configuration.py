@@ -11,7 +11,7 @@ from .api_log import mask_headers
 
 class ApiConfiguration(models.Model):
     _name = 'api.configuration'
-    _inherit = ['mail.thread']
+    _inherit = ['api.edit.lock', 'mail.thread']
     _description = 'API Configuration'
     _order = 'name'
 
@@ -371,3 +371,12 @@ class ApiConfiguration(models.Model):
             'data': {'query_id': query_id, 'wo_no': wo_no, 'leads': leads.ids,
                      'work_start_date': start.isoformat(), 'work_end_date': end.isoformat()},
         }, 200
+
+    @api.ondelete(at_uninstall=False)
+    def restrict_deletion(self):
+        for rec in self:
+            if not rec.env.context.get('skip_validation') \
+            and rec.state in('success','failed'):
+                raise ValidationError(_("You cannot delete the records in Success or Failed State !! "))
+
+                

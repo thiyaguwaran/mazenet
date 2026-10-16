@@ -18,6 +18,7 @@
         'views/api_configuration_views.xml',
         'views/server_details_views.xml',
         'views/api_log_views.xml',
+        'views/res_company_views.xml',
         'views/crm_lead_views.xml',
     ],
     'assets': {

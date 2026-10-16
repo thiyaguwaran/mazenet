@@ -268,8 +268,8 @@
                              Business Service to the chosen Skill; the Create Work Order button
                              (mazenet_api_custom) is attached right after Business Service. -->
                         <group string="Skill / Business Service">
-                            <field name="skill_type_id"/>
-                            <field name="business_service_id" invisible="not skill_type_id"
+                            <!-- <field name="skill_type_id"/> -->
+                            <field name="business_service_id"
                                    options="{'no_create': True, 'no_open': True}"/>
                         </group>
                         <div invisible="x_team_bu_category != 'dmt'">
