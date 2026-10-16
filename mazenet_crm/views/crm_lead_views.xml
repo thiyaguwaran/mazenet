@@ -379,7 +379,7 @@
                                     colour timer and RED lock are already wired to them.
                                 </div>
                             </group>
-                            <group string="Stage 6 - Won / Lost">
+                            <group name="mz_won_lost" string="Stage 6 - Won / Lost">
                             </group>
                             <group string="Stage 7 - Project State">
                                 <field name="x_project_start_date"/>
@@ -473,7 +473,7 @@
                                     colour timer and RED lock are already wired to them.
                                 </div>
                             </group>
-                            <group string="Stage 6 - Won / Lost">
+                            <group name="mz_won_lost" string="Stage 6 - Won / Lost">
                             </group>
                             <group string="Stage 7 - Project State">
                                 <field name="x_project_start_date"/>
@@ -560,7 +560,7 @@
                                     <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_quote_document_ids,' in x_current_stage_gate_fields)">*</span>
                                 </div>
                             </group>
-                            <group string="Stage 5 - Won / Lost">
+                            <group name="mz_won_lost" string="Stage 5 - Won / Lost">
                             </group>
                             <group string="Stage 6 - Project State">
                                 <field name="x_project_start_date"/>
@@ -637,7 +637,7 @@
                                     <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_quote_document_ids,' in x_current_stage_gate_fields)">*</span>
                                 </div>
                             </group>
-                            <group string="Stage 5 - Won / Lost">
+                            <group name="mz_won_lost" string="Stage 5 - Won / Lost">
                             </group>
                             <group string="Stage 6 - Project State">
                                 <field name="x_project_start_date"/>
@@ -734,7 +734,7 @@
                                     <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_training_dates_finalized,' in x_current_stage_gate_fields)">*</span>
                                 </div>
                             </group>
-                            <group string="Stage 6 - Won / Lost">
+                            <group name="mz_won_lost" string="Stage 6 - Won / Lost">
                                 <label for="x_po_received_date"/>
                                 <div class="o_row">
                                     <field name="x_po_received_date"/>
@@ -839,7 +839,7 @@
                                     <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_training_dates_finalized,' in x_current_stage_gate_fields)">*</span>
                                 </div>
                             </group>
-                            <group string="Stage 6 - Won / Lost">
+                            <group name="mz_won_lost" string="Stage 6 - Won / Lost">
                                 <label for="x_po_received_date"/>
                                 <div class="o_row">
                                     <field name="x_po_received_date"/>
@@ -944,7 +944,7 @@
                                     <span class="text-danger fw-bold ms-1" invisible="not (x_current_stage_gate_fields and ',x_training_dates_finalized,' in x_current_stage_gate_fields)">*</span>
                                 </div>
                             </group>
-                            <group string="Stage 6 - Won / Lost">
+                            <group name="mz_won_lost" string="Stage 6 - Won / Lost">
                                 <label for="x_po_received_date"/>
                                 <div class="o_row">
                                     <field name="x_po_received_date"/>
@@ -1028,7 +1028,7 @@
                                     the 4 BUs with the colour spec (DMT, Tally, Technology, TNH).
                                 </div>
                             </group>
-                            <group string="Stage 5 - Won / Lost">
+                            <group name="mz_won_lost" string="Stage 5 - Won / Lost">
                             </group>
                             <group string="Stage 6 - Delivery">
                                 <label for="x_lms_training_content"/>
@@ -1178,7 +1178,7 @@
                                 <field name="x_tnh_msa_attachment_ids" widget="mz_many2many_binary"/>
                                 <field name="x_tnh_sow_attachment_ids" widget="mz_many2many_binary"/>
                             </group>
-                            <group string="Stage 8 - Won / Lost">
+                            <group name="mz_won_lost" string="Stage 8 - Won / Lost">
                             </group>
                             <group string="Stage 9 - Project State">
                                 <field name="x_project_start_date"/>

@@ -7,11 +7,18 @@ class CrmLead(models.Model):
     _inherit = 'crm.lead'
 
     # work_order_id = fields.Integer(string="Work Order ID", readonly=True, copy=False)
-    maze_query_id = fields.Integer(string="Work Order ID", readonly=True, copy=False)
-    maze_wo_no = fields.Integer(string="Work Order ID", readonly=True, copy=False)
+    maze_query_id = fields.Integer(string="Query ID", readonly=True, copy=False)
+    maze_wo_no = fields.Integer(string="Work Number", readonly=True, copy=False)
     work_order_url = fields.Char(string="Work Order URL", readonly=True, copy=False)
     work_start_date = fields.Date(string="Work Start Date", readonly=True, copy=False)
     work_end_date = fields.Date(string="Work End Date", readonly=True, copy=False)
+
+    def action_view_work_order(self):
+        """ Open the work order (url returned when it was created) in a new tab. """
+        self.ensure_one()
+        if not self.work_order_url:
+            raise UserError(_("There is no work order for this lead yet."))
+        return {'type': 'ir.actions.act_url', 'url': self.work_order_url, 'target': 'new'}
 
     def action_create_work_order(self):
         """ Create the work order in the other system (API configuration 'Create work Order'). """
@@ -22,10 +29,10 @@ class CrmLead(models.Model):
             raise UserError(_("A work order is already created for this lead."))
         if not (self.skill_type_id and self.business_service_id):
             raise UserError(_("Select the Skill and the Business Service first."))
-        # the API expects the email of the lead (customer) the work order is created for
-        email = (self.email_from or '').strip()
+        # the API expects the email of the user creating the work order (the logged in user)
+        email = (self.env.user.partner_id.email or '').strip()
         if not email:
-            raise UserError(_("The lead has no email. Fill in the Email field first."))
+            raise UserError(_("Your user has no email. Fill in the email of your contact first."))
         config = self.env['api.configuration'].sudo().search(
             [('api_type', '=', 'create_work_order')], limit=1)
         if not config:
