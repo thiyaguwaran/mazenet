@@ -250,7 +250,7 @@ class ApiConfiguration(models.Model):
             # if not team:
             #     raise UserError(_("The team '%s' does not exist.", item.get('team')))
             vals = {'name': item.get('bu_name'), 'short_name': item.get('shortname'),
-                    'team_id': False, 'bu_id': int(item.get('id'))}
+                    'bu_id': int(item.get('id'))}
             skill_type = self.env['skill.type'].search([('bu_id', '=', vals['bu_id'])], limit=1)
             if skill_type:
                 skill_type.write(vals)
