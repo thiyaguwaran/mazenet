@@ -37,5 +37,9 @@
              BEFORE the feature existed, reconstructed from team_id's own tracking
              history rather than left blank. -->
         <function model="crm.lead" name="_mz_backfill_x_source_team_id" eval="()"/>
+
+        <!-- Re-pin transferred leads to DMT's Follow-up's (2026-10-16): the stage compute
+             now also depends on capture_dmt_lead_id - see crm_lead.py. -->
+        <function model="crm.lead" name="_mz_backfill_dmt_pipeline_stage_captured" eval="()"/>
     </data>
 </odoo>

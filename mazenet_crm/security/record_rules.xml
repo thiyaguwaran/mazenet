@@ -153,6 +153,33 @@
             <field name="perm_create" eval="False"/>
             <field name="perm_unlink" eval="False"/>
         </record>
+        <!-- dmt: permanent READ visibility on a lead the user personally transferred out
+             (capture_dmt_lead_id, 2026-10-16 fix). x_dmt_originated above self-expires
+             the first time someone outside DMT edits the lead (crm_lead.py write()), so
+             once the receiving team started working it the transferring agent lost
+             access entirely and the "My Follow-up's" filter (capture_dmt_lead_id = uid)
+             came back empty - hit live: BSCPL INFRASTRUCTURE LIMITED, handed off by
+             sr_dme and then stage-moved by the CTO. capture_dmt_lead_id is written once,
+             at handoff, and never cleared, so keying a second rule off it gives the
+             transferring agent a standing read on exactly their own transfers without
+             reopening the pipeline leak the expiry exists to prevent: DMT's generic
+             Pipeline excludes these leads from its stage_id grouping (_read_group) and
+             DMT's own Pipeline pins them to Follow-up's (_compute_x_dmt_pipeline_stage_id).
+             Read-only, same as the rule above - editing a transferred lead stays blocked. -->
+        <record id="rule_crm_lead_dmt_captured_read" model="ir.rule">
+            <field name="name">Mazenet CRM Lead: dmt (Read Own Transferred Leads)</field>
+            <field name="model_id" ref="crm.model_crm_lead"/>
+            <field name="domain_force">[('capture_dmt_lead_id', '=', user.id)]</field>
+            <field name="groups" eval="[
+            (4, ref('mazenet_access_rights.group_mzr_dmt_agent')),
+            (4, ref('mazenet_access_rights.group_mzr_dmt_tl_direct_agent')),
+            (4, ref('mazenet_access_rights.group_mzr_dmt_manager_direct_agent')),
+            (4, ref('mazenet_access_rights.group_mzr_dmt_tl'))]"/>
+            <field name="perm_read" eval="True"/>
+            <field name="perm_write" eval="False"/>
+            <field name="perm_create" eval="False"/>
+            <field name="perm_unlink" eval="False"/>
+        </record>
 
         <!-- technology: base tier (view/create team-wide) -->
         <record id="rule_crm_lead_technology_base" model="ir.rule">

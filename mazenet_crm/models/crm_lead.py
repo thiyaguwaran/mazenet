@@ -668,6 +668,8 @@ class CrmLead(models.Model):
                 domain = Domain.AND([
                     domain,
                     Domain(['|', ('x_dmt_originated', '=', False), ('team_id', '=', target_team_id)]),
+                    # Same for a lead only visible through rule_crm_lead_dmt_captured_read.
+                    Domain(['|', ('capture_dmt_lead_id', '=', False), ('team_id', '=', target_team_id)]),
                 ])
         return super()._read_group(domain, groupby, aggregates, having, offset, limit, order)
 
@@ -766,12 +768,17 @@ class CrmLead(models.Model):
              "so write()'s own capture below never fires for it."
     )
 
-    @api.depends('stage_id', 'team_id', 'x_dmt_originated')
+    @api.depends('stage_id', 'team_id', 'x_dmt_originated', 'capture_dmt_lead_id')
     def _compute_x_dmt_pipeline_stage_id(self):
         dmt_team = self.env.ref('mazenet_crm.team_dmt', raise_if_not_found=False)
         stage_followup = self.env.ref('mazenet_crm.stage_dmt_transferred', raise_if_not_found=False)
         for lead in self:
-            if dmt_team and stage_followup and lead.x_dmt_originated and lead.team_id != dmt_team:
+            # capture_dmt_lead_id keeps a transferred lead pinned to Follow-up's after
+            # x_dmt_originated has self-expired (rule_crm_lead_dmt_captured_read keeps the
+            # transferring agent able to read it, so it must not fall back to the
+            # receiving team's real stage in DMT's own Pipeline).
+            if (dmt_team and stage_followup and lead.team_id != dmt_team
+                    and (lead.x_dmt_originated or lead.capture_dmt_lead_id)):
                 lead.x_dmt_pipeline_stage_id = stage_followup
             else:
                 lead.x_dmt_pipeline_stage_id = lead.stage_id
@@ -2190,6 +2197,20 @@ class CrmLead(models.Model):
         ])
         if leads:
             leads.write({'x_dmt_originated': True})
+
+    @api.model
+    def _mz_backfill_dmt_pipeline_stage_captured(self):
+        """Data-file hook (data/migrations.xml). _compute_x_dmt_pipeline_stage_id now
+        also depends on capture_dmt_lead_id, but a stored compute is not re-run for
+        existing rows when its depends change - leads transferred out of DMT before
+        2026-10-16 (x_dmt_originated already expired) need their pin to Follow-up's
+        recomputed once. Idempotent."""
+        leads = self.sudo().with_context(active_test=False).search([
+            ('capture_dmt_lead_id', '!=', False),
+        ])
+        if leads:
+            leads.modified(['capture_dmt_lead_id'])
+            self.env.flush_all()
 
     @api.model
     def _mz_backfill_x_source_team_id(self):
