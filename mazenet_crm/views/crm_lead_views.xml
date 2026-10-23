@@ -1676,4 +1676,20 @@
         </field>
     </record>
 
+    <!-- Lead calendar: Odoo plots each lead on activity_date_deadline (a Date) with
+         hide_time, so only the day showed. Plot it on Next Activity Time instead - the real
+         moment of the earliest open activity (meeting start, a Call/To-Do's own time, or the
+         default hour) - and show the time. A single moment, so no end time/duration. -->
+    <record id="crm_case_calendar_view_leads_mz_time" model="ir.ui.view">
+        <field name="name">crm.lead.calendar.lead.mz.time</field>
+        <field name="model">crm.lead</field>
+        <field name="inherit_id" ref="crm.crm_case_calendar_view_leads"/>
+        <field name="arch" type="xml">
+            <calendar position="attributes">
+                <attribute name="date_start">x_next_activity_datetime</attribute>
+                <attribute name="hide_time"/>
+            </calendar>
+        </field>
+    </record>
+
 </odoo>

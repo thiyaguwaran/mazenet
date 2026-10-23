@@ -1,12 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <templates xml:space="preserve">
 
-<!-- Upload date/time under the file name. Only attachments loaded by mz_many2many_binary carry
+<!-- Upload date/time and uploader under the file name. Only attachments loaded by mz_many2many_binary carry
      create_date, so the stock many2many_binary fields elsewhere are unaffected. -->
 <t t-inherit="web.Many2ManyBinaryField.attachment_preview" t-inherit-mode="extension">
     <xpath expr="//div[hasclass('caption')]" position="after">
         <div t-if="file.create_date" class="caption small text-muted">
             <i class="fa fa-clock-o me-1"/><t t-out="formatUploadedAt(file)"/>
+        </div>
+        <div t-if="uploadedBy(file)" class="caption small text-muted">
+            <i class="fa fa-user-o me-1"/><t t-out="uploadedBy(file)"/>
         </div>
     </xpath>
 </t>
