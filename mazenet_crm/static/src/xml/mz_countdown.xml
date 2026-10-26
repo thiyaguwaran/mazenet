@@ -12,6 +12,7 @@
     <MzCountdown due="data.x_next_activity_datetime"
                  released="data.x_lock_released_at"
                  graceMinutes="data.x_grace_minutes"
+                 releaseGraceMinutes="data.x_release_grace_minutes"
                  hasRedLock="data.x_has_red_lock"
                  locked="data.x_is_locked"/>
 </t>
@@ -21,6 +22,7 @@
                  due="data.mz_due_datetime"
                  released="data.mz_lock_released_at"
                  graceMinutes="data.mz_grace_minutes"
+                 releaseGraceMinutes="data.mz_release_grace_minutes"
                  hasRedLock="data.mz_has_red_lock"/>
 </t>
 
@@ -32,6 +34,7 @@
             <MzCountdown due="props.activity.mz_due_datetime"
                          released="props.activity.mz_lock_released_at"
                          graceMinutes="props.activity.mz_grace_minutes"
+                         releaseGraceMinutes="props.activity.mz_release_grace_minutes"
                          hasRedLock="props.activity.mz_has_red_lock"/>
         </div>
     </xpath>

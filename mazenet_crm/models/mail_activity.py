@@ -63,6 +63,10 @@ class MailActivity(models.Model):
         compute="_compute_mz_countdown",
         help="The company's RED-lock grace period, in minutes."
     )
+    mz_release_grace_minutes = fields.Integer(
+        compute="_compute_mz_countdown",
+        help="The company's grace period after a RED-lock release, in minutes."
+    )
     mz_lock_released_at = fields.Datetime(
         compute="_compute_mz_countdown",
         help="When the lead's RED lock was last released - the lock window restarts from here."
@@ -77,6 +81,7 @@ class MailActivity(models.Model):
             activity.mz_due_datetime = False
             activity.mz_has_red_lock = False
             activity.mz_grace_minutes = 0
+            activity.mz_release_grace_minutes = 0
             activity.mz_lock_released_at = False
             if activity.res_model != 'crm.lead' or not activity.res_id or activity.mz_is_lock_notice:
                 continue
@@ -84,11 +89,13 @@ class MailActivity(models.Model):
             activity.mz_due_datetime = activity._mz_resolve_activity_datetime() or False
             activity.mz_has_red_lock = lead.team_id.x_bu_category in MZ_ACTIVITY_CARD_BU_CATEGORIES
             activity.mz_grace_minutes = Lead._mz_grace_minutes(lead.company_id)
+            activity.mz_release_grace_minutes = Lead._mz_release_grace_minutes(lead.company_id)
             activity.mz_lock_released_at = lead.x_lock_released_at
 
     def _to_store_defaults(self, target):
         return super()._to_store_defaults(target) + [
-            "mz_due_datetime", "mz_has_red_lock", "mz_grace_minutes", "mz_lock_released_at",
+            "mz_due_datetime", "mz_has_red_lock", "mz_grace_minutes", "mz_release_grace_minutes",
+            "mz_lock_released_at",
             "mz_is_lock_notice",
         ]
 

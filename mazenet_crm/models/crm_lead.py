@@ -1350,12 +1350,18 @@ class CrmLead(models.Model):
         compute="_compute_x_countdown_info",
         help="The company's RED-lock grace period in minutes, for the live countdown widget. Not stored."
     )
+    x_release_grace_minutes = fields.Integer(
+        compute="_compute_x_countdown_info",
+        help="The company's grace period after a RED-lock release, in minutes, for the live "
+             "countdown widget. Not stored."
+    )
 
-    @api.depends('team_id.x_bu_category', 'company_id.grace_time')
+    @api.depends('team_id.x_bu_category', 'company_id.grace_time', 'company_id.release_grace_time')
     def _compute_x_countdown_info(self):
         for lead in self:
             lead.x_has_red_lock = lead.team_id.x_bu_category in MZ_ACTIVITY_CARD_BU_CATEGORIES
             lead.x_grace_minutes = self._mz_grace_minutes(lead.company_id)
+            lead.x_release_grace_minutes = self._mz_release_grace_minutes(lead.company_id)
 
     x_is_locked = fields.Boolean(
         string="RED Lock Active",
@@ -1372,8 +1378,8 @@ class CrmLead(models.Model):
         string="RED Lock Released At",
         copy=False,
         help="When the RED lock was last released. The lock cron treats it as a fresh start: "
-             "the lead can't re-lock until the company's Grace Time (res.company.grace_time) "
-             "has passed since this moment, so the owner gets the same grace window to "
+             "the lead can't re-lock until the company's Grace Time After Release (res.company.release_grace_time) "
+             "has passed since this moment, so the owner gets a grace window to "
              "finish or reschedule the overdue activity."
     )
 
@@ -3081,7 +3087,8 @@ class CrmLead(models.Model):
 
         Stamps x_lock_released_at too: the overdue activity is still open, so the lock
         cron would otherwise re-lock the lead on its very next tick. With the stamp it
-        waits out a fresh company Grace Time (res.company.grace_time) first."""
+        waits out a fresh company Grace Time After Release (res.company.release_grace_time)
+        first."""
         for lead in self:
             if not lead.can_user_release_lock():
                 raise AccessError(_(
@@ -3316,6 +3323,16 @@ class CrmLead(models.Model):
         return max(0, company.sudo().grace_time)
 
     @api.model
+    def _mz_release_grace_minutes(self, company=None):
+        """Grace period in minutes after a RED-lock release: the company's Grace Time After
+        Release setting (res.company.release_grace_time), separate from the pre-lock Grace
+        Time. Never negative; 0 means the lead can re-lock on the very next cron tick."""
+        company = company or self.env.company
+        if not company:
+            return MZ_ACTIVITY_WINDOW_MINUTES
+        return max(0, company.sudo().release_grace_time)
+
+    @api.model
     def _cron_trigger_red_locks(self):
         """Auto-trigger the RED lock on leads whose next activity's real moment
         (x_next_activity_datetime - already resolved per-activity-type, see mail_activity.py)
@@ -3334,13 +3351,15 @@ class CrmLead(models.Model):
         leads = self.sudo().browse()
         for company in self.env['res.company'].sudo().search([]):
             cutoff = now - timedelta(minutes=self._mz_grace_minutes(company))
+            release_cutoff = now - timedelta(minutes=self._mz_release_grace_minutes(company))
             leads |= self.sudo().search([
                 ('company_id', '=', company.id),
                 ('x_next_activity_datetime', '!=', False),
                 ('x_next_activity_datetime', '<', cutoff),
-                # After a release the lead gets a fresh grace window: the overdue activity is
-                # still open, so without this it would re-lock on the very next cron tick.
-                '|', ('x_lock_released_at', '=', False), ('x_lock_released_at', '<', cutoff),
+                # After a release the lead gets its own grace window (Grace Time After
+                # Release): the overdue activity is still open, so without this it would
+                # re-lock on the very next cron tick.
+                '|', ('x_lock_released_at', '=', False), ('x_lock_released_at', '<', release_cutoff),
                 ('x_is_locked', '=', False),
                 ('active', '=', True),
                 ('user_id', '!=', False),

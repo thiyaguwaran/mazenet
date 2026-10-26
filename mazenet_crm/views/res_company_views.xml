@@ -11,6 +11,7 @@
                 <page string="CRM Settings">
                     <group>
                         <field name="grace_time"/>
+                        <field name="release_grace_time"/>
                     </group>
                 </page>
             </xpath>
