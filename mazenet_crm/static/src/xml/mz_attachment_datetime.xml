@@ -12,6 +12,10 @@
             <i class="fa fa-user-o me-1"/><t t-out="uploadedBy(file)"/>
         </div>
     </xpath>
+    <!-- Delete (x) button on mz_many2many_binary only for CTO / Admin (canRemove); stock many2many_binary has no canRemove, so it keeps its button. -->
+    <xpath expr="//div[hasclass('o_attachment_delete')]" position="attributes">
+        <attribute name="t-if">editable and canRemove !== false</attribute>
+    </xpath>
 </t>
 
 </templates>

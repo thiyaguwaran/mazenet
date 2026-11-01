@@ -2453,9 +2453,46 @@ class CrmLead(models.Model):
         records._mz_log_team_assign_note()
         return records
 
+    @api.model
+    def _mz_attachment_field_names(self):
+        """Every custom attachment field on the lead (x_*_attachment_ids / x_*_document_ids /
+        x_*_doc_ids): any Many2many to ir.attachment declared with an x_ name. Derived from the
+        field registry so a newly added attachment field is protected automatically."""
+        return [
+            name for name, field in self._fields.items()
+            if name.startswith('x_') and field.type == 'many2many'
+            and field.comodel_name == 'ir.attachment'
+        ]
+
+    def _mz_check_no_attachment_removal(self, vals):
+        """Attachments on the custom CRM fields are permanent (client requirement, 2026-11-01):
+        only CTO / Admin may remove one (follow-up, same day). The upload widget hides the x button
+        from everyone else, but the same removal can be sent as a raw write, so it is refused here
+        too. Adding files is unaffected.
+        Superuser code (migrations, internal sudo) is not blocked, same as unlink() below."""
+        if self.env.su or self.env.user.has_group("mazenet_access_rights.group_mzr_cto_admin"):
+            return
+        for fname in self._mz_attachment_field_names():
+            commands = vals.get(fname)
+            if not commands or not isinstance(commands, (list, tuple)):
+                continue
+            for cmd in commands:
+                if not isinstance(cmd, (list, tuple)) or not cmd:
+                    continue
+                op = cmd[0]
+                # 2 = delete, 3 = unlink (forget), 5 = clear
+                removes = op in (2, 3, 5)
+                if op == 6:
+                    # (6, 0, ids) replaces the set: only a superset of the current files is OK.
+                    new_ids = set(cmd[2] or [])
+                    removes = any(not set(lead[fname].ids) <= new_ids for lead in self)
+                if removes:
+                    raise AccessError(_("Only CTO / Admin can delete attachments."))
+
     def write(self, vals):
         u = self.env.user
         is_cto_admin = u.has_group("mazenet_access_rights.group_mzr_cto_admin")
+        self._mz_check_no_attachment_removal(vals)
         self._mz_check_assign_type_allowed(vals)
 
         # Assign/Reassign Notification (client instruction, 2026-09-09): capture the
